@@ -1,4 +1,4 @@
-pub mod claude_md;
+pub mod crab_md;
 pub mod feature_flag;
 pub mod hooks;
 pub mod keybinding;

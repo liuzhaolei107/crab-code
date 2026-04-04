@@ -8,15 +8,17 @@ use std::pin::Pin;
 pub struct McpToolAdapter {
     tool_name: String,
     tool_description: String,
+    server_name: String,
     schema: Value,
 }
 
 impl McpToolAdapter {
     #[must_use]
-    pub fn new(name: String, description: String, schema: Value) -> Self {
+    pub fn new(name: String, description: String, server_name: String, schema: Value) -> Self {
         Self {
             tool_name: name,
             tool_description: description,
+            server_name,
             schema,
         }
     }
@@ -47,7 +49,9 @@ impl Tool for McpToolAdapter {
     }
 
     fn source(&self) -> ToolSource {
-        ToolSource::McpExternal
+        ToolSource::McpExternal {
+            server_name: self.server_name.clone(),
+        }
     }
 
     fn requires_confirmation(&self) -> bool {

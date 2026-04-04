@@ -25,7 +25,7 @@ pub enum McpTransportConfig {
 
 /// Discover MCP servers from settings files.
 ///
-/// Reads `~/.claude/settings.json` and project-level settings
+/// Reads `~/.crab/settings.json` and project-level settings
 /// to build the list of MCP servers to connect to.
 pub fn discover_servers(_settings_path: &Path) -> crab_common::Result<Vec<McpServerConfig>> {
     // Parse mcp_servers from settings.json

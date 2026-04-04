@@ -28,7 +28,6 @@ use crate::types::{MessageRequest, MessageResponse, StreamEvent};
 pub enum LlmBackend {
     Anthropic(anthropic::AnthropicClient),
     OpenAi(openai::OpenAiClient),
-    // Bedrock and Vertex are the same Anthropic API with different auth + base_url
     #[cfg(feature = "bedrock")]
     Bedrock(anthropic::AnthropicClient),
     #[cfg(feature = "vertex")]
@@ -68,6 +67,7 @@ impl LlmBackend {
     }
 
     /// Provider name string.
+    #[must_use]
     pub const fn name(&self) -> &str {
         match self {
             Self::Anthropic(_) => "anthropic",
@@ -77,5 +77,32 @@ impl LlmBackend {
             #[cfg(feature = "vertex")]
             Self::Vertex(_) => "vertex",
         }
+    }
+}
+
+/// Create an `LlmBackend` from settings.
+///
+/// Routes to the appropriate client based on `api_provider`:
+/// - `"openai"`, `"ollama"`, `"deepseek"` → `OpenAiClient`
+/// - Everything else (including `None`) → `AnthropicClient`
+#[must_use]
+pub fn create_backend(settings: &crab_config::Settings) -> LlmBackend {
+    if let Some("openai" | "ollama" | "deepseek" | "vllm") = settings.api_provider.as_deref() {
+        let base_url = settings
+            .api_base_url
+            .as_deref()
+            .unwrap_or("https://api.openai.com/v1");
+        let api_key = settings
+            .api_key
+            .clone()
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+        LlmBackend::OpenAi(openai::OpenAiClient::new(base_url, api_key))
+    } else {
+        let base_url = settings
+            .api_base_url
+            .as_deref()
+            .unwrap_or("https://api.anthropic.com");
+        let auth = crab_auth::create_auth_provider(settings);
+        LlmBackend::Anthropic(anthropic::AnthropicClient::new(base_url, auth))
     }
 }

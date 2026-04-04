@@ -14,7 +14,7 @@ pub enum CompactionStrategy {
     Summarize,
     /// Level 4 (90-95%): Keep recent N turns + summarize the rest.
     Hybrid { keep_recent: usize },
-    /// Level 5 (>95%): Emergency truncation, discard oldest messages.
+    /// Level 5 (>95%): Emergency truncation via `Conversation::truncate_to_budget`.
     Truncate,
 }
 
@@ -29,9 +29,20 @@ pub trait CompactionClient: Send + Sync {
 }
 
 pub async fn compact(
-    _conversation: &mut Conversation,
-    _strategy: CompactionStrategy,
+    conversation: &mut Conversation,
+    strategy: CompactionStrategy,
     _client: &impl CompactionClient,
 ) -> crab_common::Result<()> {
-    todo!()
+    match strategy {
+        CompactionStrategy::Truncate => {
+            // Emergency: use core's truncate_to_budget
+            let budget = conversation.context_window * 50 / 100;
+            conversation.inner.truncate_to_budget(budget);
+            Ok(())
+        }
+        _ => {
+            // Other strategies require LLM summarization
+            todo!()
+        }
+    }
 }

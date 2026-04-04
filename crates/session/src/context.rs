@@ -45,6 +45,14 @@ impl ContextManager {
 
 pub enum ContextAction {
     Ok,
-    Warning { used: u64, limit: u64, percent: u8 },
-    NeedsCompaction { used: u64, limit: u64, percent: u8 },
+    Warning {
+        used: u64,
+        limit: u64,
+        percent: u8,
+    },
+    NeedsCompaction {
+        used: u64,
+        limit: u64,
+        percent: u8,
+    },
 }

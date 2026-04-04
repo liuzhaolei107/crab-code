@@ -469,6 +469,7 @@ version = "0.1.0"
 dependencies = [
  "crab-auth",
  "crab-common",
+ "crab-config",
  "crab-core",
  "either",
  "eventsource-stream",
@@ -575,6 +576,7 @@ dependencies = [
  "globset",
  "ignore",
  "notify",
+ "regex",
  "similar",
 ]
 
@@ -630,6 +632,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "tracing",
+ "tracing-appender",
  "tracing-opentelemetry",
  "tracing-subscriber",
 ]
@@ -659,7 +662,6 @@ dependencies = [
  "crab-common",
  "crab-config",
  "crab-core",
- "crab-session",
  "crossterm",
  "pulldown-cmark",
  "ratatui",

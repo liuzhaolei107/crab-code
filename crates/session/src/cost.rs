@@ -1,36 +1,22 @@
-use crab_core::model::TokenUsage;
+use crab_core::model::{CostTracker, TokenUsage};
 
-/// Accumulates token usage and cost across a session.
+/// Session-level cost accumulator -- thin wrapper around core `CostTracker`
+/// with session-specific helpers.
+#[derive(Default)]
 pub struct CostAccumulator {
-    pub total_input_tokens: u64,
-    pub total_output_tokens: u64,
-    pub total_cache_read_tokens: u64,
-    pub total_cache_creation_tokens: u64,
-    pub total_cost_usd: f64,
-}
-
-impl Default for CostAccumulator {
-    fn default() -> Self {
-        Self {
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            total_cache_read_tokens: 0,
-            total_cache_creation_tokens: 0,
-            total_cost_usd: 0.0,
-        }
-    }
+    pub tracker: CostTracker,
 }
 
 impl CostAccumulator {
     pub fn record(&mut self, usage: &TokenUsage, cost: f64) {
-        self.total_input_tokens += usage.input_tokens;
-        self.total_output_tokens += usage.output_tokens;
-        self.total_cache_read_tokens += usage.cache_read_tokens;
-        self.total_cache_creation_tokens += usage.cache_creation_tokens;
-        self.total_cost_usd += cost;
+        self.tracker.record(usage, cost);
     }
 
     pub fn total_tokens(&self) -> u64 {
-        self.total_input_tokens + self.total_output_tokens
+        self.tracker.total_tokens()
+    }
+
+    pub fn total_cost_usd(&self) -> f64 {
+        self.tracker.total_cost_usd
     }
 }

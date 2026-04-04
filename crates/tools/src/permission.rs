@@ -16,14 +16,14 @@ pub enum PermissionDecision {
 #[must_use]
 pub fn check_permission(
     mode: PermissionMode,
-    source: ToolSource,
+    source: &ToolSource,
     read_only: bool,
     _in_project: bool,
 ) -> PermissionDecision {
     match mode {
         PermissionMode::Dangerously => PermissionDecision::Allow,
         PermissionMode::TrustProject => {
-            if read_only || source == ToolSource::BuiltIn {
+            if read_only || *source == ToolSource::BuiltIn {
                 PermissionDecision::Allow
             } else {
                 PermissionDecision::Prompt

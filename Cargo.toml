@@ -46,6 +46,7 @@ tracing-appender = "0.2"
 # ─── 文件系统 ───
 globset = "0.4"
 similar = "3"
+regex = "1"
 notify = "8"
 ignore = "0.4"
 fd-lock = "4.0"

@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;
 use std::path::PathBuf;
@@ -7,68 +8,213 @@ use tokio_util::sync::CancellationToken;
 use crate::permission::{PermissionMode, PermissionPolicy};
 use crab_common::Result;
 
-/// Tool source classification — determines the permission matrix column
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Tool source classification — determines the permission matrix column.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToolSource {
     /// Built-in tools (Bash/Read/Write/Edit/Glob/Grep etc.)
     BuiltIn,
-    /// External MCP server tools (untrusted source)
-    McpExternal,
-    /// Sub-agent spawned tools
+    /// External MCP server tools (untrusted source, Default/TrustProject require Prompt)
+    McpExternal {
+        /// Name of the MCP server that provides this tool.
+        server_name: String,
+    },
+    /// Sub-agent spawned tools (`TrustProject` auto-allows)
     AgentSpawn,
 }
 
+/// Core trait for all tools — built-in, MCP-bridged, and plugin-provided.
+///
+/// Returns `Pin<Box<dyn Future>>` (not `async fn`) to guarantee object safety
+/// when stored as `Arc<dyn Tool>`.
 pub trait Tool: Send + Sync {
+    /// Unique tool identifier (e.g. "bash", "read", `mcp__server__tool`).
     fn name(&self) -> &str;
+
+    /// Human-readable description (included in the system prompt).
     fn description(&self) -> &str;
+
+    /// JSON Schema describing the input parameters.
     fn input_schema(&self) -> Value;
 
+    /// Execute the tool with the given input and context.
+    ///
+    /// Long-running tools should periodically check `ctx.cancellation_token`
+    /// and return early when cancelled.
     fn execute(
         &self,
         input: Value,
         ctx: &ToolContext,
     ) -> Pin<Box<dyn Future<Output = Result<ToolOutput>> + Send + '_>>;
 
+    /// Tool source (default: `BuiltIn`) — affects the permission check matrix.
     fn source(&self) -> ToolSource {
         ToolSource::BuiltIn
     }
 
+    /// Whether user confirmation is required before execution (default: false).
     fn requires_confirmation(&self) -> bool {
         false
     }
 
+    /// Whether this tool is read-only (read-only tools can skip confirmation).
     fn is_read_only(&self) -> bool {
         false
     }
 }
 
+/// Execution context passed to every tool invocation.
 #[derive(Debug, Clone)]
 pub struct ToolContext {
+    /// Current working directory for the tool.
     pub working_dir: PathBuf,
+    /// Permission mode in effect.
     pub permission_mode: PermissionMode,
+    /// Session identifier.
     pub session_id: String,
+    /// Cancellation token — long-running tools (e.g. Bash) should check this
+    /// periodically and exit early when triggered.
     pub cancellation_token: CancellationToken,
+    /// Permission policy (merged result from all config layers).
     pub permission_policy: PermissionPolicy,
 }
 
-#[derive(Debug, Clone)]
+/// A single content block within a tool output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolOutputContent {
+    /// Plain text output.
+    Text { text: String },
+    /// Base64-encoded image output.
+    Image { media_type: String, data: String },
+    /// Structured JSON output.
+    Json { value: Value },
+}
+
+/// Result of a tool execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolOutput {
-    pub content: String,
+    /// Output content blocks.
+    pub content: Vec<ToolOutputContent>,
+    /// Whether this output represents an error.
     pub is_error: bool,
 }
 
 impl ToolOutput {
-    pub fn success(content: impl Into<String>) -> Self {
+    /// Create a successful text output.
+    pub fn success(text: impl Into<String>) -> Self {
         Self {
-            content: content.into(),
+            content: vec![ToolOutputContent::Text { text: text.into() }],
             is_error: false,
         }
     }
 
-    pub fn error(content: impl Into<String>) -> Self {
+    /// Create an error text output.
+    pub fn error(text: impl Into<String>) -> Self {
         Self {
-            content: content.into(),
+            content: vec![ToolOutputContent::Text { text: text.into() }],
             is_error: true,
         }
+    }
+
+    /// Create an output with multiple content blocks.
+    pub fn with_content(content: Vec<ToolOutputContent>, is_error: bool) -> Self {
+        Self { content, is_error }
+    }
+
+    /// Get the text content, concatenating all text blocks.
+    #[must_use]
+    pub fn text(&self) -> String {
+        self.content
+            .iter()
+            .filter_map(|c| match c {
+                ToolOutputContent::Text { text } => Some(text.as_str()),
+                ToolOutputContent::Image { .. } | ToolOutputContent::Json { .. } => None,
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn tool_output_success() {
+        let out = ToolOutput::success("hello");
+        assert!(!out.is_error);
+        assert_eq!(out.text(), "hello");
+    }
+
+    #[test]
+    fn tool_output_error() {
+        let out = ToolOutput::error("oops");
+        assert!(out.is_error);
+        assert_eq!(out.text(), "oops");
+    }
+
+    #[test]
+    fn tool_output_text_concatenates() {
+        let out = ToolOutput::with_content(
+            vec![
+                ToolOutputContent::Text { text: "a".into() },
+                ToolOutputContent::Json { value: json!(42) },
+                ToolOutputContent::Text { text: "b".into() },
+            ],
+            false,
+        );
+        assert_eq!(out.text(), "ab");
+    }
+
+    #[test]
+    fn tool_output_empty_content() {
+        let out = ToolOutput::with_content(vec![], false);
+        assert_eq!(out.text(), "");
+        assert!(!out.is_error);
+    }
+
+    #[test]
+    fn tool_output_serde_roundtrip() {
+        let out = ToolOutput::success("test output");
+        let json = serde_json::to_string(&out).unwrap();
+        let parsed: ToolOutput = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.text(), "test output");
+        assert!(!parsed.is_error);
+    }
+
+    #[test]
+    fn tool_output_content_image() {
+        let out = ToolOutput::with_content(
+            vec![ToolOutputContent::Image {
+                media_type: "image/png".into(),
+                data: "base64data".into(),
+            }],
+            false,
+        );
+        // Image blocks don't contribute to text()
+        assert_eq!(out.text(), "");
+    }
+
+    #[test]
+    fn tool_source_default_is_builtin() {
+        // Verify ToolSource variants construct correctly
+        let src = ToolSource::BuiltIn;
+        assert!(matches!(src, ToolSource::BuiltIn));
+
+        let mcp = ToolSource::McpExternal {
+            server_name: "playwright".into(),
+        };
+        assert!(matches!(mcp, ToolSource::McpExternal { .. }));
+    }
+
+    #[test]
+    fn tool_source_serde_roundtrip() {
+        let src = ToolSource::McpExternal {
+            server_name: "test-server".into(),
+        };
+        let json = serde_json::to_string(&src).unwrap();
+        let parsed: ToolSource = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, src);
     }
 }
