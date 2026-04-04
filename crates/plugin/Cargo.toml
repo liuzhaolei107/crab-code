@@ -1,0 +1,20 @@
+[package]
+name = "crab-plugin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Plugin system for Crab Code"
+
+[dependencies]
+crab-common.workspace = true
+crab-core.workspace = true
+wasmtime = { workspace = true, optional = true }
+
+[features]
+default = []
+wasm = ["wasmtime"]
+
+[lints]
+workspace = true

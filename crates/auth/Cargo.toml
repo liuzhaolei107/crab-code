@@ -1,0 +1,24 @@
+[package]
+name = "crab-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Authentication handling for Crab Code"
+
+[dependencies]
+crab-common.workspace = true
+crab-config.workspace = true
+keyring.workspace = true
+oauth2.workspace = true
+reqwest.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[features]
+default = []
+bedrock = []
+
+[lints]
+workspace = true

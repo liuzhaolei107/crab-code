@@ -1,0 +1,30 @@
+[package]
+name = "crab-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "LLM API clients for Crab Code (Anthropic + OpenAI-compatible)"
+
+[dependencies]
+crab-common.workspace = true
+crab-core.workspace = true
+crab-auth.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+eventsource-stream.workspace = true
+futures.workspace = true
+either.workspace = true
+thiserror.workspace = true
+
+[features]
+default = []
+bedrock = []
+vertex = []
+proxy = ["reqwest/socks"]
+
+[lints]
+workspace = true

@@ -1,0 +1,46 @@
+[package]
+name = "crab-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI entry point for Crab Code"
+
+[[bin]]
+name = "crab"
+path = "src/main.rs"
+
+[dependencies]
+crab-common.workspace = true
+crab-core.workspace = true
+crab-config.workspace = true
+crab-auth.workspace = true
+crab-api.workspace = true
+crab-mcp.workspace = true
+crab-fs.workspace = true
+crab-process.workspace = true
+crab-tools.workspace = true
+crab-session.workspace = true
+crab-agent.workspace = true
+crab-plugin.workspace = true
+crab-telemetry.workspace = true
+crab-tui = { workspace = true, optional = true }
+clap.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+
+[features]
+default = ["tui"]
+tui = ["crab-tui"]
+full = [
+    "tui",
+    "crab-plugin/wasm",
+    "crab-api/bedrock",
+    "crab-api/vertex",
+    "crab-process/pty",
+    "crab-telemetry/otlp",
+]
+
+[lints]
+workspace = true

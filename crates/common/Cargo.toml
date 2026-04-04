@@ -1,0 +1,19 @@
+[package]
+name = "crab-common"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared utilities and error types for Crab Code"
+
+[dependencies]
+thiserror.workspace = true
+unicode-width.workspace = true
+strip-ansi-escapes.workspace = true
+ulid.workspace = true
+dunce.workspace = true
+directories.workspace = true
+
+[lints]
+workspace = true

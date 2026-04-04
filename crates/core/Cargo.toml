@@ -1,0 +1,17 @@
+[package]
+name = "crab-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Domain models and trait definitions for Crab Code"
+
+[dependencies]
+crab-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio-util.workspace = true
+
+[lints]
+workspace = true

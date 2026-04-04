@@ -1,0 +1,19 @@
+[package]
+name = "crab-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Session management and context compaction for Crab Code"
+
+[dependencies]
+crab-common.workspace = true
+crab-core.workspace = true
+crab-api.workspace = true
+crab-config.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,129 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+repository = "https://github.com/CrabForge/crab-code"
+description = "Rust-native agentic coding CLI — open-source alternative to Claude Code"
+
+[workspace.dependencies]
+# ─── 异步运行时 ───
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
+
+# ─── 序列化 ───
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yml = "0.0.12"
+toml = "1.1.2+spec-1.1.0"
+
+# ─── CLI ───
+clap = { version = "4", features = ["derive"] }
+
+# ─── HTTP ───
+reqwest = { version = "0.13", features = ["json", "stream"] }
+eventsource-stream = "0.2"
+either = "1"
+
+# ─── TUI ───
+ratatui = "0.29"
+crossterm = "0.28"
+
+# ─── 错误处理 ───
+thiserror = "2"
+anyhow = "1"
+
+# ─── 日志/追踪 ───
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# ─── 文件系统 ───
+globset = "0.4"
+similar = "2"
+notify = "7"
+ignore = "0.4"
+fd-lock = "4.0"
+dunce = "1"
+
+# ─── 代码渲染 ───
+syntect = "5"
+pulldown-cmark = "0.12"
+
+# ─── 系统 ───
+sysinfo = "0.32"
+directories = "5"
+
+# ─── 认证 ───
+keyring = "3"
+oauth2 = "4"
+
+# ─── 可观测性 ───
+opentelemetry = "0.27"
+opentelemetry-otlp = "0.27"
+opentelemetry_sdk = "0.27"
+tracing-opentelemetry = "0.28"
+
+# ─── WebSocket / MCP ───
+tokio-tungstenite = "0.24"
+
+# ─── WASM 插件 ───
+wasmtime = "27"
+
+# ─── 进程 ───
+portable-pty = "0.8"
+
+# ─── 杂项 ───
+uuid = { version = "1", features = ["v4"] }
+ulid = "1"
+lru = "0.12"
+unicode-width = "0.2"
+strip-ansi-escapes = "0.2"
+jsonc-parser = "0.23"
+schemars = "0.8"
+
+# ─── 内部 crate ───
+crab-common = { path = "crates/common" }
+crab-core = { path = "crates/core" }
+crab-config = { path = "crates/config" }
+crab-auth = { path = "crates/auth" }
+crab-api = { path = "crates/api" }
+crab-mcp = { path = "crates/mcp" }
+crab-fs = { path = "crates/fs" }
+crab-process = { path = "crates/process" }
+crab-tools = { path = "crates/tools" }
+crab-session = { path = "crates/session" }
+crab-agent = { path = "crates/agent" }
+crab-tui = { path = "crates/tui" }
+crab-plugin = { path = "crates/plugin" }
+crab-telemetry = { path = "crates/telemetry" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# Allow during M0 skeleton phase — will tighten as real impls land
+must_use_candidate = "allow"
+missing_panics_doc = "allow"
+missing_const_for_fn = "allow"
+missing_errors_doc = "allow"
+unused_async = "allow"
+new_without_default = "allow"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1
+opt-level = 3

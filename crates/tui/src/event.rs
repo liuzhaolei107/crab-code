@@ -1,0 +1,1 @@
+// crossterm Event -> AppEvent mapping
