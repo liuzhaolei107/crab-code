@@ -95,34 +95,26 @@ impl RequestDedup {
     /// Returns `DedupAction::Execute` if this is the first request (caller should
     /// execute and use the guard to publish results), or `DedupAction::Wait` if
     /// another caller is already executing (caller should wait on the receiver).
+    #[allow(clippy::significant_drop_tightening, clippy::option_if_let_else)]
     pub fn check(&self, req: &MessageRequest<'_>) -> DedupAction {
         let key = request_dedup_hash(req);
-        let in_flight_arc = Arc::clone(&self.in_flight);
-        let result = self
+        let mut map = self
             .in_flight
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(&key)
-            .map_or_else(
-                || {
-                    // First request — register and return execute action
-                    let (tx, _rx) = broadcast::channel(1);
-                    self.in_flight
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .insert(key, tx.clone());
-                    Err((key, tx, Arc::clone(&in_flight_arc)))
-                },
-                |tx| Ok(tx.subscribe()),
-            );
-        match result {
-            Ok(rx) => DedupAction::Wait(rx),
-            Err((k, tx, in_flight)) => DedupAction::Execute(DedupGuard {
-                key: k,
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(tx) = map.get(&key) {
+            // Another request is in-flight — subscribe to its result
+            DedupAction::Wait(tx.subscribe())
+        } else {
+            // First request — register and return execute action
+            let (tx, _rx) = broadcast::channel(1);
+            map.insert(key, tx.clone());
+            DedupAction::Execute(DedupGuard {
+                key,
                 tx,
-                in_flight,
+                in_flight: Arc::clone(&self.in_flight),
                 completed: false,
-            }),
+            })
         }
     }
 

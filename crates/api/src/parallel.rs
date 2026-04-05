@@ -222,6 +222,7 @@ pub fn select_winner(results: &[ModelResult], strategy: RaceStrategy) -> Option<
                 .max_by_key(|(_, r)| {
                     r.response.as_ref().map_or(0, |resp| {
                         let text_len = resp.message.text().len();
+                        #[allow(clippy::cast_possible_truncation)]
                         let token_score = resp.usage.output_tokens as usize;
                         // Weighted combination: output tokens matter more
                         token_score * 2 + text_len

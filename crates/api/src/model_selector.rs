@@ -222,6 +222,7 @@ impl ModelSelector {
 
     /// Detect task type from user input using keyword matching.
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn detect_task_type(input: &str) -> TaskType {
         let lower = input.to_lowercase();
 

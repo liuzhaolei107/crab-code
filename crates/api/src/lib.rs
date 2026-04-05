@@ -11,6 +11,7 @@ pub mod capabilities;
 pub mod dedup;
 pub mod error;
 pub mod fallback;
+pub mod middleware;
 pub mod model_selector;
 pub mod openai;
 pub mod parallel;

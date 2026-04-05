@@ -90,6 +90,7 @@ impl ResponseCache {
     /// Look up a cached response for the given request.
     ///
     /// Returns `None` if cache is disabled, no entry exists, or the entry has expired.
+    #[allow(clippy::significant_drop_tightening)]
     pub fn get(&self, req: &MessageRequest<'_>) -> Option<MessageResponse> {
         if !self.config.enabled {
             return None;
