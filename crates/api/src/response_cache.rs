@@ -96,18 +96,21 @@ impl ResponseCache {
         }
 
         let key = request_hash(req);
-        let mut entries = self.entries.lock().ok()?;
+        let response = {
+            let mut entries = self.entries.lock().ok()?;
 
-        let entry = entries.get_mut(&key)?;
+            let entry = entries.get_mut(&key)?;
 
-        // Check TTL
-        if entry.inserted_at.elapsed() > self.config.ttl {
-            entries.remove(&key);
-            return None;
-        }
+            // Check TTL
+            if entry.inserted_at.elapsed() > self.config.ttl {
+                entries.remove(&key);
+                return None;
+            }
 
-        entry.last_accessed = Instant::now();
-        Some(entry.response.clone())
+            entry.last_accessed = Instant::now();
+            entry.response.clone()
+        };
+        Some(response)
     }
 
     /// Insert a response into the cache.
@@ -119,7 +122,10 @@ impl ResponseCache {
         }
 
         let key = request_hash(req);
-        let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         // Evict expired entries first
         let now = Instant::now();
@@ -129,9 +135,9 @@ impl ResponseCache {
         // If still full, evict LRU
         if entries.len() >= self.config.max_entries
             && let Some((&lru_key, _)) = entries.iter().min_by_key(|(_, entry)| entry.last_accessed)
-            {
-                entries.remove(&lru_key);
-            }
+        {
+            entries.remove(&lru_key);
+        }
 
         entries.insert(
             key,
@@ -165,7 +171,10 @@ impl ResponseCache {
     /// Cache hit statistics.
     #[must_use]
     pub fn stats(&self) -> CacheStats {
-        let entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let total = entries.len();
         let now = Instant::now();
         let expired = entries

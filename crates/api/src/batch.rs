@@ -207,13 +207,19 @@ impl RequestQueue {
     /// Enqueue a request. Returns the assigned queue ID.
     pub fn enqueue(&self, model: String, request_json: serde_json::Value, priority: u32) -> u64 {
         let id = {
-            let mut next = self.next_id.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut next = self
+                .next_id
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let id = *next;
             *next += 1;
             id
         };
 
-        let mut pending = self.pending.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let req = QueuedRequest {
             id,
             model,
@@ -297,9 +303,17 @@ impl RequestQueue {
 
     /// Cancel a pending request by ID. Returns true if found and removed.
     pub fn cancel(&self, id: u64) -> bool {
-        let mut pending = self.pending.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(pos) = pending.iter().position(|r| r.id == id) {
-            pending.remove(pos);
+        let pos = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .position(|r| r.id == id);
+        if let Some(pos) = pos {
+            self.pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(pos);
             return true;
         }
         false
@@ -307,7 +321,10 @@ impl RequestQueue {
 
     /// Clear all pending requests. Returns the number removed.
     pub fn clear(&self) -> usize {
-        let mut pending = self.pending.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let count = pending.len();
         pending.clear();
         count
