@@ -24,6 +24,9 @@ pub mod tool_group;
 pub mod tool_sandbox;
 pub mod tool_version;
 pub mod transport;
+pub mod transport_failover;
+pub mod transport_layer;
+pub mod transport_monitor;
 
 pub use audit::{AuditEntry, AuditEntryBuilder, AuditOutcome, McpAuditLog};
 pub use capability::{
@@ -37,6 +40,9 @@ pub use handshake::{
     HandshakeConfig, HandshakeError, HandshakeProtocol, HandshakeResult, HandshakeState,
 };
 
+pub use cancellation::{
+    CancellationParams, CancellationReason, CancellationRegistry, CancellationToken,
+};
 pub use health::{
     AutoReconnect, HealthChecker, HealthCheckerConfig, HealthStatus, Heartbeat, ReconnectConfig,
 };
@@ -46,6 +52,10 @@ pub use negotiation::{
     CompatibilityCheck, CompatibilityRegistry, NegotiationResult, ProtocolVersion, VersionRange,
     negotiate_version, negotiate_version_range,
 };
+pub use notification::{
+    McpNotification, NotificationHandler, NotificationQueue, NotificationRouter,
+};
+pub use progress::{ProgressCallback, ProgressNotification, ProgressToken, ProgressTracker};
 pub use protocol::{
     ClientCapabilities, ClientInfo, InitializeParams, InitializeResult, JsonRpcError,
     JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, McpPrompt, McpResource, McpToolDef,
@@ -67,7 +77,9 @@ pub use tool_sandbox::{
     McpPermissionBoundary, McpToolSandbox, PermissionLevel, SandboxPolicy, SandboxVerdict,
 };
 pub use tool_version::{ToolVersion, ToolVersionRegistry, VersionedTool};
-pub use cancellation::{CancellationParams, CancellationReason, CancellationRegistry, CancellationToken};
-pub use notification::{McpNotification, NotificationHandler, NotificationQueue, NotificationRouter};
-pub use progress::{ProgressCallback, ProgressNotification, ProgressToken, ProgressTracker};
 pub use transport::Transport;
+pub use transport_failover::{FailoverConfig, FailoverState, TransportFailover};
+pub use transport_layer::{MetricsSnapshot, TransportConfig, TransportMetrics, TransportType};
+pub use transport_monitor::{
+    AlertLevel, HealthSnapshot, MonitorAlert, MonitorThresholds, TransportMonitor,
+};

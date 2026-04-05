@@ -130,12 +130,10 @@ impl CancellationRegistry {
     /// Cancel a request by ID with a reason. Returns true if the request was found.
     pub fn cancel(&self, request_id: &str, reason: CancellationReason) -> bool {
         let tokens = self.tokens.lock().unwrap();
-        if let Some(token) = tokens.get(request_id) {
+        tokens.get(request_id).is_some_and(|token| {
             token.cancel(reason);
             true
-        } else {
-            false
-        }
+        })
     }
 
     /// Check if a request has been cancelled.
@@ -144,7 +142,7 @@ impl CancellationRegistry {
         let tokens = self.tokens.lock().unwrap();
         tokens
             .get(request_id)
-            .is_some_and(|t| t.is_cancelled())
+            .is_some_and(CancellationToken::is_cancelled)
     }
 
     /// Remove a request from the registry (e.g., after completion).
@@ -199,7 +197,10 @@ mod tests {
 
     #[test]
     fn cancellation_reason_display() {
-        assert_eq!(CancellationReason::UserRequested.to_string(), "user requested");
+        assert_eq!(
+            CancellationReason::UserRequested.to_string(),
+            "user requested"
+        );
         assert_eq!(CancellationReason::Timeout.to_string(), "timeout");
         assert_eq!(CancellationReason::Disconnected.to_string(), "disconnected");
         assert_eq!(CancellationReason::Superseded.to_string(), "superseded");

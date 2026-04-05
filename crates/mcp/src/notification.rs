@@ -47,25 +47,25 @@ impl McpNotification {
         }
     }
 
-    /// Create a tools/list_changed notification.
+    /// Create a `tools/list_changed` notification.
     #[must_use]
     pub fn tools_list_changed() -> Self {
         Self::new(methods::TOOLS_LIST_CHANGED)
     }
 
-    /// Create a resources/list_changed notification.
+    /// Create a `resources/list_changed` notification.
     #[must_use]
     pub fn resources_list_changed() -> Self {
         Self::new(methods::RESOURCES_LIST_CHANGED)
     }
 
-    /// Create a prompts/list_changed notification.
+    /// Create a `prompts/list_changed` notification.
     #[must_use]
     pub fn prompts_list_changed() -> Self {
         Self::new(methods::PROMPTS_LIST_CHANGED)
     }
 
-    /// Create a roots/list_changed notification.
+    /// Create a `roots/list_changed` notification.
     #[must_use]
     pub fn roots_list_changed() -> Self {
         Self::new(methods::ROOTS_LIST_CHANGED)
@@ -129,20 +129,16 @@ impl NotificationRouter {
     }
 
     /// Register a handler for a specific method.
-    pub fn register(
-        &mut self,
-        method: impl Into<String>,
-        handler: Arc<dyn NotificationHandler>,
-    ) {
+    pub fn register(&mut self, method: impl Into<String>, handler: Arc<dyn NotificationHandler>) {
         self.handlers.insert(method.into(), handler);
     }
 
     /// Route a notification to its handler.
     pub fn route(&self, notification: &McpNotification) -> Result<(), String> {
-        match self.handlers.get(&notification.method) {
-            Some(handler) => handler.handle(notification.params.as_ref()),
-            None => Ok(()), // Unhandled notifications are silently ignored per MCP spec
-        }
+        self.handlers.get(&notification.method).map_or(
+            Ok(()), // Unhandled notifications are silently ignored per MCP spec
+            |handler| handler.handle(notification.params.as_ref()),
+        )
     }
 
     /// Check if a handler is registered for a method.
@@ -264,10 +260,22 @@ mod tests {
 
     #[test]
     fn notification_factories() {
-        assert_eq!(McpNotification::tools_list_changed().method, methods::TOOLS_LIST_CHANGED);
-        assert_eq!(McpNotification::resources_list_changed().method, methods::RESOURCES_LIST_CHANGED);
-        assert_eq!(McpNotification::prompts_list_changed().method, methods::PROMPTS_LIST_CHANGED);
-        assert_eq!(McpNotification::roots_list_changed().method, methods::ROOTS_LIST_CHANGED);
+        assert_eq!(
+            McpNotification::tools_list_changed().method,
+            methods::TOOLS_LIST_CHANGED
+        );
+        assert_eq!(
+            McpNotification::resources_list_changed().method,
+            methods::RESOURCES_LIST_CHANGED
+        );
+        assert_eq!(
+            McpNotification::prompts_list_changed().method,
+            methods::PROMPTS_LIST_CHANGED
+        );
+        assert_eq!(
+            McpNotification::roots_list_changed().method,
+            methods::ROOTS_LIST_CHANGED
+        );
     }
 
     #[test]
@@ -294,7 +302,10 @@ mod tests {
     fn router_dispatch() {
         let mut router = NotificationRouter::new();
         let handler = Arc::new(RecordingHandler::new());
-        router.register("test/method", Arc::clone(&handler) as Arc<dyn NotificationHandler>);
+        router.register(
+            "test/method",
+            Arc::clone(&handler) as Arc<dyn NotificationHandler>,
+        );
 
         let n = McpNotification::new("test/method");
         router.route(&n).unwrap();

@@ -244,8 +244,7 @@ impl ProgressTracker {
     /// Whether the operation is complete (progress >= total).
     #[must_use]
     pub fn is_complete(&self) -> bool {
-        self.total
-            .is_some_and(|t| self.current >= t)
+        self.total.is_some_and(|t| self.current >= t)
     }
 
     /// Elapsed time since the tracker was created.
@@ -257,7 +256,7 @@ impl ProgressTracker {
     fn build_notification(&self) -> ProgressNotification {
         let mut n = ProgressNotification::new(self.token.clone(), self.current);
         n.total = self.total;
-        n.message = self.message.clone();
+        n.message.clone_from(&self.message);
         n
     }
 }
