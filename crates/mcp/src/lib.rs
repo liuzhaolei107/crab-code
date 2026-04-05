@@ -2,11 +2,14 @@ pub mod audit;
 pub mod client;
 #[cfg(test)]
 mod compliance_tests;
+pub mod capability;
 pub mod connection_pool;
 pub mod discovery;
+pub mod handshake;
 pub mod health;
 pub mod logging;
 pub mod manager;
+pub mod negotiation;
 pub mod protocol;
 pub mod resource;
 pub mod roots;
@@ -20,10 +23,15 @@ pub mod tool_version;
 pub mod transport;
 
 pub use audit::{AuditEntry, AuditEntryBuilder, AuditOutcome, McpAuditLog};
+pub use capability::{
+    CapabilityEntry, CapabilityRegistry, McpClientCapabilities, McpServerCapabilities,
+    NegotiatedCapabilities,
+};
 pub use client::McpClient;
 pub use connection_pool::{ConnectionPool, ConnectionState, ConnectionSummary, PoolConfig};
-
 pub use discovery::{McpServerConfig, McpTransportConfig, connect_server, parse_mcp_servers};
+pub use handshake::{HandshakeConfig, HandshakeError, HandshakeProtocol, HandshakeResult, HandshakeState};
+
 pub use manager::{DiscoveredTool, McpManager};
 pub use protocol::{
     ClientCapabilities, ClientInfo, InitializeParams, InitializeResult, JsonRpcError,
@@ -32,6 +40,10 @@ pub use protocol::{
 };
 pub use health::{AutoReconnect, HealthChecker, HealthCheckerConfig, HealthStatus, Heartbeat, ReconnectConfig};
 pub use logging::{McpLogEntry, McpLogLevel, McpLogger};
+pub use negotiation::{
+    CompatibilityCheck, CompatibilityRegistry, NegotiationResult, ProtocolVersion, VersionRange,
+    negotiate_version, negotiate_version_range,
+};
 pub use resource::ResourceCache;
 pub use roots::{RootInfo, RootRegistry};
 pub use sampling::{SamplingHandler, SamplingRequest, SamplingResponse, StopReason};
