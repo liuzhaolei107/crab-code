@@ -1,6 +1,8 @@
 pub mod ansi;
 pub mod autocomplete;
 pub mod code_block;
+pub mod command_palette;
+pub mod context_menu;
 pub mod cost_bar;
 pub mod dialog;
 pub mod diff;
@@ -12,6 +14,7 @@ pub mod markdown_enhanced;
 pub mod notification;
 pub mod search;
 pub mod select;
+pub mod shortcut_hint;
 pub mod session_panel;
 pub mod spinner;
 pub mod status_bar;

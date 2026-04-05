@@ -158,7 +158,7 @@ pub fn compute_diff_lines(old: &str, new: &str) -> Vec<DiffLine> {
 }
 
 /// Compute character-level inline diff between two strings.
-/// Returns (old_fragments, new_fragments).
+/// Returns (`old_fragments`, `new_fragments`).
 #[must_use]
 pub fn compute_inline_diff(
     old: &str,
@@ -203,12 +203,11 @@ pub fn compute_inline_diff(
 fn coalesce_fragments(frags: Vec<InlineFragment>) -> Vec<InlineFragment> {
     let mut result: Vec<InlineFragment> = Vec::new();
     for f in frags {
-        if let Some(last) = result.last_mut() {
-            if last.kind == f.kind {
+        if let Some(last) = result.last_mut()
+            && last.kind == f.kind {
                 last.text.push_str(&f.text);
                 continue;
             }
-        }
         result.push(f);
     }
     result
@@ -228,21 +227,18 @@ pub fn detect_hunks(diff_lines: &[DiffLine]) -> Vec<DiffHunk> {
     let mut hunks = Vec::new();
     let mut i = 0;
     while i < diff_lines.len() {
-        match &diff_lines[i] {
-            DiffLine::Context { .. } => {
+        if let DiffLine::Context { .. } = &diff_lines[i] {
+            i += 1;
+        } else {
+            let start = i;
+            while i < diff_lines.len() && !matches!(&diff_lines[i], DiffLine::Context { .. })
+            {
                 i += 1;
             }
-            _ => {
-                let start = i;
-                while i < diff_lines.len() && !matches!(&diff_lines[i], DiffLine::Context { .. })
-                {
-                    i += 1;
-                }
-                hunks.push(DiffHunk {
-                    start_index: start,
-                    length: i - start,
-                });
-            }
+            hunks.push(DiffHunk {
+                start_index: start,
+                length: i - start,
+            });
         }
     }
     hunks
@@ -450,7 +446,7 @@ impl<'t> SplitDiffView<'t> {
                 let mut spans = Vec::new();
                 if self.config.line_numbers {
                     spans.push(Span::styled(
-                        format!("{:>4} ", line_num_old),
+                        format!("{line_num_old:>4} "),
                         num_style,
                     ));
                 }
@@ -463,7 +459,7 @@ impl<'t> SplitDiffView<'t> {
                 let mut spans = Vec::new();
                 if self.config.line_numbers {
                     spans.push(Span::styled(
-                        format!("{:>4} ", line_num_old),
+                        format!("{line_num_old:>4} "),
                         num_style,
                     ));
                 }
@@ -487,7 +483,7 @@ impl<'t> SplitDiffView<'t> {
                 let mut spans = Vec::new();
                 if self.config.line_numbers {
                     spans.push(Span::styled(
-                        format!("{:>4} ", line_num_old),
+                        format!("{line_num_old:>4} "),
                         num_style,
                     ));
                 }
@@ -524,7 +520,7 @@ impl<'t> SplitDiffView<'t> {
                 let mut spans = Vec::new();
                 if self.config.line_numbers {
                     spans.push(Span::styled(
-                        format!("{:>4} ", line_num_new),
+                        format!("{line_num_new:>4} "),
                         num_style,
                     ));
                 }
@@ -537,7 +533,7 @@ impl<'t> SplitDiffView<'t> {
                 let mut spans = Vec::new();
                 if self.config.line_numbers {
                     spans.push(Span::styled(
-                        format!("{:>4} ", line_num_new),
+                        format!("{line_num_new:>4} "),
                         num_style,
                     ));
                 }
@@ -561,7 +557,7 @@ impl<'t> SplitDiffView<'t> {
                 let mut spans = Vec::new();
                 if self.config.line_numbers {
                     spans.push(Span::styled(
-                        format!("{:>4} ", line_num_new),
+                        format!("{line_num_new:>4} "),
                         num_style,
                     ));
                 }
