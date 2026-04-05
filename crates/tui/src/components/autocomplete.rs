@@ -3,7 +3,7 @@
 //! Provides an `AutoComplete` engine that generates completion candidates
 //! based on the current input context (slash command or file path).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A single completion candidate.
 #[derive(Debug, Clone, PartialEq, Eq)]
