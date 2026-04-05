@@ -91,7 +91,11 @@ impl McpLogEntry {
 
     /// Create a structured log entry.
     #[must_use]
-    pub fn structured(level: McpLogLevel, logger: impl Into<String>, data: serde_json::Value) -> Self {
+    pub fn structured(
+        level: McpLogLevel,
+        logger: impl Into<String>,
+        data: serde_json::Value,
+    ) -> Self {
         Self {
             level,
             logger: logger.into(),

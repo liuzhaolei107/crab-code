@@ -198,10 +198,7 @@ pub struct NegotiatedCapabilities {
 impl NegotiatedCapabilities {
     /// Compute the intersection of server and client capabilities.
     #[must_use]
-    pub fn negotiate(
-        server: &McpServerCapabilities,
-        client: &McpClientCapabilities,
-    ) -> Self {
+    pub fn negotiate(server: &McpServerCapabilities, client: &McpClientCapabilities) -> Self {
         Self {
             tools: server.tools.enabled && client.tools.enabled,
             resources: server.resources.enabled && client.resources.enabled,
@@ -293,9 +290,7 @@ impl CapabilityRegistry {
     /// Check if a capability is enabled.
     #[must_use]
     pub fn is_enabled(&self, name: &str) -> bool {
-        self.capabilities
-            .get(name)
-            .is_some_and(|e| e.enabled)
+        self.capabilities.get(name).is_some_and(|e| e.enabled)
     }
 
     /// Get a capability entry.
@@ -386,10 +381,10 @@ mod tests {
         let neg = NegotiatedCapabilities::negotiate(&server, &client);
         assert!(neg.tools);
         assert!(!neg.resources); // server yes, client no
-        assert!(!neg.prompts);   // server no, client yes
-        assert!(neg.sampling);    // both yes
-        assert!(!neg.roots);     // server no
-        assert!(neg.logging);     // server-only
+        assert!(!neg.prompts); // server no, client yes
+        assert!(neg.sampling); // both yes
+        assert!(!neg.roots); // server no
+        assert!(neg.logging); // server-only
     }
 
     #[test]

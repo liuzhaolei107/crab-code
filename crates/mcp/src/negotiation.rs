@@ -198,10 +198,11 @@ pub fn negotiate_version_range(
     client_range: &VersionRange,
     server_range: &VersionRange,
 ) -> NegotiationResult {
-    client_range.intersect(server_range).map_or(
-        NegotiationResult::NoCommonVersion,
-        |intersection| NegotiationResult::Agreed(intersection.max),
-    )
+    client_range
+        .intersect(server_range)
+        .map_or(NegotiationResult::NoCommonVersion, |intersection| {
+            NegotiationResult::Agreed(intersection.max)
+        })
 }
 
 /// Check if a specific feature is available at a given protocol version.
@@ -277,7 +278,10 @@ impl CompatibilityRegistry {
     /// Get all registered feature names.
     #[must_use]
     pub fn all_features(&self) -> Vec<&str> {
-        self.checks.iter().map(CompatibilityCheck::feature_name).collect()
+        self.checks
+            .iter()
+            .map(CompatibilityCheck::feature_name)
+            .collect()
     }
 }
 
@@ -326,10 +330,7 @@ mod tests {
 
     #[test]
     fn version_range_contains() {
-        let r = VersionRange::new(
-            ProtocolVersion::new(1, 0, 0),
-            ProtocolVersion::new(2, 0, 0),
-        );
+        let r = VersionRange::new(ProtocolVersion::new(1, 0, 0), ProtocolVersion::new(2, 0, 0));
         assert!(r.contains(&ProtocolVersion::new(1, 5, 0)));
         assert!(r.contains(&ProtocolVersion::new(1, 0, 0)));
         assert!(r.contains(&ProtocolVersion::new(2, 0, 0)));
@@ -346,32 +347,17 @@ mod tests {
 
     #[test]
     fn version_range_overlaps() {
-        let r1 = VersionRange::new(
-            ProtocolVersion::new(1, 0, 0),
-            ProtocolVersion::new(2, 0, 0),
-        );
-        let r2 = VersionRange::new(
-            ProtocolVersion::new(1, 5, 0),
-            ProtocolVersion::new(3, 0, 0),
-        );
-        let r3 = VersionRange::new(
-            ProtocolVersion::new(3, 0, 0),
-            ProtocolVersion::new(4, 0, 0),
-        );
+        let r1 = VersionRange::new(ProtocolVersion::new(1, 0, 0), ProtocolVersion::new(2, 0, 0));
+        let r2 = VersionRange::new(ProtocolVersion::new(1, 5, 0), ProtocolVersion::new(3, 0, 0));
+        let r3 = VersionRange::new(ProtocolVersion::new(3, 0, 0), ProtocolVersion::new(4, 0, 0));
         assert!(r1.overlaps(&r2));
         assert!(!r1.overlaps(&r3));
     }
 
     #[test]
     fn version_range_intersect() {
-        let r1 = VersionRange::new(
-            ProtocolVersion::new(1, 0, 0),
-            ProtocolVersion::new(2, 0, 0),
-        );
-        let r2 = VersionRange::new(
-            ProtocolVersion::new(1, 5, 0),
-            ProtocolVersion::new(3, 0, 0),
-        );
+        let r1 = VersionRange::new(ProtocolVersion::new(1, 0, 0), ProtocolVersion::new(2, 0, 0));
+        let r2 = VersionRange::new(ProtocolVersion::new(1, 5, 0), ProtocolVersion::new(3, 0, 0));
         let i = r1.intersect(&r2).unwrap();
         assert_eq!(i.min, ProtocolVersion::new(1, 5, 0));
         assert_eq!(i.max, ProtocolVersion::new(2, 0, 0));
@@ -379,38 +365,26 @@ mod tests {
 
     #[test]
     fn version_range_no_intersect() {
-        let r1 = VersionRange::new(
-            ProtocolVersion::new(1, 0, 0),
-            ProtocolVersion::new(1, 9, 0),
-        );
-        let r2 = VersionRange::new(
-            ProtocolVersion::new(2, 0, 0),
-            ProtocolVersion::new(3, 0, 0),
-        );
+        let r1 = VersionRange::new(ProtocolVersion::new(1, 0, 0), ProtocolVersion::new(1, 9, 0));
+        let r2 = VersionRange::new(ProtocolVersion::new(2, 0, 0), ProtocolVersion::new(3, 0, 0));
         assert!(r1.intersect(&r2).is_none());
     }
 
     #[test]
     fn version_range_display() {
-        let r = VersionRange::new(
-            ProtocolVersion::new(1, 0, 0),
-            ProtocolVersion::new(2, 0, 0),
-        );
+        let r = VersionRange::new(ProtocolVersion::new(1, 0, 0), ProtocolVersion::new(2, 0, 0));
         assert_eq!(r.to_string(), "[1.0.0, 2.0.0]");
     }
 
     #[test]
     fn negotiate_version_success() {
-        let client = vec![
-            ProtocolVersion::new(1, 0, 0),
-            ProtocolVersion::new(2, 0, 0),
-        ];
-        let server = vec![
-            ProtocolVersion::new(2, 0, 0),
-            ProtocolVersion::new(3, 0, 0),
-        ];
+        let client = vec![ProtocolVersion::new(1, 0, 0), ProtocolVersion::new(2, 0, 0)];
+        let server = vec![ProtocolVersion::new(2, 0, 0), ProtocolVersion::new(3, 0, 0)];
         let result = negotiate_version(&client, &server);
-        assert_eq!(result, NegotiationResult::Agreed(ProtocolVersion::new(2, 0, 0)));
+        assert_eq!(
+            result,
+            NegotiationResult::Agreed(ProtocolVersion::new(2, 0, 0))
+        );
         assert!(result.is_agreed());
     }
 
@@ -444,14 +418,10 @@ mod tests {
 
     #[test]
     fn negotiate_version_range_success() {
-        let client = VersionRange::new(
-            ProtocolVersion::new(1, 0, 0),
-            ProtocolVersion::new(2, 5, 0),
-        );
-        let server = VersionRange::new(
-            ProtocolVersion::new(2, 0, 0),
-            ProtocolVersion::new(3, 0, 0),
-        );
+        let client =
+            VersionRange::new(ProtocolVersion::new(1, 0, 0), ProtocolVersion::new(2, 5, 0));
+        let server =
+            VersionRange::new(ProtocolVersion::new(2, 0, 0), ProtocolVersion::new(3, 0, 0));
         let result = negotiate_version_range(&client, &server);
         // Picks max of intersection: 2.5.0
         assert_eq!(result.version(), Some(ProtocolVersion::new(2, 5, 0)));
@@ -459,14 +429,10 @@ mod tests {
 
     #[test]
     fn negotiate_version_range_no_overlap() {
-        let client = VersionRange::new(
-            ProtocolVersion::new(1, 0, 0),
-            ProtocolVersion::new(1, 9, 0),
-        );
-        let server = VersionRange::new(
-            ProtocolVersion::new(2, 0, 0),
-            ProtocolVersion::new(3, 0, 0),
-        );
+        let client =
+            VersionRange::new(ProtocolVersion::new(1, 0, 0), ProtocolVersion::new(1, 9, 0));
+        let server =
+            VersionRange::new(ProtocolVersion::new(2, 0, 0), ProtocolVersion::new(3, 0, 0));
         assert_eq!(
             negotiate_version_range(&client, &server),
             NegotiationResult::NoCommonVersion
@@ -485,9 +451,18 @@ mod tests {
     #[test]
     fn compatibility_registry() {
         let mut reg = CompatibilityRegistry::new();
-        reg.register(CompatibilityCheck::new("tools", ProtocolVersion::new(1, 0, 0)));
-        reg.register(CompatibilityCheck::new("sampling", ProtocolVersion::new(2, 0, 0)));
-        reg.register(CompatibilityCheck::new("roots", ProtocolVersion::new(2, 1, 0)));
+        reg.register(CompatibilityCheck::new(
+            "tools",
+            ProtocolVersion::new(1, 0, 0),
+        ));
+        reg.register(CompatibilityCheck::new(
+            "sampling",
+            ProtocolVersion::new(2, 0, 0),
+        ));
+        reg.register(CompatibilityCheck::new(
+            "roots",
+            ProtocolVersion::new(2, 1, 0),
+        ));
 
         let v1 = ProtocolVersion::new(1, 5, 0);
         assert_eq!(reg.available_features(&v1), vec!["tools"]);

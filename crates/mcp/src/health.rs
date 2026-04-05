@@ -322,8 +322,7 @@ impl Heartbeat {
     /// Whether it's time to send a heartbeat.
     #[must_use]
     pub fn should_send(&self) -> bool {
-        self.last_sent
-            .is_none_or(|t| t.elapsed() >= self.interval)
+        self.last_sent.is_none_or(|t| t.elapsed() >= self.interval)
     }
 
     /// Record that a heartbeat was sent.
@@ -346,9 +345,7 @@ impl Heartbeat {
     #[must_use]
     pub fn is_dead(&self) -> bool {
         self.last_sent.is_some_and(|sent| {
-            let no_response = self
-                .last_received
-                .is_none_or(|recv| recv < sent);
+            let no_response = self.last_received.is_none_or(|recv| recv < sent);
             no_response && sent.elapsed() >= self.timeout
         })
     }
@@ -415,20 +412,26 @@ mod tests {
 
     #[test]
     fn checker_record_success_degraded() {
-        let mut hc = HealthChecker::new("s", HealthCheckerConfig {
-            degraded_threshold: Duration::from_secs(1),
-            ..Default::default()
-        });
+        let mut hc = HealthChecker::new(
+            "s",
+            HealthCheckerConfig {
+                degraded_threshold: Duration::from_secs(1),
+                ..Default::default()
+            },
+        );
         let result = hc.record_success(Duration::from_secs(2));
         assert_eq!(result.status, HealthStatus::Degraded);
     }
 
     #[test]
     fn checker_record_failure_below_threshold() {
-        let mut hc = HealthChecker::new("s", HealthCheckerConfig {
-            failure_threshold: 3,
-            ..Default::default()
-        });
+        let mut hc = HealthChecker::new(
+            "s",
+            HealthCheckerConfig {
+                failure_threshold: 3,
+                ..Default::default()
+            },
+        );
         let r = hc.record_failure("timeout");
         assert_eq!(r.status, HealthStatus::Degraded);
         assert_eq!(hc.consecutive_failures(), 1);
@@ -436,10 +439,13 @@ mod tests {
 
     #[test]
     fn checker_record_failure_at_threshold() {
-        let mut hc = HealthChecker::new("s", HealthCheckerConfig {
-            failure_threshold: 2,
-            ..Default::default()
-        });
+        let mut hc = HealthChecker::new(
+            "s",
+            HealthCheckerConfig {
+                failure_threshold: 2,
+                ..Default::default()
+            },
+        );
         hc.record_failure("fail 1");
         let r = hc.record_failure("fail 2");
         assert_eq!(r.status, HealthStatus::Unreachable);
@@ -459,10 +465,13 @@ mod tests {
 
     #[test]
     fn checker_is_check_due_after_check() {
-        let mut hc = HealthChecker::new("s", HealthCheckerConfig {
-            interval: Duration::from_secs(3600), // 1 hour
-            ..Default::default()
-        });
+        let mut hc = HealthChecker::new(
+            "s",
+            HealthCheckerConfig {
+                interval: Duration::from_secs(3600), // 1 hour
+                ..Default::default()
+            },
+        );
         assert!(hc.is_check_due());
         hc.record_success(Duration::from_millis(10));
         assert!(!hc.is_check_due()); // Just checked, not due yet
@@ -479,12 +488,15 @@ mod tests {
 
     #[test]
     fn reconnect_exponential_backoff() {
-        let mut ar = AutoReconnect::new("s", ReconnectConfig {
-            initial_delay: Duration::from_secs(1),
-            max_delay: Duration::from_secs(60),
-            multiplier: 2.0,
-            max_attempts: 5,
-        });
+        let mut ar = AutoReconnect::new(
+            "s",
+            ReconnectConfig {
+                initial_delay: Duration::from_secs(1),
+                max_delay: Duration::from_secs(60),
+                multiplier: 2.0,
+                max_attempts: 5,
+            },
+        );
 
         let d1 = ar.connection_lost().unwrap();
         assert_eq!(d1, Duration::from_secs(1));
@@ -499,12 +511,15 @@ mod tests {
 
     #[test]
     fn reconnect_delay_capped_at_max() {
-        let mut ar = AutoReconnect::new("s", ReconnectConfig {
-            initial_delay: Duration::from_secs(30),
-            max_delay: Duration::from_secs(60),
-            multiplier: 2.0,
-            max_attempts: 10,
-        });
+        let mut ar = AutoReconnect::new(
+            "s",
+            ReconnectConfig {
+                initial_delay: Duration::from_secs(30),
+                max_delay: Duration::from_secs(60),
+                multiplier: 2.0,
+                max_attempts: 10,
+            },
+        );
 
         let _ = ar.connection_lost(); // 30s
         let d = ar.connection_lost().unwrap(); // 60s (capped)
@@ -516,10 +531,13 @@ mod tests {
 
     #[test]
     fn reconnect_gives_up_after_max_attempts() {
-        let mut ar = AutoReconnect::new("s", ReconnectConfig {
-            max_attempts: 2,
-            ..Default::default()
-        });
+        let mut ar = AutoReconnect::new(
+            "s",
+            ReconnectConfig {
+                max_attempts: 2,
+                ..Default::default()
+            },
+        );
 
         assert!(ar.connection_lost().is_some()); // attempt 1
         assert!(ar.connection_lost().is_some()); // attempt 2
@@ -592,10 +610,7 @@ mod tests {
 
     #[test]
     fn heartbeat_not_dead_after_response() {
-        let mut hb = Heartbeat::new(
-            Duration::from_millis(10),
-            Duration::from_millis(1),
-        );
+        let mut hb = Heartbeat::new(Duration::from_millis(10), Duration::from_millis(1));
         hb.mark_sent();
         hb.mark_received(); // Response came in
         // Even after timeout, last_received >= last_sent

@@ -343,7 +343,10 @@ mod tests {
         pool.mark_connected("server-a");
         let summaries = pool.summaries();
         assert_eq!(summaries.len(), 2);
-        let sa = summaries.iter().find(|s| s.server_name == "server-a").unwrap();
+        let sa = summaries
+            .iter()
+            .find(|s| s.server_name == "server-a")
+            .unwrap();
         assert_eq!(sa.state, ConnectionState::Active);
         assert_eq!(sa.health_status, HealthStatus::Healthy);
     }

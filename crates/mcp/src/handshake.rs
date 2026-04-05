@@ -159,12 +159,10 @@ impl HandshakeProtocol {
                 self.started_at = Some(Instant::now());
                 Ok(())
             }
-            HandshakeState::Negotiating => Err(HandshakeError::InvalidState(
-                "already negotiating".into(),
-            )),
-            HandshakeState::Ready => Err(HandshakeError::InvalidState(
-                "already completed".into(),
-            )),
+            HandshakeState::Negotiating => {
+                Err(HandshakeError::InvalidState("already negotiating".into()))
+            }
+            HandshakeState::Ready => Err(HandshakeError::InvalidState("already completed".into())),
         }
     }
 
@@ -235,8 +233,7 @@ impl HandshakeProtocol {
     #[must_use]
     pub fn is_terminal(&self) -> bool {
         self.state == HandshakeState::Ready
-            || (self.state == HandshakeState::Failed
-                && self.attempt >= self.config.max_retries)
+            || (self.state == HandshakeState::Failed && self.attempt >= self.config.max_retries)
     }
 }
 

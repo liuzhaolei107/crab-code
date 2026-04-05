@@ -39,9 +39,7 @@ impl RootInfo {
     #[must_use]
     pub fn from_path(path: &Path) -> Self {
         let uri = path_to_file_uri(path);
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned());
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
         Self { uri, name }
     }
 

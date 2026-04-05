@@ -188,7 +188,11 @@ pub struct SamplingResponse {
 impl SamplingResponse {
     /// Create a text response.
     #[must_use]
-    pub fn text(model: impl Into<String>, text: impl Into<String>, stop_reason: StopReason) -> Self {
+    pub fn text(
+        model: impl Into<String>,
+        text: impl Into<String>,
+        stop_reason: StopReason,
+    ) -> Self {
         Self {
             role: SamplingRole::Assistant,
             content: SamplingContent::text(text),
@@ -307,7 +311,9 @@ mod tests {
         let req = SamplingRequest {
             messages: vec![SamplingMessage::user("hi")],
             model_preferences: Some(ModelPreferences {
-                hints: vec![ModelHint { name: Some("claude-3".into()) }],
+                hints: vec![ModelHint {
+                    name: Some("claude-3".into()),
+                }],
                 cost_priority: Some(0.5),
                 speed_priority: None,
                 intelligence_priority: Some(0.8),
