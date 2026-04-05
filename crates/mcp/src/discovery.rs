@@ -36,6 +36,9 @@ pub enum McpTransportConfig {
         #[serde(default)]
         args: Vec<String>,
     },
+    /// WebSocket transport — connect to a remote WS/WSS endpoint.
+    /// Config: `{ "ws_url": "ws://localhost:8080" }`
+    Ws { ws_url: String },
     /// SSE transport — connect to a remote HTTP SSE endpoint.
     Sse { url: String },
 }
@@ -95,6 +98,15 @@ pub async fn connect_server(config: &McpServerConfig) -> crab_common::Result<cra
                     .await?;
             crate::McpClient::connect(Box::new(transport), &config.name).await
         }
+        #[cfg(feature = "ws")]
+        McpTransportConfig::Ws { ws_url } => {
+            let transport = crate::transport::ws::WsTransport::connect(ws_url).await?;
+            crate::McpClient::connect(Box::new(transport), &config.name).await
+        }
+        #[cfg(not(feature = "ws"))]
+        McpTransportConfig::Ws { .. } => Err(crab_common::Error::Other(
+            "WebSocket transport requires the 'ws' feature".into(),
+        )),
         McpTransportConfig::Sse { url } => {
             let transport = crate::transport::sse::SseTransport::connect(url).await?;
             crate::McpClient::connect(Box::new(transport), &config.name).await
@@ -232,5 +244,54 @@ mod tests {
         assert_eq!(json["url"], "https://example.com/sse");
         // env should not appear when None
         assert!(json.get("env").is_none());
+    }
+
+    #[test]
+    fn parse_ws_config() {
+        let value = json!({
+            "ws-server": {
+                "ws_url": "ws://localhost:8080"
+            }
+        });
+
+        let configs = parse_mcp_servers(&value).unwrap();
+        assert_eq!(configs.len(), 1);
+        assert_eq!(configs[0].name, "ws-server");
+        assert!(matches!(
+            &configs[0].transport,
+            McpTransportConfig::Ws { ws_url } if ws_url == "ws://localhost:8080"
+        ));
+    }
+
+    #[test]
+    fn config_serde_roundtrip_ws() {
+        let config = McpServerConfig {
+            name: String::new(),
+            transport: McpTransportConfig::Ws {
+                ws_url: "wss://mcp.example.com/ws".into(),
+            },
+            env: None,
+        };
+
+        let json = serde_json::to_value(&config).unwrap();
+        assert_eq!(json["ws_url"], "wss://mcp.example.com/ws");
+        assert!(json.get("env").is_none());
+    }
+
+    #[test]
+    fn parse_mixed_transports() {
+        let value = json!({
+            "stdio-srv": { "command": "node", "args": ["server.js"] },
+            "sse-srv": { "url": "https://example.com/sse" },
+            "ws-srv": { "ws_url": "ws://localhost:9090" }
+        });
+
+        let configs = parse_mcp_servers(&value).unwrap();
+        assert_eq!(configs.len(), 3);
+
+        let names: Vec<&str> = configs.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"stdio-srv"));
+        assert!(names.contains(&"sse-srv"));
+        assert!(names.contains(&"ws-srv"));
     }
 }

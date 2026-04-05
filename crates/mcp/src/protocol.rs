@@ -270,6 +270,49 @@ pub struct McpPrompt {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arguments: Vec<PromptArgument>,
+}
+
+/// A prompt argument definition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptArgument {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub required: bool,
+}
+
+/// Parameters for `prompts/get`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptGetParams {
+    pub name: String,
+    #[serde(default)]
+    pub arguments: std::collections::HashMap<String, String>,
+}
+
+/// A message in a prompt result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptMessage {
+    pub role: String,
+    pub content: PromptMessageContent,
+}
+
+/// Content of a prompt message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PromptMessageContent {
+    Text { text: String },
+    Resource { resource: ResourceContent },
+}
+
+/// Result of `prompts/get`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptGetResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub messages: Vec<PromptMessage>,
 }
 
 // ─── Pagination ───
