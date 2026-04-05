@@ -169,12 +169,14 @@ impl RateLimitInfo {
     #[must_use]
     pub fn is_near_limit(&self) -> bool {
         if let (Some(remaining), Some(limit)) = (self.requests_remaining, self.requests_limit)
-            && limit > 0 && remaining * 10 < limit
+            && limit > 0
+            && remaining * 10 < limit
         {
             return true;
         }
         if let (Some(remaining), Some(limit)) = (self.tokens_remaining, self.tokens_limit)
-            && limit > 0 && remaining * 10 < limit
+            && limit > 0
+            && remaining * 10 < limit
         {
             return true;
         }

@@ -4,6 +4,7 @@
 //! `cost_estimate` computes dollar cost from known pricing tables.
 //! `SessionUsageReport` provides a human-readable summary.
 
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -65,6 +66,7 @@ fn known_pricing(model_id: &str) -> Option<ModelPricing> {
 ///
 /// Returns `None` if the model is not in the known pricing table.
 #[must_use]
+#[allow(clippy::cast_precision_loss, clippy::suboptimal_flops)]
 pub fn cost_estimate(model_id: &str, input_tokens: u64, output_tokens: u64) -> Option<f64> {
     let pricing = known_pricing(model_id)?;
     Some(
@@ -75,6 +77,7 @@ pub fn cost_estimate(model_id: &str, input_tokens: u64, output_tokens: u64) -> O
 
 /// Estimate cost including cache read tokens.
 #[must_use]
+#[allow(clippy::cast_precision_loss, clippy::suboptimal_flops)]
 pub fn cost_estimate_with_cache(
     model_id: &str,
     input_tokens: u64,
@@ -206,7 +209,7 @@ impl UsageStats {
     #[must_use]
     pub fn report(&self) -> SessionUsageReport {
         let mut by_model: Vec<ModelUsage> = self.by_model.values().cloned().collect();
-        by_model.sort_by(|a, b| b.total_tokens().cmp(&a.total_tokens()));
+        by_model.sort_by_key(|m| Reverse(m.total_tokens()));
 
         SessionUsageReport {
             total_input: self.total_input_tokens(),
