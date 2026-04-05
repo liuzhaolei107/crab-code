@@ -33,6 +33,7 @@ impl ToolVersion {
     /// `self` is at least as recent as `other` (i.e. `self >= other` within the
     /// same major line).
     #[must_use]
+    #[allow(clippy::suspicious_operation_groupings)] // intentional: compare tuples from both sides
     pub fn is_compatible_with(&self, other: &Self) -> bool {
         self.major == other.major && (self.minor, self.patch) >= (other.minor, other.patch)
     }
@@ -171,7 +172,7 @@ impl ToolVersionRegistry {
     #[must_use]
     pub fn satisfies(&self, name: &str, required: &ToolVersion) -> bool {
         self.get(name)
-            .map_or(false, |e| e.version.is_compatible_with(required))
+            .is_some_and(|e| e.version.is_compatible_with(required))
     }
 }
 

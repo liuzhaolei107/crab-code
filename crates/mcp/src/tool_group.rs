@@ -123,12 +123,12 @@ impl ToolIndex {
     }
 
     /// Search tools by keyword. Matches case-insensitively against name and
-    /// description. Multiple space-separated keywords are ANDed.
+    /// description. Multiple space-separated keywords are `ANDed`.
     #[must_use]
     pub fn search(&self, query: &str) -> Vec<&IndexedTool> {
         let keywords: Vec<String> = query
             .split_whitespace()
-            .map(|k| k.to_ascii_lowercase())
+            .map(str::to_ascii_lowercase)
             .collect();
         if keywords.is_empty() {
             return self.tools.iter().collect();
@@ -150,7 +150,7 @@ impl ToolIndex {
     pub fn search_in_group(&self, query: &str, group: ToolGroup) -> Vec<&IndexedTool> {
         let keywords: Vec<String> = query
             .split_whitespace()
-            .map(|k| k.to_ascii_lowercase())
+            .map(str::to_ascii_lowercase)
             .collect();
         self.tools
             .iter()
