@@ -59,7 +59,7 @@ mod tests {
     fn default_is_zero() {
         let acc = CostAccumulator::default();
         assert_eq!(acc.total_tokens(), 0);
-        assert_eq!(acc.total_cost_usd(), 0.0);
+        assert!(acc.total_cost_usd().abs() < f64::EPSILON);
         assert_eq!(acc.api_calls, 0);
         assert_eq!(acc.total_cache_tokens(), 0);
     }

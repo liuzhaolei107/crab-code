@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn parse_memory_file_basic() {
-        let content = r#"---
+        let content = r"---
 name: Test memory
 description: A test memory file
 type: user
@@ -210,7 +210,7 @@ type: user
 This is the body content.
 
 **Why:** because testing.
-"#;
+";
         let mem = MemoryStore::parse_memory_file(content).unwrap();
         assert_eq!(mem.name, "Test memory");
         assert_eq!(mem.description, "A test memory file");
