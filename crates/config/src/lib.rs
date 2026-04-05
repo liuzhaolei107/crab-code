@@ -4,6 +4,7 @@ pub mod feature_flag;
 pub mod hooks;
 pub mod hot_reload;
 pub mod keybinding;
+pub mod migration;
 pub mod permissions;
 pub mod policy;
 pub mod profile;
@@ -11,6 +12,7 @@ pub mod settings;
 
 pub use config_toml::ConfigToml;
 pub use hot_reload::ConfigWatcher;
+pub use migration::{CURRENT_VERSION, MigrationRunner};
 pub use permissions::PermissionRuleSet;
 pub use profile::{Profile, ProfileManager};
 pub use settings::Settings;
