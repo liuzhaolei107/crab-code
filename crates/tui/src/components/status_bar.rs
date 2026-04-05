@@ -121,14 +121,17 @@ impl StatusBar {
         let head_path = project_dir.join(".git").join("HEAD");
         let content = std::fs::read_to_string(head_path).ok()?;
         let content = content.trim();
-        if let Some(branch) = content.strip_prefix("ref: refs/heads/") {
-            Some(branch.to_string())
-        } else if content.len() >= 7 {
-            // Detached HEAD — show short hash
-            Some(content[..7].to_string())
-        } else {
-            None
-        }
+        content.strip_prefix("ref: refs/heads/").map_or_else(
+            || {
+                if content.len() >= 7 {
+                    // Detached HEAD — show short hash
+                    Some(content[..7].to_string())
+                } else {
+                    None
+                }
+            },
+            |branch| Some(branch.to_string()),
+        )
     }
 }
 
@@ -370,10 +373,7 @@ mod tests {
         assert!(content.contains("main"), "Missing branch in: {content}");
         assert!(content.contains("50.0k"), "Missing tokens in: {content}");
         assert!(content.contains("$0.08"), "Missing cost in: {content}");
-        assert!(
-            content.contains("5 calls"),
-            "Missing calls in: {content}"
-        );
+        assert!(content.contains("5 calls"), "Missing calls in: {content}");
     }
 
     #[test]

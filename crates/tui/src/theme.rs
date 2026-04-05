@@ -261,11 +261,10 @@ impl Theme {
     #[must_use]
     pub fn by_name(name: ThemeName) -> Self {
         match name {
-            ThemeName::Dark => Self::dark(),
             ThemeName::Light => Self::light(),
             ThemeName::Monokai => Self::monokai(),
             ThemeName::Solarized => Self::solarized(),
-            ThemeName::Custom => Self::dark(),
+            ThemeName::Dark | ThemeName::Custom => Self::dark(),
         }
     }
 

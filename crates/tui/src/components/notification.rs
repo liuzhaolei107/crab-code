@@ -93,7 +93,7 @@ impl Notification {
     #[must_use]
     pub fn is_expired(&self) -> bool {
         self.duration
-            .map_or(false, |d| self.created_at.elapsed() >= d)
+            .is_some_and(|d| self.created_at.elapsed() >= d)
     }
 
     /// Time remaining before expiry (None if no duration set or already expired).
@@ -219,7 +219,7 @@ impl NotificationManager {
         }
     }
 
-    /// Get visible active notifications (up to max_visible).
+    /// Get visible active notifications (up to `max_visible`).
     #[must_use]
     pub fn visible(&self) -> Vec<&Notification> {
         self.active.iter().take(self.max_visible).collect()
@@ -305,7 +305,10 @@ impl Widget for ToastRenderer<'_> {
             // Truncate message to fit
             let max_msg_len = (max_width as usize).saturating_sub(5); // icon + brackets + spaces
             let msg = if notification.message.len() > max_msg_len {
-                format!("{}...", &notification.message[..max_msg_len.saturating_sub(3)])
+                format!(
+                    "{}...",
+                    &notification.message[..max_msg_len.saturating_sub(3)]
+                )
             } else {
                 notification.message.clone()
             };
@@ -425,40 +428,37 @@ impl Widget for &ProgressIndicator {
             return;
         }
 
-        match self.progress {
-            Some(pct) => {
-                // Determinate: [========>   ] 75% label
-                let bar_width = (area.width as usize).saturating_sub(self.label.len() + 8);
-                let filled = (pct * bar_width as f64) as usize;
-                let empty = bar_width.saturating_sub(filled);
+        if let Some(pct) = self.progress {
+            // Determinate: [========>   ] 75% label
+            let bar_width = (area.width as usize).saturating_sub(self.label.len() + 8);
+            #[allow(clippy::cast_precision_loss)]
+            let filled = (pct * bar_width as f64) as usize;
+            let empty = bar_width.saturating_sub(filled);
 
-                let bar = format!(
-                    "[{}{}] {:>3}%",
-                    "=".repeat(filled.saturating_sub(1).max(0))
-                        + if filled > 0 { ">" } else { "" },
-                    " ".repeat(empty),
-                    (pct * 100.0) as u32
-                );
+            let bar = format!(
+                "[{}{}] {:>3}%",
+                "=".repeat(filled.saturating_sub(1).max(0)) + if filled > 0 { ">" } else { "" },
+                " ".repeat(empty),
+                (pct * 100.0) as u32
+            );
 
-                let line = Line::from(vec![
-                    Span::styled(bar, Style::default().fg(Color::Cyan)),
-                    Span::raw(" "),
-                    Span::styled(&self.label, Style::default().fg(Color::Gray)),
-                ]);
-                let line_area = Rect { height: 1, ..area };
-                Widget::render(line, line_area, buf);
-            }
-            None => {
-                // Indeterminate: spinner + label
-                let frame_char = PROGRESS_FRAMES[self.frame];
-                let line = Line::from(vec![
-                    Span::styled(frame_char, Style::default().fg(Color::Cyan)),
-                    Span::raw(" "),
-                    Span::styled(&self.label, Style::default().fg(Color::Gray)),
-                ]);
-                let line_area = Rect { height: 1, ..area };
-                Widget::render(line, line_area, buf);
-            }
+            let line = Line::from(vec![
+                Span::styled(bar, Style::default().fg(Color::Cyan)),
+                Span::raw(" "),
+                Span::styled(&self.label, Style::default().fg(Color::Gray)),
+            ]);
+            let line_area = Rect { height: 1, ..area };
+            Widget::render(line, line_area, buf);
+        } else {
+            // Indeterminate: spinner + label
+            let frame_char = PROGRESS_FRAMES[self.frame];
+            let line = Line::from(vec![
+                Span::styled(frame_char, Style::default().fg(Color::Cyan)),
+                Span::raw(" "),
+                Span::styled(&self.label, Style::default().fg(Color::Gray)),
+            ]);
+            let line_area = Rect { height: 1, ..area };
+            Widget::render(line, line_area, buf);
         }
     }
 }

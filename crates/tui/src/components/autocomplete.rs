@@ -179,9 +179,8 @@ impl AutoComplete {
             return;
         }
         self.selected = Some(match self.selected {
-            Some(0) => self.candidates.len() - 1,
+            Some(0) | None => self.candidates.len() - 1,
             Some(i) => i - 1,
-            None => self.candidates.len() - 1,
         });
     }
 
@@ -226,10 +225,10 @@ impl AutoComplete {
     }
 
     fn complete_file_paths(&mut self, token: &str) {
-        let path = if token.starts_with('~') {
+        let path = if let Some(stripped) = token.strip_prefix('~') {
             // Expand tilde
             if let Some(home) = home_dir() {
-                home.join(&token[1..].trim_start_matches(['/', '\\']))
+                home.join(stripped.trim_start_matches(['/', '\\']))
             } else {
                 return;
             }
@@ -265,7 +264,7 @@ impl AutoComplete {
                 continue;
             }
 
-            let is_dir = entry.file_type().map_or(false, |ft| ft.is_dir());
+            let is_dir = entry.file_type().is_ok_and(|ft| ft.is_dir());
             let display_path = if token.ends_with('/') || token.ends_with('\\') {
                 format!("{token}{name}")
             } else if let Some(last_sep) = token.rfind(['/', '\\']) {

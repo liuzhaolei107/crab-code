@@ -12,6 +12,7 @@ use crate::theme::{Theme, ThemeName};
 
 /// Options controlling enhanced markdown rendering.
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct RenderOptions {
     /// Show line numbers in code blocks.
     pub line_numbers: bool,
@@ -43,11 +44,10 @@ impl Default for RenderOptions {
 #[must_use]
 pub fn syntect_theme_for(name: ThemeName) -> &'static str {
     match name {
-        ThemeName::Dark => "base16-ocean.dark",
+        ThemeName::Dark | ThemeName::Custom => "base16-ocean.dark",
         ThemeName::Light => "base16-ocean.light",
         ThemeName::Monokai => "base16-mocha.dark",
         ThemeName::Solarized => "Solarized (dark)",
-        ThemeName::Custom => "base16-ocean.dark",
     }
 }
 
@@ -277,7 +277,14 @@ fn render_code_block(
     let num_width = if total_lines == 0 {
         1
     } else {
-        (total_lines as f64).log10().floor() as usize + 1
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss
+        )]
+        {
+            (total_lines as f64).log10().floor() as usize + 1
+        }
     };
 
     for (i, hl_line) in highlighted.into_iter().enumerate() {
@@ -439,8 +446,7 @@ impl<'t> EnhancedMarkdownRenderer<'t> {
                     Tag::TableHead => {
                         in_table_head = true;
                     }
-                    Tag::TableRow => {}
-                    Tag::TableCell => {}
+                    Tag::TableRow | Tag::TableCell => {}
                     _ => {}
                 },
 
