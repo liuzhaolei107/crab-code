@@ -8,6 +8,7 @@ pub mod anthropic;
 pub mod batch;
 pub mod cache;
 pub mod capabilities;
+pub mod context_optimizer;
 pub mod dedup;
 pub mod error;
 pub mod fallback;
