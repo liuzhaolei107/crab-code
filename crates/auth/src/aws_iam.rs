@@ -102,8 +102,7 @@ impl StsCredentials {
             .unwrap_or_default();
         let timestamp = now.as_secs();
         let date_stamp = format_date_stamp(timestamp);
-        let credential_scope =
-            format!("{date_stamp}/{}/{service}/aws4_request", self.region);
+        let credential_scope = format!("{date_stamp}/{}/{service}/aws4_request", self.region);
 
         format!(
             "AWS4-HMAC-SHA256 Credential={}/{credential_scope}, SignedHeaders=host;x-amz-date;x-amz-security-token, Signature=placeholder",
@@ -181,10 +180,7 @@ impl AssumeRoleProvider {
 
     /// Call STS `AssumeRole` API.
     async fn assume_role(&self) -> crab_common::Result<StsCredentials> {
-        let sts_url = format!(
-            "https://sts.{}.amazonaws.com/",
-            self.config.region
-        );
+        let sts_url = format!("https://sts.{}.amazonaws.com/", self.config.region);
 
         let mut params: Vec<(&str, &str)> = vec![
             ("Action", "AssumeRole"),
@@ -241,8 +237,7 @@ impl AssumeRoleProvider {
             secret_access_key: parsed.secret_access_key,
             session_token: parsed.session_token,
             region: self.config.region.clone(),
-            expires_at: Instant::now()
-                + Duration::from_secs(self.config.duration_secs),
+            expires_at: Instant::now() + Duration::from_secs(self.config.duration_secs),
         })
     }
 }
@@ -256,11 +251,12 @@ impl AuthProvider for AssumeRoleProvider {
             {
                 let guard = self.cached.lock().await;
                 if let Some(ref creds) = *guard
-                    && creds.is_valid() {
-                        return Ok(AuthMethod::OAuth(OAuthToken {
-                            access_token: creds.to_auth_header("bedrock"),
-                        }));
-                    }
+                    && creds.is_valid()
+                {
+                    return Ok(AuthMethod::OAuth(OAuthToken {
+                        access_token: creds.to_auth_header("bedrock"),
+                    }));
+                }
             }
 
             // Assume role
@@ -344,9 +340,7 @@ impl WebIdentityProvider {
             return std::fs::read_to_string(path)
                 .map(|t| t.trim().to_string())
                 .map_err(|e| {
-                    crab_common::Error::Auth(format!(
-                        "reading web identity token file {path}: {e}"
-                    ))
+                    crab_common::Error::Auth(format!("reading web identity token file {path}: {e}"))
                 });
         }
 
@@ -358,10 +352,7 @@ impl WebIdentityProvider {
     /// Call STS `AssumeRoleWithWebIdentity`.
     async fn assume_role_with_web_identity(&self) -> crab_common::Result<StsCredentials> {
         let token = self.read_token()?;
-        let sts_url = format!(
-            "https://sts.{}.amazonaws.com/",
-            self.config.region
-        );
+        let sts_url = format!("https://sts.{}.amazonaws.com/", self.config.region);
 
         let duration_str = self.config.duration_secs.to_string();
         let params: Vec<(&str, &str)> = vec![
@@ -408,8 +399,7 @@ impl WebIdentityProvider {
             secret_access_key: parsed.secret_access_key,
             session_token: parsed.session_token,
             region: self.config.region.clone(),
-            expires_at: Instant::now()
-                + Duration::from_secs(self.config.duration_secs),
+            expires_at: Instant::now() + Duration::from_secs(self.config.duration_secs),
         })
     }
 }
@@ -423,11 +413,12 @@ impl AuthProvider for WebIdentityProvider {
             {
                 let guard = self.cached.lock().await;
                 if let Some(ref creds) = *guard
-                    && creds.is_valid() {
-                        return Ok(AuthMethod::OAuth(OAuthToken {
-                            access_token: creds.to_auth_header("bedrock"),
-                        }));
-                    }
+                    && creds.is_valid()
+                {
+                    return Ok(AuthMethod::OAuth(OAuthToken {
+                        access_token: creds.to_auth_header("bedrock"),
+                    }));
+                }
             }
 
             let creds = self.assume_role_with_web_identity().await?;
@@ -493,9 +484,7 @@ fn build_sts_auth(
     let token_part = session_token
         .map(|t| format!(", X-Amz-Security-Token={t}"))
         .unwrap_or_default();
-    format!(
-        "AWS4-HMAC-SHA256 Credential={access_key_id}/sts/{region}/aws4_request{token_part}"
-    )
+    format!("AWS4-HMAC-SHA256 Credential={access_key_id}/sts/{region}/aws4_request{token_part}")
 }
 
 /// Format Unix timestamp as `YYYYMMDD`.
@@ -531,9 +520,8 @@ fn parse_assume_role_response(xml: &str) -> crab_common::Result<AssumeRoleRespon
     let secret_access_key = extract_xml_tag(xml, "SecretAccessKey").ok_or_else(|| {
         crab_common::Error::Auth("missing SecretAccessKey in STS response".into())
     })?;
-    let session_token = extract_xml_tag(xml, "SessionToken").ok_or_else(|| {
-        crab_common::Error::Auth("missing SessionToken in STS response".into())
-    })?;
+    let session_token = extract_xml_tag(xml, "SessionToken")
+        .ok_or_else(|| crab_common::Error::Auth("missing SessionToken in STS response".into()))?;
 
     Ok(AssumeRoleResponse {
         access_key_id,
@@ -690,10 +678,7 @@ mod tests {
 
     #[test]
     fn extract_xml_tag_empty() {
-        assert_eq!(
-            extract_xml_tag("<Tag></Tag>", "Tag"),
-            Some(String::new())
-        );
+        assert_eq!(extract_xml_tag("<Tag></Tag>", "Tag"), Some(String::new()));
     }
 
     #[test]
@@ -765,12 +750,7 @@ mod tests {
             role_arn: "arn:aws:iam::123:role/Test".into(),
             ..Default::default()
         };
-        let provider = AssumeRoleProvider::new(
-            config,
-            "AKIATEST".into(),
-            "secret".into(),
-            None,
-        );
+        let provider = AssumeRoleProvider::new(config, "AKIATEST".into(), "secret".into(), None);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(provider.refresh()).unwrap();
     }

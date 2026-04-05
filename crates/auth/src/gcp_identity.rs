@@ -144,9 +144,9 @@ impl WorkloadIdentityProvider {
             CredentialSource::Inline(token) => Ok(token.clone()),
 
             CredentialSource::File { path, format } => {
-                let content = tokio::fs::read_to_string(path)
-                    .await
-                    .map_err(|e| crab_common::Error::Auth(format!("reading credential file {path}: {e}")))?;
+                let content = tokio::fs::read_to_string(path).await.map_err(|e| {
+                    crab_common::Error::Auth(format!("reading credential file {path}: {e}"))
+                })?;
                 extract_token(&content, format)
             }
 
@@ -165,10 +165,9 @@ impl WorkloadIdentityProvider {
                     req = req.header(k.as_str(), v.as_str());
                 }
 
-                let resp: reqwest::Response = req
-                    .send()
-                    .await
-                    .map_err(|e| crab_common::Error::Auth(format!("fetching credential from {url}: {e}")))?;
+                let resp: reqwest::Response = req.send().await.map_err(|e| {
+                    crab_common::Error::Auth(format!("fetching credential from {url}: {e}"))
+                })?;
 
                 if !resp.status().is_success() {
                     return Err(crab_common::Error::Auth(format!(
@@ -177,10 +176,9 @@ impl WorkloadIdentityProvider {
                     )));
                 }
 
-                let body = resp
-                    .text()
-                    .await
-                    .map_err(|e| crab_common::Error::Auth(format!("reading credential response: {e}")))?;
+                let body = resp.text().await.map_err(|e| {
+                    crab_common::Error::Auth(format!("reading credential response: {e}"))
+                })?;
 
                 extract_token(&body, format)
             }
@@ -193,10 +191,16 @@ impl WorkloadIdentityProvider {
 
         let scopes = self.config.scopes.join(" ");
         let params = [
-            ("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange"),
+            (
+                "grant_type",
+                "urn:ietf:params:oauth:grant-type:token-exchange",
+            ),
             ("audience", &self.config.audience),
             ("scope", &scopes),
-            ("requested_token_type", "urn:ietf:params:oauth:token-type:access_token"),
+            (
+                "requested_token_type",
+                "urn:ietf:params:oauth:token-type:access_token",
+            ),
             ("subject_token_type", "urn:ietf:params:oauth:token-type:jwt"),
             ("subject_token", subject_token),
         ];
@@ -231,9 +235,7 @@ impl WorkloadIdentityProvider {
             .get("access_token")
             .and_then(|v| v.as_str())
             .map(String::from)
-            .ok_or_else(|| {
-                crab_common::Error::Auth("no access_token in STS response".into())
-            })
+            .ok_or_else(|| crab_common::Error::Auth("no access_token in STS response".into()))
     }
 
     /// Impersonate a service account using the federated token.
@@ -267,13 +269,13 @@ impl WorkloadIdentityProvider {
             )));
         }
 
-        let resp_text = resp
-            .text()
-            .await
-            .map_err(|e| crab_common::Error::Auth(format!("reading impersonation response: {e}")))?;
+        let resp_text = resp.text().await.map_err(|e| {
+            crab_common::Error::Auth(format!("reading impersonation response: {e}"))
+        })?;
 
-        let parsed: serde_json::Value = serde_json::from_str(&resp_text)
-            .map_err(|e| crab_common::Error::Auth(format!("parsing impersonation response: {e}")))?;
+        let parsed: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
+            crab_common::Error::Auth(format!("parsing impersonation response: {e}"))
+        })?;
 
         parsed
             .get("accessToken")
@@ -312,11 +314,11 @@ impl AuthProvider for WorkloadIdentityProvider {
                 let guard = self.cached.lock().await;
                 if let Some(ref cached) = *guard
                     && cached.expires_at > Instant::now() + Duration::from_secs(REFRESH_MARGIN_SECS)
-                    {
-                        return Ok(AuthMethod::OAuth(OAuthToken {
-                            access_token: cached.access_token.clone(),
-                        }));
-                    }
+                {
+                    return Ok(AuthMethod::OAuth(OAuthToken {
+                        access_token: cached.access_token.clone(),
+                    }));
+                }
             }
 
             let token = self.obtain_token().await?;
@@ -361,7 +363,9 @@ fn extract_token(content: &str, format: &CredentialFormat) -> crab_common::Resul
                 .and_then(|v| v.as_str())
                 .map(String::from)
                 .ok_or_else(|| {
-                    crab_common::Error::Auth(format!("field '{field}' not found in credential JSON"))
+                    crab_common::Error::Auth(format!(
+                        "field '{field}' not found in credential JSON"
+                    ))
                 })
         }
     }
@@ -561,7 +565,10 @@ mod tests {
     #[test]
     fn parse_credential_format_text() {
         let value = serde_json::json!({"type": "text"});
-        assert_eq!(parse_credential_format(Some(&value)), CredentialFormat::Text);
+        assert_eq!(
+            parse_credential_format(Some(&value)),
+            CredentialFormat::Text
+        );
     }
 
     #[test]

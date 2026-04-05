@@ -73,10 +73,11 @@ impl AuthProvider for CredentialChain {
                 let guard = self.cached_index.lock().await;
                 if let Some(idx) = *guard
                     && let Some(entry) = self.providers.get(idx)
-                        && let Ok(auth) = entry.provider.get_auth().await {
-                            return Ok(auth);
-                        }
-                    // Cached provider failed — fall through to full chain
+                    && let Ok(auth) = entry.provider.get_auth().await
+                {
+                    return Ok(auth);
+                }
+                // Cached provider failed — fall through to full chain
             }
 
             // Probe all providers in order
@@ -97,9 +98,8 @@ impl AuthProvider for CredentialChain {
                 }
             }
 
-            Err(last_error.unwrap_or_else(|| {
-                crab_common::Error::Auth("credential chain is empty".into())
-            }))
+            Err(last_error
+                .unwrap_or_else(|| crab_common::Error::Auth("credential chain is empty".into())))
         })
     }
 
@@ -156,7 +156,11 @@ impl CredentialChainBuilder {
 
     /// Add a provider if `Option` is `Some`.
     #[must_use]
-    pub fn with_optional(self, name: &'static str, provider: Option<Box<dyn AuthProvider>>) -> Self {
+    pub fn with_optional(
+        self,
+        name: &'static str,
+        provider: Option<Box<dyn AuthProvider>>,
+    ) -> Self {
         match provider {
             Some(p) => self.with(name, p),
             None => self,
@@ -185,37 +189,30 @@ impl Default for CredentialChainBuilder {
 /// 4. Cloud-specific auth (Bedrock `SigV4` / Vertex `OAuth2` / Workload Identity)
 #[must_use]
 pub fn build_default_chain(settings: &crab_config::Settings) -> CredentialChain {
-    let provider_name = settings
-        .api_provider
-        .as_deref()
-        .unwrap_or("anthropic");
+    let provider_name = settings.api_provider.as_deref().unwrap_or("anthropic");
 
     let mut builder = CredentialChainBuilder::new();
 
     // 1. Explicit API key from settings
     if let Some(ref key) = settings.api_key
-        && !key.is_empty() {
-            builder = builder.with(
-                "settings-api-key",
-                Box::new(crate::ApiKeyProvider::new(key.clone())),
-            );
-        }
+        && !key.is_empty()
+    {
+        builder = builder.with(
+            "settings-api-key",
+            Box::new(crate::ApiKeyProvider::new(key.clone())),
+        );
+    }
 
     // 2. Environment variable API key
     if let Ok(key) = crate::api_key::resolve_api_key(None, Some(provider_name))
-        && !key.is_empty() {
-            builder = builder.with(
-                "env-api-key",
-                Box::new(crate::ApiKeyProvider::new(key)),
-            );
-        }
+        && !key.is_empty()
+    {
+        builder = builder.with("env-api-key", Box::new(crate::ApiKeyProvider::new(key)));
+    }
 
     // 3. Keychain (if available)
     if let Some(key) = try_keychain_key(provider_name) {
-        builder = builder.with(
-            "keychain",
-            Box::new(crate::ApiKeyProvider::new(key)),
-        );
+        builder = builder.with("keychain", Box::new(crate::ApiKeyProvider::new(key)));
     }
 
     builder.build()
@@ -276,10 +273,7 @@ mod tests {
 
     #[test]
     fn single_success_provider() {
-        let chain = CredentialChain::new(vec![(
-            "test",
-            Box::new(SuccessProvider("key-1".into())),
-        )]);
+        let chain = CredentialChain::new(vec![("test", Box::new(SuccessProvider("key-1".into())))]);
         assert_eq!(chain.len(), 1);
 
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -340,10 +334,7 @@ mod tests {
 
     #[test]
     fn refresh_clears_cache() {
-        let chain = CredentialChain::new(vec![(
-            "test",
-            Box::new(SuccessProvider("key".into())),
-        )]);
+        let chain = CredentialChain::new(vec![("test", Box::new(SuccessProvider("key".into())))]);
 
         let rt = tokio::runtime::Runtime::new().unwrap();
 
@@ -379,9 +370,7 @@ mod tests {
     #[test]
     fn builder_with_if_true() {
         let chain = CredentialChainBuilder::new()
-            .with_if(true, "cond", || {
-                Box::new(SuccessProvider("yes".into()))
-            })
+            .with_if(true, "cond", || Box::new(SuccessProvider("yes".into())))
             .build();
         assert_eq!(chain.len(), 1);
     }
@@ -389,9 +378,7 @@ mod tests {
     #[test]
     fn builder_with_if_false() {
         let chain = CredentialChainBuilder::new()
-            .with_if(false, "cond", || {
-                Box::new(SuccessProvider("no".into()))
-            })
+            .with_if(false, "cond", || Box::new(SuccessProvider("no".into())))
             .build();
         assert_eq!(chain.len(), 0);
     }
