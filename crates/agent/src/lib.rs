@@ -1,5 +1,7 @@
 pub mod adaptive_prompt;
 pub mod assignment;
+pub mod branch_manager;
+pub mod checkpoint;
 pub mod code_nav;
 pub mod conversation_tree;
 pub mod coordinator;
@@ -17,6 +19,7 @@ pub mod prompt_template;
 pub mod query_loop;
 pub mod repl_commands;
 pub mod retry;
+pub mod rollback;
 pub mod smart_context;
 pub mod summarizer;
 pub mod system_prompt;
@@ -34,6 +37,8 @@ pub use adaptive_prompt::{
     detect_context,
 };
 pub use assignment::{AssignmentStrategy, CapabilityBased, LeastLoaded, RoundRobin};
+pub use branch_manager::{BranchManager, BranchSummary, BranchTree};
+pub use checkpoint::{CheckpointManager, CheckpointSummary, ConversationSnapshot};
 pub use code_nav::{
     CodeNavigator, Language, SymbolKind, SymbolLocation, detect_language, find_definitions,
     find_implementations, find_references, format_nav_results,
@@ -69,6 +74,7 @@ pub use prompt_template::{BuiltinTemplates, TemplateContext, TemplateEngine};
 pub use query_loop::{QueryLoopConfig, StreamingToolExecutor, query_loop};
 pub use repl_commands::{CommandResult, ReplCommand, execute_command};
 pub use retry::{RetryDecision, RetryPolicy, RetryTracker};
+pub use rollback::{ActionType, RollbackEntry, RollbackManager, UndoStack};
 pub use smart_context::{
     ContextConfig, ContextSnippet, ContextUsageTracker, QueryTerms, RelevantFile,
     build_context_snippets_from_content, extract_query_terms, format_context_section,

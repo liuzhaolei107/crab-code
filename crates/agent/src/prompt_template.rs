@@ -33,7 +33,7 @@ impl TemplateContext {
     pub fn is_truthy(&self, key: &str) -> bool {
         self.vars
             .get(key)
-            .map_or(false, |v| !v.is_empty() && v != "false" && v != "0")
+            .is_some_and(|v| !v.is_empty() && v != "false" && v != "0")
     }
 
     /// Number of variables.
@@ -149,10 +149,10 @@ impl TemplateEngine {
             let body = &result[body_start..body_end];
             let full_end = body_end + close_tag.len();
 
-            if !ctx.is_truthy(var_name) {
-                result = format!("{}{}{}", &result[..start], body, &result[full_end..]);
-            } else {
+            if ctx.is_truthy(var_name) {
                 result = format!("{}{}", &result[..start], &result[full_end..]);
+            } else {
+                result = format!("{}{}{}", &result[..start], body, &result[full_end..]);
             }
         }
         result

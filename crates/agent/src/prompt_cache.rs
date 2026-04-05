@@ -25,7 +25,7 @@ impl PromptCacheKey {
         let mut buf = String::new();
         let _ = write!(buf, "t={};b={};", self.template, self.turn_bucket);
         for (k, v) in &self.variables {
-            let _ = write!(buf, "{}={};", k, v);
+            let _ = write!(buf, "{k}={v};");
         }
         buf
     }
@@ -48,6 +48,7 @@ pub fn cache_key(
     PromptCacheKey {
         template: template.to_string(),
         variables: vars,
+        #[allow(clippy::cast_possible_truncation)]
         turn_bucket: (turn_count / bucket_size) as u32,
     }
 }
@@ -69,7 +70,10 @@ impl CacheStats {
         if total == 0 {
             return 0.0;
         }
-        self.hits as f64 / total as f64
+        #[allow(clippy::cast_precision_loss)]
+        {
+            self.hits as f64 / total as f64
+        }
     }
 
     /// Total lookups.
