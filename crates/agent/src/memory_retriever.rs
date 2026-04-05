@@ -118,13 +118,11 @@ pub fn retrieve_for_context(
 /// Map context type to preferred memory types.
 fn context_preferred_types(context_type: &str) -> Vec<&'static str> {
     match context_type {
-        "debugging" => vec!["feedback", "project"],
         "code_generation" => vec!["feedback", "user", "reference"],
         "code_review" => vec!["feedback", "user"],
-        "refactoring" => vec!["feedback", "project"],
         "navigation" => vec!["reference", "project"],
-        "testing" => vec!["feedback", "project"],
         "documentation" => vec!["feedback", "reference"],
+        "debugging" | "refactoring" | "testing" => vec!["feedback", "project"],
         _ => vec!["user", "feedback", "project", "reference"],
     }
 }

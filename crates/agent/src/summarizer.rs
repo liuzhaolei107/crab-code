@@ -326,12 +326,12 @@ fn extract_code_changes(msg: &Message) -> Vec<String> {
         if let ContentBlock::ToolUse { name, input, .. } = block {
             match name.as_str() {
                 "write" | "write_file" => {
-                    if let Some(path) = input.get("file_path").or(input.get("path")).and_then(|v| v.as_str()) {
+                    if let Some(path) = input.get("file_path").or_else(|| input.get("path")).and_then(|v| v.as_str()) {
                         changes.push(format!("Wrote file: {path}"));
                     }
                 }
                 "edit" | "edit_file" => {
-                    if let Some(path) = input.get("file_path").or(input.get("path")).and_then(|v| v.as_str()) {
+                    if let Some(path) = input.get("file_path").or_else(|| input.get("path")).and_then(|v| v.as_str()) {
                         changes.push(format!("Edited file: {path}"));
                     }
                 }
@@ -355,7 +355,7 @@ fn extract_tool_actions(msg: &Message) -> Vec<String> {
         if let ContentBlock::ToolUse { name, input, .. } = block {
             let detail = match name.as_str() {
                 "read" | "read_file" => {
-                    input.get("file_path").or(input.get("path")).and_then(|v| v.as_str())
+                    input.get("file_path").or_else(|| input.get("path")).and_then(|v| v.as_str())
                         .map(|p| format!("Read: {p}"))
                 }
                 "glob" => {

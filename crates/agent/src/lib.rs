@@ -3,6 +3,7 @@ pub mod assignment;
 pub mod code_nav;
 pub mod conversation_tree;
 pub mod coordinator;
+pub mod error_recovery;
 pub mod health;
 pub mod memory_retriever;
 pub mod message_bus;
@@ -32,6 +33,10 @@ pub use code_nav::{
 };
 pub use conversation_tree::{Branch, BranchError, BranchId, ConversationNode, ConversationTree};
 pub use coordinator::{AgentCoordinator, AgentHandle, AgentSession, SessionConfig};
+pub use error_recovery::{
+    CircuitBreaker, CircuitBreakerConfig, CircuitState, DegradableFeature, ErrorCategory,
+    ErrorClassifier, FeaturePriority, GracefulDegradation, RecoveryAction, RecoveryStrategy,
+};
 pub use memory_retriever::{
     MemoryRanker, RankedMemory, RetrieverConfig, format_retrieved_memories, retrieve_for_context,
     retrieve_memories,
