@@ -23,8 +23,8 @@ thiserror.workspace = true
 
 [features]
 default = []
-bedrock = []
-vertex = []
+bedrock = ["crab-auth/bedrock"]
+vertex = ["crab-auth/vertex"]
 proxy = ["reqwest/socks"]
 
 [lints]

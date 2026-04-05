@@ -140,4 +140,120 @@ impl AnthropicClient {
     pub fn base_url(&self) -> &str {
         &self.base_url
     }
+
+    /// List available models from the Anthropic API.
+    ///
+    /// Calls `GET /v1/models` and returns a list of model info.
+    pub async fn list_models(&self) -> Result<Vec<crate::capabilities::ModelInfo>> {
+        let auth = self.auth.get_auth().await.map_err(ApiError::Common)?;
+        let url = format!("{}/v1/models", self.base_url);
+
+        let mut builder = self
+            .http
+            .get(&url)
+            .header("anthropic-version", ANTHROPIC_VERSION);
+
+        match auth {
+            crab_auth::AuthMethod::ApiKey(key) => {
+                builder = builder.header("x-api-key", key);
+            }
+            crab_auth::AuthMethod::OAuth(token) => {
+                builder = builder.header("authorization", format!("Bearer {}", token.access_token));
+            }
+        }
+
+        let response = builder.send().await.map_err(ApiError::Http)?;
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await.unwrap_or_default();
+            return Err(ApiError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+
+        let body: serde_json::Value = response.json().await.map_err(ApiError::Http)?;
+        let models = body
+            .get("data")
+            .and_then(|d| d.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| {
+                        let id = m.get("id")?.as_str()?.to_string();
+                        let name = m
+                            .get("display_name")
+                            .and_then(|n| n.as_str())
+                            .map(String::from);
+                        Some(crate::capabilities::ModelInfo {
+                            id,
+                            name,
+                            provider: "anthropic".into(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(models)
+    }
+
+    /// Health check — verify the API is reachable and the key is valid.
+    ///
+    /// Sends a minimal request to validate connectivity and authentication.
+    pub async fn health_check(&self) -> crate::capabilities::HealthStatus {
+        let start = std::time::Instant::now();
+
+        // Try to list models as a lightweight auth-validating endpoint
+        let auth_result = self.auth.get_auth().await;
+        let auth = match auth_result {
+            Ok(a) => a,
+            Err(e) => {
+                return crate::capabilities::HealthStatus {
+                    healthy: false,
+                    latency: start.elapsed(),
+                    error: Some(format!("auth error: {e}")),
+                };
+            }
+        };
+
+        let url = format!("{}/v1/models", self.base_url);
+        let mut builder = self
+            .http
+            .get(&url)
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .timeout(std::time::Duration::from_secs(10));
+
+        match auth {
+            crab_auth::AuthMethod::ApiKey(key) => {
+                builder = builder.header("x-api-key", key);
+            }
+            crab_auth::AuthMethod::OAuth(token) => {
+                builder = builder.header("authorization", format!("Bearer {}", token.access_token));
+            }
+        }
+
+        match builder.send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    crate::capabilities::HealthStatus {
+                        healthy: true,
+                        latency: start.elapsed(),
+                        error: None,
+                    }
+                } else {
+                    crate::capabilities::HealthStatus {
+                        healthy: false,
+                        latency: start.elapsed(),
+                        error: Some(format!("HTTP {status}")),
+                    }
+                }
+            }
+            Err(e) => crate::capabilities::HealthStatus {
+                healthy: false,
+                latency: start.elapsed(),
+                error: Some(e.to_string()),
+            },
+        }
+    }
 }
