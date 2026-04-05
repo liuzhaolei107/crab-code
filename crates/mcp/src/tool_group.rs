@@ -56,11 +56,7 @@ pub struct IndexedTool {
 
 impl IndexedTool {
     #[must_use]
-    pub fn new(
-        name: impl Into<String>,
-        description: impl Into<String>,
-        group: ToolGroup,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, description: impl Into<String>, group: ToolGroup) -> Self {
         Self {
             name: name.into(),
             description: description.into(),
@@ -177,13 +173,41 @@ mod tests {
 
     fn sample_index() -> ToolIndex {
         let mut idx = ToolIndex::new();
-        idx.add(IndexedTool::new("read_file", "Read a file from disk", ToolGroup::Builtin));
-        idx.add(IndexedTool::new("write_file", "Write content to a file", ToolGroup::Builtin));
-        idx.add(IndexedTool::new("bash", "Execute shell commands", ToolGroup::Builtin));
-        idx.add(IndexedTool::new("github_search", "Search GitHub repos", ToolGroup::Mcp));
-        idx.add(IndexedTool::new("jira_create", "Create JIRA tickets", ToolGroup::Mcp));
-        idx.add(IndexedTool::new("wasm_transform", "Transform data via WASM", ToolGroup::Plugin));
-        idx.add(IndexedTool::new("my_script", "User custom script runner", ToolGroup::User));
+        idx.add(IndexedTool::new(
+            "read_file",
+            "Read a file from disk",
+            ToolGroup::Builtin,
+        ));
+        idx.add(IndexedTool::new(
+            "write_file",
+            "Write content to a file",
+            ToolGroup::Builtin,
+        ));
+        idx.add(IndexedTool::new(
+            "bash",
+            "Execute shell commands",
+            ToolGroup::Builtin,
+        ));
+        idx.add(IndexedTool::new(
+            "github_search",
+            "Search GitHub repos",
+            ToolGroup::Mcp,
+        ));
+        idx.add(IndexedTool::new(
+            "jira_create",
+            "Create JIRA tickets",
+            ToolGroup::Mcp,
+        ));
+        idx.add(IndexedTool::new(
+            "wasm_transform",
+            "Transform data via WASM",
+            ToolGroup::Plugin,
+        ));
+        idx.add(IndexedTool::new(
+            "my_script",
+            "User custom script runner",
+            ToolGroup::User,
+        ));
         idx
     }
 

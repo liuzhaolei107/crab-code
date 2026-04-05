@@ -490,7 +490,11 @@ mod tests {
             .description("A test pipeline")
             .step(ChainStep::new("glob").label("find"))
             .tool("read_file", "path")
-            .step(ChainStep::new("bash").param("cmd", "wc -l").pipe_into("stdin"))
+            .step(
+                ChainStep::new("bash")
+                    .param("cmd", "wc -l")
+                    .pipe_into("stdin"),
+            )
             .build();
         assert_eq!(chain.name, "pipeline");
         assert_eq!(chain.description, "A test pipeline");
@@ -508,15 +512,13 @@ mod tests {
             .step(ChainStep::new("step2").label("second").pipe_into("input"))
             .build();
 
-        let result = ChainExecutor::execute(&chain, |name, params| {
-            match name {
-                "step1" => Ok("output_of_step1".to_string()),
-                "step2" => {
-                    assert_eq!(params.get("input").unwrap(), "output_of_step1");
-                    Ok("final_result".to_string())
-                }
-                _ => Err("unknown tool".to_string()),
+        let result = ChainExecutor::execute(&chain, |name, params| match name {
+            "step1" => Ok("output_of_step1".to_string()),
+            "step2" => {
+                assert_eq!(params.get("input").unwrap(), "output_of_step1");
+                Ok("final_result".to_string())
             }
+            _ => Err("unknown tool".to_string()),
         });
 
         assert!(result.success);
@@ -528,19 +530,14 @@ mod tests {
     #[test]
     fn executor_abort_on_error_substring() {
         let chain = ChainBuilder::new("test")
-            .step(
-                ChainStep::new("build")
-                    .abort_if_contains("error")
-            )
+            .step(ChainStep::new("build").abort_if_contains("error"))
             .step(ChainStep::new("test"))
             .build();
 
-        let result = ChainExecutor::execute(&chain, |name, _| {
-            match name {
-                "build" => Ok("compilation error on line 42".to_string()),
-                "test" => Ok("passed".to_string()),
-                _ => Err("unknown".to_string()),
-            }
+        let result = ChainExecutor::execute(&chain, |name, _| match name {
+            "build" => Ok("compilation error on line 42".to_string()),
+            "test" => Ok("passed".to_string()),
+            _ => Err("unknown".to_string()),
         });
 
         assert!(!result.success);
@@ -556,11 +553,9 @@ mod tests {
             .step(ChainStep::new("never_reached"))
             .build();
 
-        let result = ChainExecutor::execute(&chain, |name, _| {
-            match name {
-                "failing_tool" => Err("tool crashed".to_string()),
-                _ => Ok("ok".to_string()),
-            }
+        let result = ChainExecutor::execute(&chain, |name, _| match name {
+            "failing_tool" => Err("tool crashed".to_string()),
+            _ => Ok("ok".to_string()),
         });
 
         assert!(!result.success);

@@ -411,7 +411,10 @@ mod tests {
         let b = McpPermissionBoundary::new("/proj");
         assert_eq!(b.level_for(ToolGroup::Builtin), PermissionLevel::Full);
         assert_eq!(b.level_for(ToolGroup::Mcp), PermissionLevel::ProjectScoped);
-        assert_eq!(b.level_for(ToolGroup::Plugin), PermissionLevel::ProjectScoped);
+        assert_eq!(
+            b.level_for(ToolGroup::Plugin),
+            PermissionLevel::ProjectScoped
+        );
         assert_eq!(b.level_for(ToolGroup::User), PermissionLevel::ProjectScoped);
     }
 

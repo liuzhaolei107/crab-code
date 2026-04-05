@@ -242,7 +242,10 @@ mod tests {
         let t = VersionedTool::new("old_tool", ToolVersion::new(1, 0, 0))
             .deprecated("Use new_tool instead");
         assert!(t.deprecated);
-        assert_eq!(t.deprecation_message.as_deref(), Some("Use new_tool instead"));
+        assert_eq!(
+            t.deprecation_message.as_deref(),
+            Some("Use new_tool instead")
+        );
     }
 
     #[test]
@@ -279,8 +282,7 @@ mod tests {
 
     #[test]
     fn versioned_tool_serde_roundtrip() {
-        let t = VersionedTool::new("test", ToolVersion::new(1, 0, 0))
-            .deprecated("obsolete");
+        let t = VersionedTool::new("test", ToolVersion::new(1, 0, 0)).deprecated("obsolete");
         let json = serde_json::to_string(&t).unwrap();
         let back: VersionedTool = serde_json::from_str(&json).unwrap();
         assert_eq!(back.name, "test");

@@ -60,7 +60,11 @@ pub struct AuditEntryBuilder {
 impl AuditEntryBuilder {
     /// Start timing a tool call.
     #[must_use]
-    pub fn start(tool_name: impl Into<String>, parameters: impl Into<String>, caller: impl Into<String>) -> Self {
+    pub fn start(
+        tool_name: impl Into<String>,
+        parameters: impl Into<String>,
+        caller: impl Into<String>,
+    ) -> Self {
         Self {
             tool_name: tool_name.into(),
             parameters: truncate_string(parameters.into(), 1024),
@@ -71,7 +75,11 @@ impl AuditEntryBuilder {
 
     /// Finish the entry with a result.
     #[must_use]
-    pub fn finish(self, outcome: AuditOutcome, result_summary: impl Into<String>) -> PartialAuditEntry {
+    pub fn finish(
+        self,
+        outcome: AuditOutcome,
+        result_summary: impl Into<String>,
+    ) -> PartialAuditEntry {
         PartialAuditEntry {
             tool_name: self.tool_name,
             parameters: self.parameters,
@@ -390,7 +398,14 @@ mod tests {
     fn truncation() {
         let long_params = "x".repeat(2000);
         let log = McpAuditLog::new(100);
-        log.record_call("t", &long_params, "", Duration::ZERO, "c", AuditOutcome::Success);
+        log.record_call(
+            "t",
+            &long_params,
+            "",
+            Duration::ZERO,
+            "c",
+            AuditOutcome::Success,
+        );
         let entry = &log.entries()[0];
         assert!(entry.parameters.len() <= 1024);
         assert!(entry.parameters.ends_with("..."));
