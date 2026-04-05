@@ -194,10 +194,7 @@ pub fn quick_resume_list(
 
     for sid in &session_ids {
         let path = history.base_dir.join(format!("{sid}.json"));
-        let file_size = path
-            .metadata()
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
 
         let preview = match history.load(sid)? {
             Some(messages) => {
@@ -427,7 +424,9 @@ mod tests {
 
         // s1 = small, s2 = large
         history.save("s1", &[Message::user("hi")]).unwrap();
-        let big_msgs: Vec<Message> = (0..20).map(|i| Message::user(format!("msg {i} with some longer content to increase size"))).collect();
+        let big_msgs: Vec<Message> = (0..20)
+            .map(|i| Message::user(format!("msg {i} with some longer content to increase size")))
+            .collect();
         history.save("s2", &big_msgs).unwrap();
 
         let summaries = quick_resume_list(&history, 10).unwrap();
