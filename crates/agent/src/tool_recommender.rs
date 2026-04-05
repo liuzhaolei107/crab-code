@@ -45,19 +45,44 @@ pub enum Intent {
 pub fn detect_intent(message: &str) -> Intent {
     let lower = message.to_lowercase();
     // Order matters: more specific patterns first.
-    if lower.contains("fix") || lower.contains("bug") || lower.contains("error") || lower.contains("broken") {
+    if lower.contains("fix")
+        || lower.contains("bug")
+        || lower.contains("error")
+        || lower.contains("broken")
+    {
         Intent::FixBug
     } else if lower.contains("test") || lower.contains("spec") || lower.contains("assert") {
         Intent::Test
-    } else if lower.contains("refactor") || lower.contains("rename") || lower.contains("move") || lower.contains("clean") {
+    } else if lower.contains("refactor")
+        || lower.contains("rename")
+        || lower.contains("move")
+        || lower.contains("clean")
+    {
         Intent::Refactor
-    } else if lower.contains("add") || lower.contains("implement") || lower.contains("create") || lower.contains("new") {
+    } else if lower.contains("add")
+        || lower.contains("implement")
+        || lower.contains("create")
+        || lower.contains("new")
+    {
         Intent::AddFeature
-    } else if lower.contains("build") || lower.contains("compile") || lower.contains("cargo") || lower.contains("npm") {
+    } else if lower.contains("build")
+        || lower.contains("compile")
+        || lower.contains("cargo")
+        || lower.contains("npm")
+    {
         Intent::Build
-    } else if lower.contains("find") || lower.contains("search") || lower.contains("where") || lower.contains("show") || lower.contains("list") {
+    } else if lower.contains("find")
+        || lower.contains("search")
+        || lower.contains("where")
+        || lower.contains("show")
+        || lower.contains("list")
+    {
         Intent::Explore
-    } else if lower.contains("explain") || lower.contains("what") || lower.contains("how") || lower.contains("why") {
+    } else if lower.contains("explain")
+        || lower.contains("what")
+        || lower.contains("how")
+        || lower.contains("why")
+    {
         Intent::Explain
     } else {
         Intent::Unknown
@@ -117,21 +142,25 @@ fn intent_tools(intent: Intent) -> Vec<(&'static str, f64, &'static str)> {
 /// Additional tool hints based on file extensions present in context.
 fn file_type_hints(files: &[String]) -> Vec<(&'static str, f64, String)> {
     let mut hints = Vec::new();
-    let exts: Vec<&str> = files
-        .iter()
-        .filter_map(|f| f.rsplit('.').next())
-        .collect();
+    let exts: Vec<&str> = files.iter().filter_map(|f| f.rsplit('.').next()).collect();
 
     if exts.iter().any(|e| *e == "rs" || *e == "toml") {
         hints.push(("bash", 0.6, "cargo build/test for Rust project".to_string()));
     }
-    if exts.iter().any(|e| *e == "js" || *e == "ts" || *e == "jsx" || *e == "tsx") {
-        hints.push(("bash", 0.6, "npm/yarn scripts for JS/TS project".to_string()));
+    if exts
+        .iter()
+        .any(|e| *e == "js" || *e == "ts" || *e == "jsx" || *e == "tsx")
+    {
+        hints.push((
+            "bash",
+            0.6,
+            "npm/yarn scripts for JS/TS project".to_string(),
+        ));
     }
-    if exts.iter().any(|e| *e == "py") {
+    if exts.contains(&"py") {
         hints.push(("bash", 0.6, "pytest/python for Python project".to_string()));
     }
-    if exts.iter().any(|e| *e == "go") {
+    if exts.contains(&"go") {
         hints.push(("bash", 0.6, "go build/test for Go project".to_string()));
     }
     if exts.iter().any(|e| *e == "md" || *e == "txt") {
@@ -184,7 +213,9 @@ impl ContextToolRecommender {
 
         // Intent-based recommendations.
         for (name, conf, reason) in intent_tools(intent) {
-            let entry = scores.entry(name.to_string()).or_insert((0.0, String::new()));
+            let entry = scores
+                .entry(name.to_string())
+                .or_insert((0.0, String::new()));
             if conf > entry.0 {
                 *entry = (conf, reason.to_string());
             }
@@ -192,7 +223,9 @@ impl ContextToolRecommender {
 
         // File-type hints.
         for (name, conf, reason) in file_type_hints(&ctx.active_files) {
-            let entry = scores.entry(name.to_string()).or_insert((0.0, String::new()));
+            let entry = scores
+                .entry(name.to_string())
+                .or_insert((0.0, String::new()));
             if conf > entry.0 {
                 *entry = (conf, reason);
             }
@@ -214,7 +247,11 @@ impl ContextToolRecommender {
                 reason,
             })
             .collect();
-        recs.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        recs.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         recs.truncate(self.max_recommendations);
         recs
     }
@@ -240,7 +277,10 @@ mod tests {
 
     #[test]
     fn detect_add_feature_intent() {
-        assert_eq!(detect_intent("add a new logging module"), Intent::AddFeature);
+        assert_eq!(
+            detect_intent("add a new logging module"),
+            Intent::AddFeature
+        );
         assert_eq!(detect_intent("implement caching"), Intent::AddFeature);
     }
 
@@ -259,7 +299,10 @@ mod tests {
     #[test]
     fn detect_test_intent() {
         assert_eq!(detect_intent("run the tests"), Intent::Test);
-        assert_eq!(detect_intent("add an assertion for this case"), Intent::Test);
+        assert_eq!(
+            detect_intent("add an assertion for this case"),
+            Intent::Test
+        );
     }
 
     #[test]
@@ -348,8 +391,16 @@ mod tests {
         };
         let recs1 = recommend_tools(&ctx_no_history);
         let recs2 = recommend_tools(&ctx_with_history);
-        let read1 = recs1.iter().find(|r| r.tool_name == "read").unwrap().confidence;
-        let read2 = recs2.iter().find(|r| r.tool_name == "read").unwrap().confidence;
+        let read1 = recs1
+            .iter()
+            .find(|r| r.tool_name == "read")
+            .unwrap()
+            .confidence;
+        let read2 = recs2
+            .iter()
+            .find(|r| r.tool_name == "read")
+            .unwrap()
+            .confidence;
         assert!(read2 >= read1);
     }
 

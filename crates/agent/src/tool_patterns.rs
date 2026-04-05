@@ -42,7 +42,10 @@ impl PatternDetector {
     fn extract_tool_names(history: &[ToolUsageRecord]) -> Vec<(String, bool)> {
         let mut sorted: Vec<&ToolUsageRecord> = history.iter().collect();
         sorted.sort_by_key(|r| r.timestamp_ms);
-        sorted.iter().map(|r| (r.tool_name.clone(), r.success)).collect()
+        sorted
+            .iter()
+            .map(|r| (r.tool_name.clone(), r.success))
+            .collect()
     }
 
     /// Detect all patterns with frequency >= `min_frequency`.
@@ -80,7 +83,7 @@ impl PatternDetector {
             for (seq, (freq, successes, total)) in counts {
                 if freq >= min_frequency {
                     let avg_success_rate = if total > 0 {
-                        successes as f64 / total as f64
+                        f64::from(successes) / f64::from(total)
                     } else {
                         0.0
                     };
@@ -116,10 +119,7 @@ impl Default for PatternDetector {
 ///
 /// Returns `None` if no matching pattern is found.
 #[must_use]
-pub fn detect_patterns(
-    history: &[ToolUsageRecord],
-    min_frequency: u32,
-) -> Vec<ToolPattern> {
+pub fn detect_patterns(history: &[ToolUsageRecord], min_frequency: u32) -> Vec<ToolPattern> {
     PatternDetector::new().detect_patterns(history, min_frequency)
 }
 
@@ -128,10 +128,7 @@ pub fn detect_patterns(
 /// Scans detected patterns for a match where the pattern prefix matches the
 /// end of `recent_tools`, then returns the predicted next tool.
 #[must_use]
-pub fn suggest_next_tool(
-    history: &[ToolUsageRecord],
-    recent_tools: &[String],
-) -> Option<String> {
+pub fn suggest_next_tool(history: &[ToolUsageRecord], recent_tools: &[String]) -> Option<String> {
     suggest_next_tool_with_min_freq(history, recent_tools, 2)
 }
 
@@ -226,7 +223,9 @@ mod tests {
             rec("bash", 80, true),
         ];
         let patterns = detect_patterns(&history, 2);
-        let trigram = patterns.iter().find(|p| p.sequence == vec!["read", "edit", "bash"]);
+        let trigram = patterns
+            .iter()
+            .find(|p| p.sequence == vec!["read", "edit", "bash"]);
         assert!(trigram.is_some());
         assert!(trigram.unwrap().frequency >= 3);
     }
@@ -252,7 +251,10 @@ mod tests {
             rec("edit", 30, true),
         ];
         let patterns = detect_patterns(&history, 2);
-        let p = patterns.iter().find(|p| p.sequence == vec!["read", "edit"]).unwrap();
+        let p = patterns
+            .iter()
+            .find(|p| p.sequence == vec!["read", "edit"])
+            .unwrap();
         // 4 items total across 2 windows: read(t),edit(f),read(t),edit(t) → 3/4=0.75
         assert!(p.avg_success_rate > 0.7 && p.avg_success_rate < 0.8);
     }
@@ -382,16 +384,20 @@ mod tests {
             rec("edit", 30, false),
         ];
         let patterns = detect_patterns(&history, 2);
-        let p = patterns.iter().find(|p| p.sequence == vec!["read", "edit"]).unwrap();
+        let p = patterns
+            .iter()
+            .find(|p| p.sequence == vec!["read", "edit"])
+            .unwrap();
         assert_eq!(p.avg_success_rate, 0.0);
     }
 
     #[test]
     fn max_len_respected() {
-        let d = PatternDetector { min_len: 2, max_len: 2 };
-        let history: Vec<ToolUsageRecord> = (0..10)
-            .map(|i| rec("read", i * 10, true))
-            .collect();
+        let d = PatternDetector {
+            min_len: 2,
+            max_len: 2,
+        };
+        let history: Vec<ToolUsageRecord> = (0..10).map(|i| rec("read", i * 10, true)).collect();
         let patterns = d.detect_patterns(&history, 1);
         for p in &patterns {
             assert!(p.sequence.len() <= 2);

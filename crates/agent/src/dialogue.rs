@@ -186,16 +186,17 @@ fn next_state(state: ConversationState, event: DialogueEvent) -> Option<Conversa
 
     match (state, event) {
         // Transitions → Querying
-        (S::Idle | S::WaitingUser, E::UserMessage) |
-(S::ToolExecution, E::ToolExecutionDone) => Some(S::Querying),
+        (S::Idle | S::WaitingUser, E::UserMessage) | (S::ToolExecution, E::ToolExecutionDone) => {
+            Some(S::Querying)
+        }
 
         // Transitions → Querying (self-loop while streaming)
         (S::Querying, E::QuerySent) => Some(S::Querying),
 
         // Transitions → Idle
-        (S::Querying, E::TextResponse | E::Error) |
-(S::ToolExecution | S::Summarizing, E::Error) |
-(S::Summarizing, E::SummarizeDone) => Some(S::Idle),
+        (S::Querying, E::TextResponse | E::Error)
+        | (S::ToolExecution | S::Summarizing, E::Error)
+        | (S::Summarizing, E::SummarizeDone) => Some(S::Idle),
 
         // Transitions → ToolExecution
         (S::Querying, E::ToolCallResponse) | (S::WaitingUser, E::UserConfirmation) => {
@@ -425,9 +426,17 @@ impl DialoguePolicy {
         let mut out = String::new();
         let _ = writeln!(out, "Dialogue Policy:");
         let _ = writeln!(out, "  Max turns: {}", self.max_turns);
-        let _ = writeln!(out, "  Summarize at: {:.0}%", self.summarize_threshold * 100.0);
+        let _ = writeln!(
+            out,
+            "  Summarize at: {:.0}%",
+            self.summarize_threshold * 100.0
+        );
         let _ = writeln!(out, "  Confirm after tools: {}", self.confirm_after_tools);
-        let _ = writeln!(out, "  Confirm every N turns: {}", self.confirm_every_n_turns);
+        let _ = writeln!(
+            out,
+            "  Confirm every N turns: {}",
+            self.confirm_every_n_turns
+        );
         let _ = writeln!(out, "  Max errors/turn: {}", self.max_errors_per_turn);
         let _ = writeln!(out, "  Autonomous: {}", self.autonomous);
         out
@@ -444,7 +453,10 @@ mod tests {
     fn state_display() {
         assert_eq!(ConversationState::Idle.to_string(), "idle");
         assert_eq!(ConversationState::Querying.to_string(), "querying");
-        assert_eq!(ConversationState::ToolExecution.to_string(), "tool_execution");
+        assert_eq!(
+            ConversationState::ToolExecution.to_string(),
+            "tool_execution"
+        );
         assert_eq!(ConversationState::WaitingUser.to_string(), "waiting_user");
         assert_eq!(ConversationState::Summarizing.to_string(), "summarizing");
         assert_eq!(ConversationState::Finished.to_string(), "finished");
@@ -455,7 +467,10 @@ mod tests {
     #[test]
     fn event_display() {
         assert_eq!(DialogueEvent::UserMessage.to_string(), "user_message");
-        assert_eq!(DialogueEvent::ToolCallResponse.to_string(), "tool_call_response");
+        assert_eq!(
+            DialogueEvent::ToolCallResponse.to_string(),
+            "tool_call_response"
+        );
         assert_eq!(DialogueEvent::End.to_string(), "end");
     }
 
@@ -670,7 +685,10 @@ mod tests {
 
     #[test]
     fn planned_action_display() {
-        assert_eq!(PlannedAction::ContinueToolLoop.to_string(), "continue_tool_loop");
+        assert_eq!(
+            PlannedAction::ContinueToolLoop.to_string(),
+            "continue_tool_loop"
+        );
         assert_eq!(PlannedAction::SendToLlm.to_string(), "send_to_llm");
         assert_eq!(PlannedAction::Summarize.to_string(), "summarize");
     }
@@ -858,7 +876,11 @@ mod tests {
 
         // Turn 1: user message -> query -> tool call -> execute -> query -> text
         sm.on_event(DialogueEvent::UserMessage);
-        let ctx = TurnContext { turn: 1, tool_calls_in_turn: 1, ..Default::default() };
+        let ctx = TurnContext {
+            turn: 1,
+            tool_calls_in_turn: 1,
+            ..Default::default()
+        };
         let action = plan_next_turn(&ctx, &policy);
         assert_eq!(action, PlannedAction::SendToLlm);
 
@@ -873,7 +895,10 @@ mod tests {
         let mut sm = ConversationStateMachine::new();
         let policy = DialoguePolicy::default();
 
-        let ctx = TurnContext { context_usage: 0.9, ..Default::default() };
+        let ctx = TurnContext {
+            context_usage: 0.9,
+            ..Default::default()
+        };
         let action = plan_next_turn(&ctx, &policy);
         assert_eq!(action, PlannedAction::Summarize);
 

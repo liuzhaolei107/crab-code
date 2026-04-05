@@ -194,8 +194,18 @@ impl ToolAnalytics {
         let session_span_ms = if self.records.len() < 2 {
             0
         } else {
-            let min_ts = self.records.iter().map(|r| r.timestamp_ms).min().unwrap_or(0);
-            let max_ts = self.records.iter().map(|r| r.timestamp_ms).max().unwrap_or(0);
+            let min_ts = self
+                .records
+                .iter()
+                .map(|r| r.timestamp_ms)
+                .min()
+                .unwrap_or(0);
+            let max_ts = self
+                .records
+                .iter()
+                .map(|r| r.timestamp_ms)
+                .max()
+                .unwrap_or(0);
             max_ts.saturating_sub(min_ts)
         };
 
