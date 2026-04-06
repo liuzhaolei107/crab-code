@@ -165,10 +165,7 @@ impl StreamAggregator {
                 self.total_tokens = usage.total();
                 self.stop_reason.clone_from(stop_reason);
             }
-            StreamEvent::MessageStop => {
-                self.complete = true;
-            }
-            StreamEvent::Error { .. } => {
+            StreamEvent::MessageStop | StreamEvent::Error { .. } => {
                 self.complete = true;
             }
         }
@@ -208,6 +205,7 @@ impl StreamAggregator {
 
     /// Get stream performance metrics.
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn metrics(&self) -> StreamMetrics {
         let total_ms = self
             .start_time
