@@ -232,9 +232,9 @@ cargo run --bin crab                       # 运行 CLI
 
 欢迎参与！以下是需要帮助的方向：
 
-- 端到端集成测试
+- 对齐 Claude Code 功能
 - OS 级沙箱（Landlock / Seatbelt / Windows Job Object）
-- MCP WebSocket 传输测试
+- 端到端集成测试
 - 更多 LLM 提供商测试
 - 文档与国际化
 

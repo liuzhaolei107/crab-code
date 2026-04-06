@@ -232,9 +232,9 @@ cargo run --bin crab                       # Run CLI
 
 We'd love your help! See areas where we need contributions:
 
-- End-to-end integration testing
+- Claude Code feature alignment
 - OS-level sandboxing (Landlock / Seatbelt / Windows Job Object)
-- MCP WebSocket transport testing
+- End-to-end integration testing
 - Additional LLM provider testing
 - Documentation & i18n
 
