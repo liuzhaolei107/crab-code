@@ -4250,25 +4250,18 @@ M6: 配置 + 上下文管理 ──────── [完成] 权限模式, CRA
 M7a: MCP 集成 ───────────────── [完成] stdio + SSE + WS transport, McpToolAdapter
 M7b: 多 Agent + 技能 ─────────── [完成] AgentWorker, AgentCoordinator, Task 系统,
                                           SkillRegistry, HookExecutor, WebSearch/Fetch
-Phase 2 (进行中 2026-04-06, 清理过度工程模块后):
-  [P2-A] 多模型支持 ────────── [部分] fallback chain, capabilities, context optimizer, retry/error classifier
-  [P2-B] API 增强 ─────────── [部分] streaming（已移除: response cache, dedup, batch, middleware 等）
-  [P2-C] Auth 安全 ────────── [部分] Bedrock/Vertex, AWS IAM, GCP Identity, credential chain
-                                       （已移除: rotation, key_derive, audit）
-  [P2-D] MCP 协议扩展 ─────── [部分] sampling, roots, logging, SSE server, handshake/negotiation,
+Phase 2 (进行中 2026-04-06):
+  [P2-A] 多模型支持 ────────── fallback chain, capabilities, context optimizer, retry/error classifier
+  [P2-B] API 增强 ─────────── streaming token counting
+  [P2-C] Auth 安全 ────────── Bedrock/Vertex, AWS IAM, GCP Identity, credential chain
+  [P2-D] MCP 协议扩展 ─────── sampling, roots, logging, SSE server, handshake/negotiation,
                                        capability, notification, progress, cancellation, health
-                                       （已移除: tool version/sandbox/chain, resource sub/watcher/diff 等）
-  [P2-E] Agent 可靠性 ─────── [部分] summarizer, rollback, error recovery, retry, repl commands
-                                       （已移除: prompt template/optimizer/cache, tool analytics 等）
-  [P2-F] Session 增强 ─────── [部分] template（已移除: analytics, quality, auto summary, tag）
-  [P2-G] TUI 组件库 ──────────[部分] 21 components（已移除: context_menu, diff_view, file_tree 等）
-  [P2-H] Config 增强 ─────── [部分] hot reload, config_toml, permissions
-                                       （已移除: profile, permission rules/inherit, schema gen 等）
-  [P2-I] FS 增强 ──────────── [部分] symlink（已移除: encoding, line ending, index, template 等）
-  [P2-J] Process 增强 ─────── [已移除] command history/alias/suggest, streaming capture, progress
-  [P2-K] Core 增强 ───────────[已移除] EventBus, EventFilter
-  [P2-L] i18n 框架 ────────── [已移除] common::i18n + localized_error
-  总测试数: ~2654（较 Phase 1 的 945+ 增长 ~2.8x）
+  [P2-E] Agent 可靠性 ─────── summarizer, rollback, error recovery, retry, repl commands
+  [P2-F] Session 增强 ─────── template
+  [P2-G] TUI 组件库 ────────── 21 components
+  [P2-H] Config 增强 ─────── hot reload, config_toml, permissions
+  [P2-I] FS 增强 ──────────── symlink
+  总测试数: ~2654
 ```
 
 ---
