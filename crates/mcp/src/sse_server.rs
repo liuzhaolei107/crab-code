@@ -483,18 +483,29 @@ mod tests {
         let request = "GET /sse HTTP/1.1\r\nHost: localhost\r\n\r\n";
         stream.write_all(request.as_bytes()).await.unwrap();
 
-        // Read response — should contain SSE headers and endpoint event
-        let mut buf = vec![0u8; 4096];
-        let n = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
-            .await
-            .unwrap()
-            .unwrap();
-        let response = String::from_utf8_lossy(&buf[..n]);
+        // Read response — may arrive in multiple chunks, so accumulate
+        let mut buf = vec![0u8; 8192];
+        let mut total = 0;
+        for _ in 0..10 {
+            match tokio::time::timeout(Duration::from_millis(500), stream.read(&mut buf[total..]))
+                .await
+            {
+                Ok(Ok(n)) if n > 0 => {
+                    total += n;
+                    let so_far = String::from_utf8_lossy(&buf[..total]);
+                    if so_far.contains("event: endpoint") {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        let response = String::from_utf8_lossy(&buf[..total]);
 
         assert!(response.contains("200 OK"));
         assert!(response.contains("text/event-stream"));
         assert!(response.contains("event: endpoint"));
-        assert!(response.contains(&format!("/messages?session_id=")));
+        assert!(response.contains("/messages?session_id="));
 
         cancel.cancel();
     }
