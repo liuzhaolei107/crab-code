@@ -134,6 +134,7 @@ impl LatencyTracker {
             return None;
         }
         let total: Duration = self.samples.iter().sum();
+        #[allow(clippy::cast_possible_truncation)]
         Some(total / self.samples.len() as u32)
     }
 
@@ -255,6 +256,7 @@ impl TransportMetrics {
 
     /// Error rate (errors / total messages). Returns 0 if no messages.
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn error_rate(&self) -> f64 {
         let total = self.messages_sent() + self.messages_received();
         if total == 0 {
@@ -328,6 +330,7 @@ mod duration_secs {
     }
 }
 
+#[allow(clippy::ref_option)]
 fn serialize_opt_duration<S: serde::Serializer>(
     d: &Option<Duration>,
     s: S,

@@ -15,6 +15,9 @@ pub mod notification;
 pub mod progress;
 pub mod protocol;
 pub mod resource;
+pub mod resource_diff;
+pub mod resource_subscription;
+pub mod resource_watcher;
 pub mod roots;
 pub mod sampling;
 pub mod server;
@@ -62,6 +65,9 @@ pub use protocol::{
     ServerCapabilities, ServerInfo, ToolCallParams, ToolCallResult,
 };
 pub use resource::ResourceCache;
+pub use resource_diff::{DiffChunk, DiffFormat, ResourceDiff, apply_diff, compute_diff};
+pub use resource_subscription::{ResourceSubscription, SubscriptionManager};
+pub use resource_watcher::{ChangeType, ResourceChangeEvent, ResourceWatcher, WatcherConfig};
 pub use roots::{RootInfo, RootRegistry};
 pub use sampling::{SamplingHandler, SamplingRequest, SamplingResponse, StopReason};
 pub use server::{

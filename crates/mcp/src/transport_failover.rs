@@ -179,10 +179,8 @@ impl TransportFailover {
             return false;
         }
         let interval = Duration::from_secs(self.config.recovery_check_interval_secs);
-        match self.last_recovery_check {
-            Some(last) => last.elapsed() >= interval,
-            None => true,
-        }
+        self.last_recovery_check
+            .is_none_or(|last| last.elapsed() >= interval)
     }
 
     /// Record a recovery check attempt. Call after checking primary health.

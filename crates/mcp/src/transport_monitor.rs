@@ -131,6 +131,7 @@ impl MonitoredTransport {
         }
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn error_rate(&self) -> f64 {
         if self.total_messages == 0 {
             return 0.0;
@@ -138,6 +139,7 @@ impl MonitoredTransport {
         self.total_errors as f64 / self.total_messages as f64
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn avg_latency_ms(&self) -> f64 {
         if self.latency_count == 0 {
             return 0.0;
@@ -222,6 +224,7 @@ impl TransportMonitor {
             t.last_activity = Instant::now();
 
             // Check latency thresholds
+            #[allow(clippy::cast_possible_truncation)]
             let latency_ms = latency.as_millis() as u64;
             let thresholds = &inner.thresholds;
             if latency_ms > thresholds.latency_critical_ms {
