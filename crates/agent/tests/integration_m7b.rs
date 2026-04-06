@@ -511,6 +511,7 @@ fn query_loop_config_is_cloneable() {
         retry_policy: None,
         hook_executor: None,
         session_id: None,
+        effort: None,
     };
     let cloned = config.clone();
     assert_eq!(cloned.model.as_str(), "test-model");

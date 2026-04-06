@@ -31,7 +31,7 @@ clap_complete = "4"
 owo-colors = "4"
 
 # ─── HTTP ───
-reqwest = { version = "0.13", features = ["json", "stream"] }
+reqwest = { version = "0.13", features = ["json", "stream", "form"] }
 eventsource-stream = "0.2"
 either = "1"
 
@@ -84,8 +84,10 @@ wasmtime = "43"
 # ─── 进程 ───
 portable-pty = "0.9"
 
-# ─── 编码 ───
+# ─── 编码与加密 ───
 base64 = "0.22"
+sha2 = "0.10"
+rand = "0.9"
 
 # ─── 杂项 ───
 uuid = { version = "1", features = ["v4"] }

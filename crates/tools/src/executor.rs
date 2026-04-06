@@ -4,9 +4,33 @@ use std::sync::Arc;
 
 use crab_core::permission::PermissionDecision;
 use crab_core::tool::{ToolContext, ToolOutput};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use crate::permission::check_permission;
 use crate::registry::ToolRegistry;
+
+/// A channel sender for streaming incremental tool output (e.g. bash stdout lines).
+#[derive(Clone)]
+pub struct StreamingOutput {
+    tx: mpsc::Sender<String>,
+}
+
+impl StreamingOutput {
+    /// Create a new streaming output channel pair.
+    ///
+    /// Returns `(StreamingOutput, Receiver<String>)` where the receiver yields
+    /// incremental output deltas as they arrive.
+    pub fn channel(buffer: usize) -> (Self, mpsc::Receiver<String>) {
+        let (tx, rx) = mpsc::channel(buffer);
+        (Self { tx }, rx)
+    }
+
+    /// Send a delta (e.g. one line of stdout). Silently drops if receiver is gone.
+    pub async fn send(&self, delta: impl Into<String>) {
+        let _ = self.tx.send(delta.into()).await;
+    }
+}
 
 /// Callback trait for handling permission prompts.
 ///
@@ -107,6 +131,73 @@ impl ToolExecutor {
                 }
             }
         }
+    }
+
+    /// Execute a tool with streaming output support.
+    ///
+    /// Returns `(Receiver<String>, JoinHandle<Result<ToolOutput>>)`.
+    /// The receiver yields incremental output deltas (e.g. bash stdout lines).
+    /// The join handle resolves to the final complete `ToolOutput`.
+    ///
+    /// Permission checks are performed before spawning. If denied, the receiver
+    /// is immediately dropped and the handle returns the denial output.
+    pub fn execute_streaming(
+        &self,
+        tool_name: &str,
+        input: serde_json::Value,
+        ctx: &ToolContext,
+    ) -> (
+        mpsc::Receiver<String>,
+        JoinHandle<crab_common::Result<ToolOutput>>,
+    ) {
+        let (streaming, rx) = StreamingOutput::channel(64);
+        let registry = Arc::clone(&self.registry);
+        let tool_name = tool_name.to_string();
+        let ctx = ctx.clone();
+        let permission_handler = self.permission_handler.clone();
+
+        let handle = tokio::spawn(async move {
+            let tool = registry
+                .get(&tool_name)
+                .ok_or_else(|| crab_common::Error::Other(format!("tool not found: {tool_name}")))?;
+
+            let policy = &ctx.permission_policy;
+            let decision = check_permission(
+                policy,
+                &tool_name,
+                &tool.source(),
+                tool.is_read_only(),
+                &input,
+                &ctx.working_dir,
+            );
+
+            match decision {
+                PermissionDecision::Allow => {}
+                PermissionDecision::Deny(reason) => return Ok(ToolOutput::error(reason)),
+                PermissionDecision::AskUser(prompt) => {
+                    if let Some(handler) = &permission_handler {
+                        if !handler.ask_permission(&tool_name, &prompt).await {
+                            return Ok(ToolOutput::error(format!(
+                                "User denied permission for '{tool_name}'"
+                            )));
+                        }
+                    }
+                }
+            }
+
+            // Execute with streaming context
+            // For now, tools that support streaming can check for a StreamingOutput
+            // in the future via ToolContext extension. The bash tool uses tokio::process
+            // internally and sends deltas through the StreamingOutput.
+            //
+            // For the initial implementation, we run the tool normally and send
+            // the final output as a single delta.
+            let result = tool.execute(input, &ctx).await?;
+            streaming.send(result.text()).await;
+            Ok(result)
+        });
+
+        (rx, handle)
     }
 
     /// Execute a tool without any permission checks.
@@ -247,6 +338,65 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
             Box::pin(async { false })
         }
+    }
+
+    // ─── StreamingOutput tests ───
+
+    #[tokio::test]
+    async fn streaming_output_basic_send_recv() {
+        let (so, mut rx) = StreamingOutput::channel(8);
+        so.send("line 1\n").await;
+        so.send("line 2\n").await;
+        drop(so);
+
+        let mut lines = Vec::new();
+        while let Some(line) = rx.recv().await {
+            lines.push(line);
+        }
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], "line 1\n");
+        assert_eq!(lines[1], "line 2\n");
+    }
+
+    #[tokio::test]
+    async fn streaming_output_dropped_receiver() {
+        let (so, rx) = StreamingOutput::channel(1);
+        drop(rx);
+        // Should not panic — send silently drops
+        so.send("orphaned").await;
+    }
+
+    #[tokio::test]
+    async fn execute_streaming_existing_tool() {
+        let executor = make_executor();
+        let ctx = make_ctx(PermissionMode::Dangerously);
+        let (mut rx, handle) = executor.execute_streaming(
+            "echo",
+            serde_json::json!({"text": "streamed"}),
+            &ctx,
+        );
+
+        let result = handle.await.unwrap().unwrap();
+        assert!(!result.is_error);
+        assert_eq!(result.text(), "streamed");
+
+        // Should have received at least one delta
+        let mut deltas = Vec::new();
+        while let Some(d) = rx.recv().await {
+            deltas.push(d);
+        }
+        assert!(!deltas.is_empty());
+    }
+
+    #[tokio::test]
+    async fn execute_streaming_missing_tool() {
+        let executor = make_executor();
+        let ctx = make_ctx(PermissionMode::Default);
+        let (_rx, handle) =
+            executor.execute_streaming("nonexistent", serde_json::json!({}), &ctx);
+
+        let result = handle.await.unwrap();
+        assert!(result.is_err());
     }
 
     /// A handler that always allows permission.

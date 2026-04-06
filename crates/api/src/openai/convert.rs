@@ -31,6 +31,16 @@ pub fn to_chat_completion_request(req: &MessageRequest<'_>, stream: bool) -> Cha
         messages.extend(converted);
     }
 
+    // Deserialize response_format / tool_choice from generic Value to typed enums
+    let response_format = req
+        .response_format
+        .as_ref()
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let tool_choice = req
+        .tool_choice
+        .as_ref()
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+
     ChatCompletionRequest {
         model: req.model.0.clone(),
         messages,
@@ -38,6 +48,8 @@ pub fn to_chat_completion_request(req: &MessageRequest<'_>, stream: bool) -> Cha
         temperature: req.temperature,
         tools: req.tools.clone(),
         stream,
+        response_format,
+        tool_choice,
     }
 }
 
@@ -254,6 +266,8 @@ mod tests {
             temperature: Some(0.7),
             cache_breakpoints: vec![],
             budget_tokens: None,
+            response_format: None,
+            tool_choice: None,
         }
     }
 
@@ -314,6 +328,8 @@ mod tests {
             temperature: None,
             cache_breakpoints: vec![],
             budget_tokens: None,
+            response_format: None,
+            tool_choice: None,
         };
         let chat_req = to_chat_completion_request(&req, false);
         let m = &chat_req.messages[0];
@@ -337,6 +353,8 @@ mod tests {
             temperature: None,
             cache_breakpoints: vec![],
             budget_tokens: None,
+            response_format: None,
+            tool_choice: None,
         };
         let chat_req = to_chat_completion_request(&req, false);
         let m = &chat_req.messages[0];
@@ -519,6 +537,8 @@ mod tests {
             temperature: None,
             cache_breakpoints: vec![],
             budget_tokens: None,
+            response_format: None,
+            tool_choice: None,
         };
         let chat_req = to_chat_completion_request(&req, false);
         let m = &chat_req.messages[0];

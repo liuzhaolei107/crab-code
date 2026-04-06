@@ -20,6 +20,10 @@ pub struct MessageRequest<'a> {
     /// Extended thinking budget in tokens. When > 0, Anthropic provider enables
     /// extended thinking mode. Other providers silently ignore this.
     pub budget_tokens: Option<u32>,
+    /// Response format constraint (OpenAI only — Anthropic ignores this).
+    pub response_format: Option<serde_json::Value>,
+    /// Tool choice constraint (OpenAI only — Anthropic ignores this).
+    pub tool_choice: Option<serde_json::Value>,
 }
 
 /// Specifies where to place a `cache_control: {"type": "ephemeral"}` marker.
@@ -95,6 +99,8 @@ mod tests {
             temperature: None,
             cache_breakpoints: vec![],
             budget_tokens: None,
+            response_format: None,
+            tool_choice: None,
         };
         assert_eq!(req.model.as_str(), "claude-sonnet-4-20250514");
         assert_eq!(req.messages.len(), 1);

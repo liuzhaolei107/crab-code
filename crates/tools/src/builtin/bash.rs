@@ -6,6 +6,9 @@ use crab_common::Result;
 use crab_core::tool::{Tool, ToolContext, ToolOutput};
 use crab_process::spawn::{SpawnOptions, run};
 use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, BufReader};
+
+use crate::executor::StreamingOutput;
 
 /// Shell command execution tool.
 pub struct BashTool;
@@ -117,6 +120,129 @@ impl Tool for BashTool {
     }
 }
 
+impl BashTool {
+    /// Execute with streaming output — sends each line of stdout/stderr through
+    /// the `StreamingOutput` channel as it arrives.
+    ///
+    /// The final `ToolOutput` is consistent with non-streaming execution.
+    pub async fn execute_streaming(
+        &self,
+        input: Value,
+        ctx: &ToolContext,
+        streaming: StreamingOutput,
+    ) -> Result<ToolOutput> {
+        let command = input["command"].as_str().unwrap_or("").to_owned();
+        let timeout_ms = input["timeout"].as_u64();
+        let working_dir = ctx.working_dir.clone();
+
+        if command.is_empty() {
+            return Ok(ToolOutput::error("command is required"));
+        }
+
+        let timeout = timeout_ms
+            .map(Duration::from_millis)
+            .unwrap_or(Duration::from_secs(120));
+
+        let (prog, args) = if cfg!(windows) {
+            ("cmd", vec!["/C".to_owned(), command])
+        } else {
+            ("sh", vec!["-c".to_owned(), command])
+        };
+
+        let mut child = tokio::process::Command::new(prog)
+            .args(&args)
+            .current_dir(&working_dir)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| crab_common::Error::Other(format!("failed to spawn: {e}")))?;
+
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        let cancel = ctx.cancellation_token.clone();
+
+        let mut combined = String::new();
+
+        // Read stdout lines and stream them
+        let streaming_clone = streaming.clone();
+        let stdout_handle = tokio::spawn(async move {
+            let mut lines = Vec::new();
+            if let Some(out) = stdout {
+                let reader = BufReader::new(out);
+                let mut line_stream = reader.lines();
+                while let Ok(Some(line)) = line_stream.next_line().await {
+                    let delta = format!("{line}\n");
+                    streaming_clone.send(&delta).await;
+                    lines.push(line);
+                }
+            }
+            lines
+        });
+
+        // Read stderr lines
+        let stderr_handle = tokio::spawn(async move {
+            let mut lines = Vec::new();
+            if let Some(err) = stderr {
+                let reader = BufReader::new(err);
+                let mut line_stream = reader.lines();
+                while let Ok(Some(line)) = line_stream.next_line().await {
+                    lines.push(line);
+                }
+            }
+            lines
+        });
+
+        // Wait for completion with timeout and cancellation support
+        let result = tokio::select! {
+            status = child.wait() => {
+                let stdout_lines = stdout_handle.await.unwrap_or_default();
+                let stderr_lines = stderr_handle.await.unwrap_or_default();
+
+                for line in &stdout_lines {
+                    if !combined.is_empty() {
+                        combined.push('\n');
+                    }
+                    combined.push_str(line);
+                }
+                for line in &stderr_lines {
+                    if !combined.is_empty() {
+                        combined.push('\n');
+                    }
+                    combined.push_str(line);
+                    // Also stream stderr lines
+                    streaming.send(format!("{line}\n")).await;
+                }
+
+                match status {
+                    Ok(s) if s.success() => Ok(ToolOutput::success(&combined)),
+                    Ok(s) => {
+                        let code = s.code().unwrap_or(-1);
+                        if combined.is_empty() {
+                            Ok(ToolOutput::error(format!("Exit code: {code}")))
+                        } else {
+                            Ok(ToolOutput::with_content(
+                                vec![crab_core::tool::ToolOutputContent::Text { text: combined }],
+                                true,
+                            ))
+                        }
+                    }
+                    Err(e) => Ok(ToolOutput::error(format!("process error: {e}"))),
+                }
+            }
+            _ = tokio::time::sleep(timeout) => {
+                let _ = child.kill().await;
+                Ok(ToolOutput::error(format!("Command timed out\n{combined}")))
+            }
+            _ = cancel.cancelled() => {
+                let _ = child.kill().await;
+                Ok(ToolOutput::error(format!("Command cancelled\n{combined}")))
+            }
+        };
+
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,5 +295,70 @@ mod tests {
         let schema = BashTool.input_schema();
         let required = schema["required"].as_array().unwrap();
         assert!(required.iter().any(|v| v == "command"));
+    }
+
+    #[tokio::test]
+    async fn bash_streaming_echo() {
+        let tool = BashTool;
+        let (streaming, mut rx) = crate::executor::StreamingOutput::channel(16);
+        let input = serde_json::json!({ "command": "echo hello_stream" });
+        let ctx = make_ctx();
+
+        let handle = tokio::spawn(async move {
+            tool.execute_streaming(input, &ctx, streaming).await
+        });
+
+        let result = handle.await.unwrap().unwrap();
+        assert!(!result.is_error);
+        assert!(result.text().contains("hello_stream"));
+
+        // Collect streamed deltas
+        let mut deltas = Vec::new();
+        while let Some(d) = rx.recv().await {
+            deltas.push(d);
+        }
+        assert!(!deltas.is_empty());
+        let all: String = deltas.concat();
+        assert!(all.contains("hello_stream"));
+    }
+
+    #[tokio::test]
+    async fn bash_streaming_empty_command_is_error() {
+        let tool = BashTool;
+        let (streaming, _rx) = crate::executor::StreamingOutput::channel(1);
+        let input = serde_json::json!({ "command": "" });
+        let out = tool
+            .execute_streaming(input, &make_ctx(), streaming)
+            .await
+            .unwrap();
+        assert!(out.is_error);
+    }
+
+    #[tokio::test]
+    async fn bash_streaming_cancel() {
+        let tool = BashTool;
+        let (streaming, _rx) = crate::executor::StreamingOutput::channel(16);
+        let cmd = if cfg!(windows) {
+            "ping -n 30 127.0.0.1"
+        } else {
+            "sleep 30"
+        };
+        let input = serde_json::json!({ "command": cmd });
+
+        let mut ctx = make_ctx();
+        let cancel = ctx.cancellation_token.clone();
+
+        // Cancel after a short delay
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            cancel.cancel();
+        });
+
+        let out = tool
+            .execute_streaming(input, &ctx, streaming)
+            .await
+            .unwrap();
+        assert!(out.is_error);
+        assert!(out.text().contains("cancelled"));
     }
 }

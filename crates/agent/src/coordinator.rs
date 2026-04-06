@@ -167,7 +167,11 @@ impl AgentSession {
             budget_tokens: None,
             retry_policy: None,
             hook_executor: None,
-            session_id: Some(session_config.session_id),
+            session_id: Some(session_config.session_id.clone()),
+            effort: session_config
+                .effort
+                .as_deref()
+                .and_then(|e| e.parse::<crate::effort::EffortLevel>().ok()),
         };
 
         let (event_tx, event_rx) = mpsc::channel(256);

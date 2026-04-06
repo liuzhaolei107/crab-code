@@ -121,6 +121,7 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
         retry_policy: None,
         hook_executor: None,
         session_id: Some(config.session_config.session_id.clone()),
+        effort: None,
     };
 
     let (event_tx, event_rx) = mpsc::channel::<Event>(256);
@@ -365,6 +366,7 @@ async fn run_loop(
                         retry_policy: None,
                         hook_executor: None,
                         session_id: None,
+                        effort: None,
                     };
 
                     let mut task_cost_tracker = crab_session::CostAccumulator::default();

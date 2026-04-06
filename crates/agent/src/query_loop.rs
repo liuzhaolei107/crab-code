@@ -12,7 +12,7 @@ use crab_core::model::{ModelId, TokenUsage};
 use crab_core::tool::{ToolContext, ToolOutput};
 use crab_plugin::hook::{HookAction, HookContext, HookExecutor, HookTrigger};
 use crab_session::{CompactionStrategy, CostAccumulator, ContextAction, ContextManager, Conversation};
-use crab_tools::executor::ToolExecutor;
+use crab_tools::executor::{StreamingOutput, ToolExecutor};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -39,6 +39,9 @@ pub struct QueryLoopConfig {
     pub hook_executor: Option<Arc<HookExecutor>>,
     /// Session ID passed to hooks via `CRAB_SESSION_ID` env var.
     pub session_id: Option<String>,
+    /// Effort level for reasoning. When set, overrides `budget_tokens` via
+    /// `EffortLevel::to_budget_tokens()`.
+    pub effort: Option<crate::effort::EffortLevel>,
 }
 
 /// Core agent loop: user input -> LLM SSE stream -> parse tool calls ->
@@ -89,7 +92,13 @@ pub async fn query_loop(
             tools: config.tool_schemas.clone(),
             temperature: config.temperature,
             cache_breakpoints,
-            budget_tokens: config.budget_tokens,
+            budget_tokens: if let Some(effort) = &config.effort {
+                effort.to_budget_tokens()
+            } else {
+                config.budget_tokens
+            },
+            response_format: None,
+            tool_choice: None,
         };
 
         // Stream the LLM response with retry support
@@ -522,7 +531,41 @@ async fn execute_tool_calls(
             })
             .await;
 
-        let result = executor.execute(&name, input.clone(), ctx).await;
+        // Use streaming execution for bash tool to get real-time output
+        let result = if name == "bash" {
+            let (streaming, mut delta_rx) = StreamingOutput::channel(64);
+            let bash_tool = crab_tools::builtin::bash::BashTool;
+            let ctx_clone = ctx.clone();
+            let input_clone = input.clone();
+
+            let exec_handle = tokio::spawn(async move {
+                bash_tool
+                    .execute_streaming(input_clone, &ctx_clone, streaming)
+                    .await
+            });
+
+            // Forward deltas as ToolOutputDelta events
+            let event_tx_delta = event_tx.clone();
+            let delta_id = id.clone();
+            let delta_fwd = tokio::spawn(async move {
+                while let Some(delta) = delta_rx.recv().await {
+                    let _ = event_tx_delta
+                        .send(Event::ToolOutputDelta {
+                            id: delta_id.clone(),
+                            delta,
+                        })
+                        .await;
+                }
+            });
+
+            let result = exec_handle
+                .await
+                .unwrap_or_else(|e| Err(crab_common::Error::Other(format!("join error: {e}"))));
+            let _ = delta_fwd.await;
+            result
+        } else {
+            executor.execute(&name, input.clone(), ctx).await
+        };
 
         let _ = event_tx
             .send(Event::ToolResult {
@@ -761,6 +804,7 @@ mod tests {
             retry_policy: None,
             hook_executor: None,
             session_id: None,
+            effort: None,
         };
         assert_eq!(config.model.as_str(), "claude-sonnet-4-20250514");
         assert_eq!(config.max_tokens, 4096);
@@ -780,6 +824,7 @@ mod tests {
             retry_policy: Some(policy),
             hook_executor: None,
             session_id: None,
+            effort: None,
         };
         assert!(config.retry_policy.is_some());
         assert_eq!(config.retry_policy.unwrap().max_retries, 5);

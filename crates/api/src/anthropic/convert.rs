@@ -250,6 +250,8 @@ mod tests {
             temperature: Some(0.5),
             cache_breakpoints: vec![],
             budget_tokens: None,
+            response_format: None,
+            tool_choice: None,
         }
     }
 
@@ -328,6 +330,8 @@ mod tests {
             temperature: None,
             cache_breakpoints: vec![],
             budget_tokens: None,
+            response_format: None,
+            tool_choice: None,
         };
         let api_req = to_anthropic_request(&req, false);
         let blocks = &api_req.messages[0].content;
@@ -352,6 +356,8 @@ mod tests {
             temperature: None,
             cache_breakpoints: vec![],
             budget_tokens: None,
+            response_format: None,
+            tool_choice: None,
         };
         let api_req = to_anthropic_request(&req, false);
         let blocks = &api_req.messages[0].content;
@@ -379,6 +385,8 @@ mod tests {
             temperature: None,
             cache_breakpoints: vec![],
             budget_tokens: None,
+            response_format: None,
+            tool_choice: None,
         };
         let api_req = to_anthropic_request(&req, false);
         let blocks = &api_req.messages[0].content;

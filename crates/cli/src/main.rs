@@ -201,6 +201,23 @@ enum CliCommand {
     },
     /// Run diagnostic checks
     Doctor,
+    /// Check for updates, install, or rollback
+    Update {
+        #[command(subcommand)]
+        action: Option<commands::update::UpdateAction>,
+    },
+    /// Manage plugins (list, install, remove, enable, disable, validate)
+    Plugin {
+        #[command(subcommand)]
+        action: commands::plugin::PluginAction,
+    },
+    /// List configured agent definitions
+    Agents,
+    /// Generate shell completion scripts
+    Completion {
+        /// Shell to generate completions for
+        shell: clap_complete::Shell,
+    },
 }
 
 /// Session management actions.
@@ -283,6 +300,17 @@ fn main() -> anyhow::Result<()> {
             },
             CliCommand::Auth { action } => commands::auth::run(action),
             CliCommand::Doctor => commands::doctor::run(),
+            CliCommand::Update { action } => match action {
+                Some(a) => commands::update::run(a),
+                None => commands::update::run_default(),
+            },
+            CliCommand::Plugin { action } => commands::plugin::run(action),
+            CliCommand::Agents => commands::agents::run(),
+            CliCommand::Completion { shell } => {
+                let mut cmd = <Cli as clap::CommandFactory>::command();
+                clap_complete::generate(*shell, &mut cmd, "crab", &mut std::io::stdout());
+                Ok(())
+            }
         };
     }
 
@@ -1106,11 +1134,6 @@ fn event_to_json(event: &Event) -> Option<Value> {
                 "cache_creation_tokens": usage.cache_creation_tokens,
             },
         })),
-        Event::ToolOutputDelta { id, delta } => Some(json!({
-            "type": "tool_output_delta",
-            "id": id,
-            "delta": delta,
-        })),
     }
 }
 
@@ -1849,5 +1872,140 @@ mod tests {
         let registry = crab_tools::registry::ToolRegistry::new();
         let result = resolve_system_prompt(&cli, std::path::Path::new("."), &registry, None);
         assert!(result.is_err());
+    }
+
+    // ─── Subcommand CLI parsing tests ───
+
+    #[test]
+    fn cli_parses_update_check() {
+        let cli = Cli::try_parse_from(["crab", "update", "check"]).unwrap();
+        assert!(matches!(cli.command, Some(CliCommand::Update { .. })));
+    }
+
+    #[test]
+    fn cli_parses_update_check_list() {
+        let cli = Cli::try_parse_from(["crab", "update", "check", "--list"]).unwrap();
+        match cli.command {
+            Some(CliCommand::Update { action: Some(commands::update::UpdateAction::Check { list }) }) => {
+                assert!(list);
+            }
+            _ => panic!("expected Update Check --list"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_update_install_dry_run() {
+        let cli = Cli::try_parse_from(["crab", "update", "install", "--dry-run", "1.0.0"]).unwrap();
+        match cli.command {
+            Some(CliCommand::Update { action: Some(commands::update::UpdateAction::Install { target, dry_run, force }) }) => {
+                assert_eq!(target.as_deref(), Some("1.0.0"));
+                assert!(dry_run);
+                assert!(!force);
+            }
+            _ => panic!("expected Update Install"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_update_rollback() {
+        let cli = Cli::try_parse_from(["crab", "update", "rollback", "0.2.0"]).unwrap();
+        match cli.command {
+            Some(CliCommand::Update { action: Some(commands::update::UpdateAction::Rollback { target }) }) => {
+                assert_eq!(target.as_deref(), Some("0.2.0"));
+            }
+            _ => panic!("expected Update Rollback"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_update_default() {
+        let cli = Cli::try_parse_from(["crab", "update"]).unwrap();
+        match cli.command {
+            Some(CliCommand::Update { action: None }) => {}
+            _ => panic!("expected Update with no subcommand"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_plugin_list() {
+        let cli = Cli::try_parse_from(["crab", "plugin", "list"]).unwrap();
+        assert!(matches!(cli.command, Some(CliCommand::Plugin { .. })));
+    }
+
+    #[test]
+    fn cli_parses_plugin_install() {
+        let cli = Cli::try_parse_from(["crab", "plugin", "install", "./my-plugin"]).unwrap();
+        match cli.command {
+            Some(CliCommand::Plugin { action: commands::plugin::PluginAction::Install { source } }) => {
+                assert_eq!(source, "./my-plugin");
+            }
+            _ => panic!("expected Plugin Install"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_plugin_remove() {
+        let cli = Cli::try_parse_from(["crab", "plugin", "remove", "my-plugin"]).unwrap();
+        match cli.command {
+            Some(CliCommand::Plugin { action: commands::plugin::PluginAction::Remove { name } }) => {
+                assert_eq!(name, "my-plugin");
+            }
+            _ => panic!("expected Plugin Remove"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_plugin_enable() {
+        let cli = Cli::try_parse_from(["crab", "plugin", "enable", "my-plugin"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(CliCommand::Plugin { action: commands::plugin::PluginAction::Enable { .. } })
+        ));
+    }
+
+    #[test]
+    fn cli_parses_plugin_disable() {
+        let cli = Cli::try_parse_from(["crab", "plugin", "disable", "my-plugin"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(CliCommand::Plugin { action: commands::plugin::PluginAction::Disable { .. } })
+        ));
+    }
+
+    #[test]
+    fn cli_parses_plugin_validate() {
+        let cli = Cli::try_parse_from(["crab", "plugin", "validate", "./path"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(CliCommand::Plugin { action: commands::plugin::PluginAction::Validate { .. } })
+        ));
+    }
+
+    #[test]
+    fn cli_parses_agents() {
+        let cli = Cli::try_parse_from(["crab", "agents"]).unwrap();
+        assert!(matches!(cli.command, Some(CliCommand::Agents)));
+    }
+
+    #[test]
+    fn cli_parses_completion_bash() {
+        let cli = Cli::try_parse_from(["crab", "completion", "bash"]).unwrap();
+        match cli.command {
+            Some(CliCommand::Completion { shell }) => {
+                assert_eq!(shell, clap_complete::Shell::Bash);
+            }
+            _ => panic!("expected Completion"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_completion_powershell() {
+        let cli = Cli::try_parse_from(["crab", "completion", "powershell"]).unwrap();
+        match cli.command {
+            Some(CliCommand::Completion { shell }) => {
+                assert_eq!(shell, clap_complete::Shell::PowerShell);
+            }
+            _ => panic!("expected Completion PowerShell"),
+        }
     }
 }
