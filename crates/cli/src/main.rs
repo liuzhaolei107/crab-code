@@ -42,7 +42,7 @@ struct Cli {
     #[arg(long, default_value = "anthropic")]
     provider: String,
 
-    /// Model ID override (e.g. "claude-sonnet-4-20250514", "gpt-4o").
+    /// Model ID override (e.g. "claude-sonnet-4-6", "gpt-4o").
     /// Supports aliases: "sonnet", "opus", "haiku".
     #[arg(long, short)]
     model: Option<String>,
@@ -388,8 +388,8 @@ async fn run_with_resume(cli: &Cli, resume_id: Option<String>) -> anyhow::Result
 /// Unknown strings are returned unchanged.
 fn resolve_model_alias(model: &str) -> String {
     match model {
-        "sonnet" => "claude-sonnet-4-20250514".to_string(),
-        "opus" => "claude-opus-4-20250514".to_string(),
+        "sonnet" => "claude-sonnet-4-6".to_string(),
+        "opus" => "claude-opus-4-6".to_string(),
         "haiku" => "claude-haiku-4-5-20251001".to_string(),
         other => other.to_string(),
     }
@@ -585,7 +585,7 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
             if provider == "openai" {
                 "gpt-4o".to_string()
             } else {
-                "claude-sonnet-4-20250514".to_string()
+                "claude-sonnet-4-6".to_string()
             }
         });
 
@@ -1378,8 +1378,8 @@ mod tests {
 
     #[test]
     fn resolve_model_alias_known() {
-        assert_eq!(resolve_model_alias("sonnet"), "claude-sonnet-4-20250514");
-        assert_eq!(resolve_model_alias("opus"), "claude-opus-4-20250514");
+        assert_eq!(resolve_model_alias("sonnet"), "claude-sonnet-4-6");
+        assert_eq!(resolve_model_alias("opus"), "claude-opus-4-6");
         assert_eq!(resolve_model_alias("haiku"), "claude-haiku-4-5-20251001");
     }
 

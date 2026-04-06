@@ -668,8 +668,8 @@ fn cmd_copy(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
 /// Resolve well-known model aliases to full IDs.
 fn resolve_model_alias(alias: &str) -> String {
     match alias {
-        "sonnet" => "claude-sonnet-4-20250514".to_string(),
-        "opus" => "claude-opus-4-20250514".to_string(),
+        "sonnet" => "claude-sonnet-4-6".to_string(),
+        "opus" => "claude-opus-4-6".to_string(),
         "haiku" => "claude-haiku-4-5-20251001".to_string(),
         other => other.to_string(),
     }
@@ -953,7 +953,7 @@ mod tests {
         let result = reg.execute("model", "sonnet", &ctx).unwrap();
         assert!(matches!(
             result,
-            SlashCommandResult::Action(SlashAction::SwitchModel(m)) if m == "claude-sonnet-4-20250514"
+            SlashCommandResult::Action(SlashAction::SwitchModel(m)) if m == "claude-sonnet-4-6"
         ));
     }
 
@@ -965,7 +965,7 @@ mod tests {
         let result = reg.execute("model", "opus", &ctx).unwrap();
         assert!(matches!(
             result,
-            SlashCommandResult::Action(SlashAction::SwitchModel(m)) if m == "claude-opus-4-20250514"
+            SlashCommandResult::Action(SlashAction::SwitchModel(m)) if m == "claude-opus-4-6"
         ));
     }
 

@@ -154,7 +154,7 @@ pub fn create_backend(settings: &crab_config::Settings) -> LlmBackend {
             let model_id = settings
                 .model
                 .as_deref()
-                .unwrap_or("anthropic.claude-sonnet-4-20250514-v2:0")
+                .unwrap_or("us.anthropic.claude-sonnet-4-6")
                 .to_string();
             let config = bedrock::BedrockConfig {
                 region,
@@ -186,7 +186,7 @@ pub fn create_backend(settings: &crab_config::Settings) -> LlmBackend {
             let model_id = settings
                 .model
                 .as_deref()
-                .unwrap_or("claude-sonnet-4-20250514")
+                .unwrap_or("claude-sonnet-4-6")
                 .to_string();
             let config = vertex::VertexConfig {
                 project_id,
