@@ -2,6 +2,7 @@ pub mod agent;
 pub mod ask_user;
 pub mod bash;
 pub mod bash_security;
+pub mod cron;
 pub mod edit;
 pub mod glob;
 pub mod grep;
@@ -14,7 +15,9 @@ pub mod plan_file;
 pub mod plan_mode;
 pub mod read;
 pub mod read_enhanced;
+pub mod remote_trigger;
 pub mod task;
+pub mod team;
 pub mod web_cache;
 pub mod web_fetch;
 pub mod web_formatter;
@@ -49,6 +52,7 @@ pub fn register_all_builtins(
     registry.register(Arc::new(web_fetch::WebFetchTool));
     registry.register(Arc::new(ask_user::AskUserQuestionTool));
     registry.register(Arc::new(plan_mode::EnterPlanModeTool));
+    registry.register(Arc::new(plan_mode::ExitPlanModeTool));
     registry.register(Arc::new(image_read::ImageReadTool));
     registry.register(Arc::new(task::TaskCreateTool::new(Arc::clone(&store))));
     registry.register(Arc::new(task::TaskListTool::new(Arc::clone(&store))));
@@ -56,6 +60,19 @@ pub fn register_all_builtins(
     registry.register(Arc::new(task::TaskGetTool::new(store)));
     registry.register(Arc::new(worktree::EnterWorktreeTool));
     registry.register(Arc::new(worktree::ExitWorktreeTool));
+    registry.register(Arc::new(team::TeamCreateTool));
+    registry.register(Arc::new(team::TeamDeleteTool));
+    registry.register(Arc::new(team::SendMessageTool));
+    registry.register(Arc::new(task::TaskStopTool));
+    registry.register(Arc::new(task::TaskOutputTool));
+
+    let cron_store = cron::shared_cron_store();
+    registry.register(Arc::new(cron::CronCreateTool::new(Arc::clone(&cron_store))));
+    registry.register(Arc::new(cron::CronDeleteTool::new(Arc::clone(&cron_store))));
+    registry.register(Arc::new(cron::CronListTool::new(cron_store)));
+
+    let trigger_store = remote_trigger::shared_trigger_store();
+    registry.register(Arc::new(remote_trigger::RemoteTriggerTool::new(trigger_store)));
 }
 
 /// Create a `ToolRegistry` pre-populated with all built-in tools.
@@ -89,6 +106,7 @@ mod tests {
         assert!(registry.get("web_fetch").is_some());
         assert!(registry.get("ask_user").is_some());
         assert!(registry.get("enter_plan_mode").is_some());
+        assert!(registry.get("exit_plan_mode").is_some());
         assert!(registry.get("image_read").is_some());
         assert!(registry.get("task_create").is_some());
         assert!(registry.get("task_list").is_some());
@@ -96,19 +114,28 @@ mod tests {
         assert!(registry.get("task_get").is_some());
         assert!(registry.get("enter_worktree").is_some());
         assert!(registry.get("exit_worktree").is_some());
+        assert!(registry.get("team_create").is_some());
+        assert!(registry.get("team_delete").is_some());
+        assert!(registry.get("send_message").is_some());
+        assert!(registry.get("task_stop").is_some());
+        assert!(registry.get("task_output").is_some());
+        assert!(registry.get("cron_create").is_some());
+        assert!(registry.get("cron_delete").is_some());
+        assert!(registry.get("cron_list").is_some());
+        assert!(registry.get("remote_trigger").is_some());
     }
 
     #[test]
-    fn default_registry_has_21_tools() {
+    fn default_registry_has_31_tools() {
         let registry = create_default_registry();
-        assert_eq!(registry.len(), 21);
+        assert_eq!(registry.len(), 31);
     }
 
     #[test]
     fn all_tools_have_schemas() {
         let registry = create_default_registry();
         let schemas = registry.tool_schemas();
-        assert_eq!(schemas.len(), 21);
+        assert_eq!(schemas.len(), 31);
         for schema in &schemas {
             assert!(schema.get("name").is_some());
             assert!(schema.get("description").is_some());

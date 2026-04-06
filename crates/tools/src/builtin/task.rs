@@ -1,5 +1,5 @@
 use crab_common::Result;
-use crab_core::tool::{Tool, ToolContext, ToolOutput};
+use crab_core::tool::{Tool, ToolContext, ToolOutput, ToolOutputContent};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;
@@ -445,6 +445,147 @@ impl Tool for TaskUpdateTool {
     }
 }
 
+/// Task stop tool — requests cancellation of a background task.
+///
+/// Returns a structured JSON action for the agent layer to intercept
+/// and cancel the corresponding worker via CancellationToken.
+pub struct TaskStopTool;
+
+impl Tool for TaskStopTool {
+    fn name(&self) -> &str {
+        "task_stop"
+    }
+
+    fn description(&self) -> &str {
+        "Stop a running background task by its ID"
+    }
+
+    fn input_schema(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "The ID of the task to stop"
+                }
+            },
+            "required": ["task_id"]
+        })
+    }
+
+    fn execute(
+        &self,
+        input: Value,
+        _ctx: &ToolContext,
+    ) -> Pin<Box<dyn Future<Output = Result<ToolOutput>> + Send + '_>> {
+        Box::pin(async move {
+            let task_id = input
+                .get("task_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    crab_common::Error::Other("missing required parameter: task_id".into())
+                })?;
+
+            if task_id.trim().is_empty() {
+                return Ok(ToolOutput::error("task_id must not be empty"));
+            }
+
+            let result = serde_json::json!({
+                "action": "task_stop",
+                "stopped": true,
+                "task_id": task_id,
+            });
+
+            Ok(ToolOutput::with_content(
+                vec![ToolOutputContent::Json { value: result }],
+                false,
+            ))
+        })
+    }
+}
+
+/// Task output tool — retrieves the output of a background task.
+///
+/// Returns a structured JSON action for the agent layer to intercept
+/// and fetch output from the corresponding worker.
+pub struct TaskOutputTool;
+
+impl Tool for TaskOutputTool {
+    fn name(&self) -> &str {
+        "task_output"
+    }
+
+    fn description(&self) -> &str {
+        "Get the output of a background task"
+    }
+
+    fn input_schema(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "The ID of the task to get output from"
+                },
+                "block": {
+                    "type": "boolean",
+                    "description": "Whether to wait for the task to complete (default: true)"
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in milliseconds when blocking (default: 30000)"
+                }
+            },
+            "required": ["task_id"]
+        })
+    }
+
+    fn execute(
+        &self,
+        input: Value,
+        _ctx: &ToolContext,
+    ) -> Pin<Box<dyn Future<Output = Result<ToolOutput>> + Send + '_>> {
+        Box::pin(async move {
+            let task_id = input
+                .get("task_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    crab_common::Error::Other("missing required parameter: task_id".into())
+                })?;
+
+            if task_id.trim().is_empty() {
+                return Ok(ToolOutput::error("task_id must not be empty"));
+            }
+
+            let block = input
+                .get("block")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+
+            let timeout = input
+                .get("timeout")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(30_000);
+
+            let result = serde_json::json!({
+                "action": "task_output",
+                "task_id": task_id,
+                "block": block,
+                "timeout_ms": timeout,
+            });
+
+            Ok(ToolOutput::with_content(
+                vec![ToolOutputContent::Json { value: result }],
+                false,
+            ))
+        })
+    }
+
+    fn is_read_only(&self) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,5 +684,138 @@ mod tests {
         let back: TaskItem = serde_json::from_str(&json).unwrap();
         assert_eq!(back.id, "1");
         assert_eq!(back.subject, "Test task");
+    }
+
+    // ─── TaskStopTool ───
+
+    fn test_ctx() -> crab_core::tool::ToolContext {
+        crab_core::tool::ToolContext {
+            working_dir: std::path::PathBuf::from("/tmp"),
+            permission_mode: crab_core::permission::PermissionMode::Dangerously,
+            session_id: "test".into(),
+            cancellation_token: tokio_util::sync::CancellationToken::new(),
+            permission_policy: crab_core::permission::PermissionPolicy::default(),
+        }
+    }
+
+    #[test]
+    fn task_stop_metadata() {
+        let tool = TaskStopTool;
+        assert_eq!(tool.name(), "task_stop");
+        assert!(!tool.is_read_only());
+    }
+
+    #[test]
+    fn task_stop_schema() {
+        let schema = TaskStopTool.input_schema();
+        let required = schema["required"].as_array().unwrap();
+        assert!(required.contains(&serde_json::json!("task_id")));
+    }
+
+    #[tokio::test]
+    async fn task_stop_basic() {
+        let ctx = test_ctx();
+        let input = serde_json::json!({"task_id": "task_42"});
+        let output = TaskStopTool.execute(input, &ctx).await.unwrap();
+        assert!(!output.is_error);
+
+        match &output.content[0] {
+            ToolOutputContent::Json { value } => {
+                assert_eq!(value["action"], "task_stop");
+                assert_eq!(value["stopped"], true);
+                assert_eq!(value["task_id"], "task_42");
+            }
+            _ => panic!("expected JSON output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn task_stop_empty_id() {
+        let ctx = test_ctx();
+        let input = serde_json::json!({"task_id": "  "});
+        let output = TaskStopTool.execute(input, &ctx).await.unwrap();
+        assert!(output.is_error);
+        assert!(output.text().contains("empty"));
+    }
+
+    #[tokio::test]
+    async fn task_stop_missing_id() {
+        let ctx = test_ctx();
+        let input = serde_json::json!({});
+        let result = TaskStopTool.execute(input, &ctx).await;
+        assert!(result.is_err());
+    }
+
+    // ─── TaskOutputTool ───
+
+    #[test]
+    fn task_output_metadata() {
+        let tool = TaskOutputTool;
+        assert_eq!(tool.name(), "task_output");
+        assert!(tool.is_read_only());
+    }
+
+    #[test]
+    fn task_output_schema() {
+        let schema = TaskOutputTool.input_schema();
+        let required = schema["required"].as_array().unwrap();
+        assert!(required.contains(&serde_json::json!("task_id")));
+        let props = schema["properties"].as_object().unwrap();
+        assert!(props.contains_key("block"));
+        assert!(props.contains_key("timeout"));
+    }
+
+    #[tokio::test]
+    async fn task_output_basic() {
+        let ctx = test_ctx();
+        let input = serde_json::json!({"task_id": "task_42"});
+        let output = TaskOutputTool.execute(input, &ctx).await.unwrap();
+        assert!(!output.is_error);
+
+        match &output.content[0] {
+            ToolOutputContent::Json { value } => {
+                assert_eq!(value["action"], "task_output");
+                assert_eq!(value["task_id"], "task_42");
+                assert_eq!(value["block"], true);
+                assert_eq!(value["timeout_ms"], 30000);
+            }
+            _ => panic!("expected JSON output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn task_output_custom_params() {
+        let ctx = test_ctx();
+        let input = serde_json::json!({
+            "task_id": "task_7",
+            "block": false,
+            "timeout": 5000
+        });
+        let output = TaskOutputTool.execute(input, &ctx).await.unwrap();
+        assert!(!output.is_error);
+
+        match &output.content[0] {
+            ToolOutputContent::Json { value } => {
+                assert_eq!(value["block"], false);
+                assert_eq!(value["timeout_ms"], 5000);
+            }
+            _ => panic!("expected JSON output"),
+        }
+    }
+
+    #[tokio::test]
+    async fn task_output_empty_id() {
+        let ctx = test_ctx();
+        let input = serde_json::json!({"task_id": "  "});
+        let output = TaskOutputTool.execute(input, &ctx).await.unwrap();
+        assert!(output.is_error);
+    }
+
+    #[tokio::test]
+    async fn task_output_missing_id() {
+        let ctx = test_ctx();
+        let input = serde_json::json!({});
+        let result = TaskOutputTool.execute(input, &ctx).await;
+        assert!(result.is_err());
     }
 }

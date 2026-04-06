@@ -25,6 +25,26 @@ pub struct Settings {
     pub mcp_servers: Option<serde_json::Value>,
     pub hooks: Option<serde_json::Value>,
     pub theme: Option<String>,
+    pub git_context: Option<GitContextConfig>,
+}
+
+/// Configuration for git context injection into system prompts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GitContextConfig {
+    /// Whether to inject git context into the system prompt (default: true).
+    pub enabled: bool,
+    /// Maximum number of diff lines to include (default: 200).
+    pub max_diff_lines: usize,
+}
+
+impl Default for GitContextConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_diff_lines: 200,
+        }
+    }
 }
 
 impl Settings {
@@ -44,6 +64,7 @@ impl Settings {
             mcp_servers: other.mcp_servers.clone().or(self.mcp_servers),
             hooks: other.hooks.clone().or(self.hooks),
             theme: other.theme.clone().or(self.theme),
+            git_context: other.git_context.clone().or(self.git_context),
         }
     }
 }
@@ -352,6 +373,7 @@ mod tests {
             mcp_servers: Some(serde_json::json!({"old": true})),
             hooks: Some(serde_json::json!([])),
             theme: Some("light".into()),
+            git_context: Some(GitContextConfig { enabled: true, max_diff_lines: 100 }),
         };
         let overlay = Settings {
             api_provider: Some("openai".into()),
@@ -365,6 +387,7 @@ mod tests {
             mcp_servers: Some(serde_json::json!({"new": true})),
             hooks: Some(serde_json::json!([{"trigger": "pre_tool_use"}])),
             theme: Some("dark".into()),
+            git_context: Some(GitContextConfig { enabled: false, max_diff_lines: 50 }),
         };
         let merged = base.merge(&overlay);
         assert_eq!(merged.api_provider.as_deref(), Some("openai"));
@@ -427,6 +450,7 @@ mod tests {
             mcp_servers: Some(serde_json::json!({"server1": {}})),
             hooks: Some(serde_json::json!([{"trigger": "pre_tool_use", "command": "echo"}])),
             theme: Some("dark".into()),
+            git_context: Some(GitContextConfig::default()),
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
         let deserialized: Settings = serde_json::from_str(&json).unwrap();

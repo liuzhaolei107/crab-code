@@ -153,6 +153,7 @@ impl AgentWorker {
         }
 
         // Run the query loop with turn limiting
+        let mut cost_tracker = crab_session::CostAccumulator::default();
         let result = if let Some(max_turns) = self.config.max_turns {
             run_with_turn_limit(
                 &mut conversation,
@@ -160,6 +161,7 @@ impl AgentWorker {
                 &self.executor,
                 &self.tool_ctx,
                 &self.loop_config,
+                &mut cost_tracker,
                 self.event_tx.clone(),
                 combined_cancel.clone(),
                 timeout_cancel,
@@ -186,6 +188,7 @@ impl AgentWorker {
                 &self.executor,
                 &self.tool_ctx,
                 &self.loop_config,
+                &mut cost_tracker,
                 self.event_tx.clone(),
                 cancel_token,
             )
@@ -230,6 +233,7 @@ async fn run_with_turn_limit(
     executor: &ToolExecutor,
     tool_ctx: &ToolContext,
     config: &QueryLoopConfig,
+    cost_tracker: &mut crab_session::CostAccumulator,
     event_tx: mpsc::Sender<Event>,
     cancel: CancellationToken,
     timeout_cancel: CancellationToken,
@@ -278,6 +282,7 @@ async fn run_with_turn_limit(
         executor,
         tool_ctx,
         config,
+        cost_tracker,
         counting_tx,
         cancel,
     )

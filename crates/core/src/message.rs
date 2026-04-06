@@ -52,6 +52,9 @@ pub enum ContentBlock {
 
     /// An image (base64 encoded).
     Image { source: ImageSource },
+
+    /// Extended thinking content from the model.
+    Thinking { thinking: String },
 }
 
 impl ContentBlock {
@@ -215,6 +218,7 @@ impl Message {
                 ContentBlock::ToolUse { name, input, .. } => name.len() + input.to_string().len(),
                 ContentBlock::ToolResult { content, .. } => content.len(),
                 ContentBlock::Image { .. } => 1000, // images are ~fixed cost
+                ContentBlock::Thinking { thinking } => thinking.len(),
             })
             .sum();
 
@@ -611,5 +615,56 @@ mod tests {
         );
         // text() should only join Text blocks
         assert_eq!(msg.text(), "hello\nworld");
+    }
+
+    // ─── Thinking content block tests ───
+
+    #[test]
+    fn thinking_block_roundtrip() {
+        let block = ContentBlock::Thinking {
+            thinking: "Let me reason about this...".into(),
+        };
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["type"], "thinking");
+        assert_eq!(json["thinking"], "Let me reason about this...");
+        let decoded: ContentBlock = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, block);
+    }
+
+    #[test]
+    fn thinking_block_not_in_text() {
+        let msg = Message::new(
+            Role::Assistant,
+            vec![
+                ContentBlock::Thinking {
+                    thinking: "internal reasoning".into(),
+                },
+                ContentBlock::text("visible answer"),
+            ],
+        );
+        // text() should NOT include thinking content
+        assert_eq!(msg.text(), "visible answer");
+    }
+
+    #[test]
+    fn thinking_block_estimated_tokens() {
+        let msg = Message::new(
+            Role::Assistant,
+            vec![ContentBlock::Thinking {
+                thinking: "a".repeat(400),
+            }],
+        );
+        // 400 chars / 4 = 100 tokens + 1
+        assert_eq!(msg.estimated_tokens(), 101);
+    }
+
+    #[test]
+    fn thinking_block_is_not_tool_use_or_result() {
+        let block = ContentBlock::Thinking {
+            thinking: "thinking".into(),
+        };
+        assert!(!block.is_tool_use());
+        assert!(!block.is_tool_result());
+        assert!(block.as_text().is_none());
     }
 }

@@ -66,11 +66,16 @@ pub fn check_permission(
             PermissionDecision::AskUser(format!("Allow MCP tool '{tool_name}' to execute?"))
         }
 
-        // Agent spawn: TrustProject auto-allows, Default requires Prompt
+        // Agent spawn: TrustProject/AcceptEdits/DontAsk auto-allows, Default requires Prompt, Plan denies
         ToolSource::AgentSpawn => match policy.mode {
-            PermissionMode::TrustProject => PermissionDecision::Allow,
+            PermissionMode::TrustProject
+            | PermissionMode::AcceptEdits
+            | PermissionMode::DontAsk => PermissionDecision::Allow,
             PermissionMode::Default => {
                 PermissionDecision::AskUser(format!("Allow agent tool '{tool_name}' to execute?"))
+            }
+            PermissionMode::Plan => {
+                PermissionDecision::Deny("plan mode: mutations are not allowed".into())
             }
             PermissionMode::Dangerously => unreachable!(),
         },
@@ -93,6 +98,15 @@ fn check_builtin_permission(
             PermissionDecision::AskUser(format!("Allow '{tool_name}' to execute?"))
         }
 
+        PermissionMode::AcceptEdits => {
+            // AcceptEdits: auto-allow file edits within project, prompt for other mutations
+            if is_file_edit_tool(tool_name) && is_path_in_project(tool_name, input, working_dir) {
+                PermissionDecision::Allow
+            } else {
+                PermissionDecision::AskUser(format!("Allow '{tool_name}' to execute?"))
+            }
+        }
+
         PermissionMode::TrustProject => {
             // Dangerous commands always require confirmation
             if is_dangerous_command(input) {
@@ -111,8 +125,23 @@ fn check_builtin_permission(
             }
         }
 
+        PermissionMode::DontAsk => {
+            // DontAsk: auto-approve everything (same as Dangerously but via permission-mode flag)
+            PermissionDecision::Allow
+        }
+
+        PermissionMode::Plan => {
+            // Plan mode: deny all mutations
+            PermissionDecision::Deny("plan mode: mutations are not allowed".into())
+        }
+
         PermissionMode::Dangerously => unreachable!(),
     }
+}
+
+/// Returns `true` if `tool_name` is a file-editing tool (write, edit, notebook_edit).
+fn is_file_edit_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "write" | "edit" | "notebook_edit")
 }
 
 /// Check if the tool input contains a dangerous command pattern.

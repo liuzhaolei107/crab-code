@@ -13,6 +13,8 @@ use crab_config::crab_md;
 use crab_session::MemoryFile;
 use crab_tools::registry::ToolRegistry;
 
+use crate::git_context::GitContext;
+
 /// Build the complete system prompt.
 pub fn build_system_prompt(
     project_dir: &Path,
@@ -41,6 +43,9 @@ pub fn build_system_prompt_with_memories(
 
     // Environment info
     append_environment_info(&mut prompt);
+
+    // Git context
+    append_git_context(&mut prompt, project_dir);
 
     // Tool descriptions
     append_tool_descriptions(&mut prompt, registry);
@@ -152,6 +157,15 @@ fn append_crab_md_instructions(prompt: &mut String, project_dir: &Path) {
         };
         let _ = writeln!(prompt, "<!-- source: {source} -->");
         let _ = writeln!(prompt, "{}", md.content);
+        let _ = writeln!(prompt);
+    }
+}
+
+/// Append git context to the prompt if the project directory is a git repository.
+fn append_git_context(prompt: &mut String, project_dir: &Path) {
+    if let Some(ctx) = GitContext::collect(project_dir) {
+        let _ = writeln!(prompt, "# Git Context\n");
+        let _ = write!(prompt, "{}", ctx.format());
         let _ = writeln!(prompt);
     }
 }

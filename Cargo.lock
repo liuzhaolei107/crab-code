@@ -469,6 +469,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -541,6 +542,9 @@ dependencies = [
  "dunce",
  "strip-ansi-escapes",
  "thiserror 2.0.18",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
  "ulid",
  "unicode-width",
 ]

@@ -11,4 +11,4 @@ pub mod settings;
 pub use config_toml::ConfigToml;
 pub use hot_reload::ConfigWatcher;
 pub use permissions::PermissionRuleSet;
-pub use settings::Settings;
+pub use settings::{GitContextConfig, Settings};

@@ -18,6 +18,9 @@ pub enum Event {
     /// Incremental text content from the model.
     ContentDelta { index: usize, delta: String },
 
+    /// Incremental thinking content from extended thinking mode.
+    ThinkingDelta { index: usize, delta: String },
+
     /// A content block has finished streaming.
     ContentBlockStop { index: usize },
 
@@ -30,6 +33,9 @@ pub enum Event {
 
     /// Incremental tool input (streaming).
     ToolUseInput { id: String, input: Value },
+
+    /// Incremental output from a running tool (e.g. bash stdout line).
+    ToolOutputDelta { id: String, delta: String },
 
     /// Tool execution has completed.
     ToolResult { id: String, output: ToolOutput },
@@ -398,6 +404,50 @@ mod tests {
         serde_roundtrip(&Event::SessionResumed {
             session_id: "sess_abc".into(),
             message_count: 42,
+        });
+    }
+
+    #[test]
+    fn thinking_delta_event() {
+        let event = Event::ThinkingDelta {
+            index: 0,
+            delta: "Let me reason...".into(),
+        };
+        if let Event::ThinkingDelta { index, delta } = &event {
+            assert_eq!(*index, 0);
+            assert_eq!(delta, "Let me reason...");
+        } else {
+            panic!("unexpected variant");
+        }
+    }
+
+    #[test]
+    fn tool_output_delta_event() {
+        let event = Event::ToolOutputDelta {
+            id: "tu_1".into(),
+            delta: "line of output\n".into(),
+        };
+        if let Event::ToolOutputDelta { id, delta } = &event {
+            assert_eq!(id, "tu_1");
+            assert!(delta.contains("output"));
+        } else {
+            panic!("unexpected variant");
+        }
+    }
+
+    #[test]
+    fn event_serde_tool_output_delta() {
+        serde_roundtrip(&Event::ToolOutputDelta {
+            id: "tu_5".into(),
+            delta: "streaming line".into(),
+        });
+    }
+
+    #[test]
+    fn event_serde_thinking_delta() {
+        serde_roundtrip(&Event::ThinkingDelta {
+            index: 0,
+            delta: "Step 1: analyze the problem".into(),
         });
     }
 }

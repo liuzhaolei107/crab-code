@@ -6,7 +6,7 @@ use crab_core::model::TokenUsage;
 use super::types::{
     AnthropicContentBlock, AnthropicDelta, AnthropicImageSource, AnthropicMessage,
     AnthropicRequest, AnthropicResponse, AnthropicSseEvent, AnthropicUsage, CacheControlDirective,
-    SystemBlock,
+    SystemBlock, ThinkingConfig,
 };
 use crate::cache::CacheControl;
 use crate::error::Result;
@@ -50,6 +50,15 @@ pub fn to_anthropic_request(req: &MessageRequest<'_>, stream: bool) -> Anthropic
         }
     }
 
+    // Build extended thinking config when budget_tokens is set and > 0
+    let thinking = req
+        .budget_tokens
+        .filter(|&b| b > 0)
+        .map(|budget_tokens| ThinkingConfig {
+            thinking_type: "enabled".to_string(),
+            budget_tokens,
+        });
+
     AnthropicRequest {
         model: req.model.0.clone(),
         messages,
@@ -58,6 +67,7 @@ pub fn to_anthropic_request(req: &MessageRequest<'_>, stream: bool) -> Anthropic
         temperature: req.temperature,
         tools,
         stream,
+        thinking,
     }
 }
 
@@ -100,6 +110,9 @@ fn content_block_to_anthropic(block: &ContentBlock) -> AnthropicContentBlock {
                 media_type: source.media_type.clone(),
                 data: source.data.clone(),
             },
+        },
+        ContentBlock::Thinking { thinking } => AnthropicContentBlock::Thinking {
+            thinking: thinking.clone(),
         },
     }
 }
@@ -149,6 +162,7 @@ fn content_block_from_anthropic(block: AnthropicContentBlock) -> ContentBlock {
                 data: source.data,
             },
         },
+        AnthropicContentBlock::Thinking { thinking } => ContentBlock::Thinking { thinking },
     }
 }
 
@@ -178,12 +192,22 @@ pub fn sse_event_to_stream_event(event: AnthropicSseEvent) -> Option<StreamEvent
             index,
             content_type: content_block.block_type,
         }),
-        AnthropicSseEvent::ContentBlockDelta { index, delta } => {
-            let text = match delta {
-                AnthropicDelta::TextDelta { text } => text,
-                AnthropicDelta::InputJsonDelta { partial_json } => partial_json,
-            };
-            Some(StreamEvent::ContentDelta { index, delta: text })
+        AnthropicSseEvent::ContentBlockDelta { index, delta } => match delta {
+            AnthropicDelta::TextDelta { text } => {
+                Some(StreamEvent::ContentDelta { index, delta: text })
+            }
+            AnthropicDelta::InputJsonDelta { partial_json } => {
+                Some(StreamEvent::ContentDelta {
+                    index,
+                    delta: partial_json,
+                })
+            }
+            AnthropicDelta::ThinkingDelta { thinking } => {
+                Some(StreamEvent::ThinkingDelta {
+                    index,
+                    delta: thinking,
+                })
+            }
         }
         AnthropicSseEvent::ContentBlockStop { index } => {
             Some(StreamEvent::ContentBlockStop { index })
@@ -225,6 +249,7 @@ mod tests {
             tools: vec![],
             temperature: Some(0.5),
             cache_breakpoints: vec![],
+            budget_tokens: None,
         }
     }
 
@@ -302,6 +327,7 @@ mod tests {
             tools: vec![],
             temperature: None,
             cache_breakpoints: vec![],
+            budget_tokens: None,
         };
         let api_req = to_anthropic_request(&req, false);
         let blocks = &api_req.messages[0].content;
@@ -325,6 +351,7 @@ mod tests {
             tools: vec![],
             temperature: None,
             cache_breakpoints: vec![],
+            budget_tokens: None,
         };
         let api_req = to_anthropic_request(&req, false);
         let blocks = &api_req.messages[0].content;
@@ -351,6 +378,7 @@ mod tests {
             tools: vec![],
             temperature: None,
             cache_breakpoints: vec![],
+            budget_tokens: None,
         };
         let api_req = to_anthropic_request(&req, false);
         let blocks = &api_req.messages[0].content;
@@ -584,5 +612,75 @@ mod tests {
         assert_eq!(usage.output_tokens, 500);
         assert_eq!(usage.cache_read_tokens, 200);
         assert_eq!(usage.cache_creation_tokens, 100);
+    }
+
+    // ─── Thinking / extended thinking tests ───
+
+    #[test]
+    fn sse_thinking_delta() {
+        let event = AnthropicSseEvent::ContentBlockDelta {
+            index: 0,
+            delta: AnthropicDelta::ThinkingDelta {
+                thinking: "reasoning step".into(),
+            },
+        };
+        let se = sse_event_to_stream_event(event).unwrap();
+        assert!(
+            matches!(se, StreamEvent::ThinkingDelta { index: 0, delta } if delta == "reasoning step")
+        );
+    }
+
+    #[test]
+    fn to_request_thinking_enabled() {
+        let mut req = make_request();
+        req.budget_tokens = Some(10000);
+        let api_req = to_anthropic_request(&req, true);
+        let thinking = api_req.thinking.unwrap();
+        assert_eq!(thinking.thinking_type, "enabled");
+        assert_eq!(thinking.budget_tokens, 10000);
+    }
+
+    #[test]
+    fn to_request_thinking_disabled_when_zero() {
+        let mut req = make_request();
+        req.budget_tokens = Some(0);
+        let api_req = to_anthropic_request(&req, true);
+        assert!(api_req.thinking.is_none());
+    }
+
+    #[test]
+    fn to_request_thinking_disabled_when_none() {
+        let req = make_request();
+        let api_req = to_anthropic_request(&req, true);
+        assert!(api_req.thinking.is_none());
+    }
+
+    #[test]
+    fn thinking_content_block_roundtrip() {
+        let resp = AnthropicResponse {
+            id: "msg_think".into(),
+            response_type: "message".into(),
+            role: "assistant".into(),
+            content: vec![
+                AnthropicContentBlock::Thinking {
+                    thinking: "Let me think...".into(),
+                },
+                AnthropicContentBlock::Text {
+                    text: "Here's my answer.".into(),
+                },
+            ],
+            model: "claude-sonnet-4-20250514".into(),
+            stop_reason: Some("end_turn".into()),
+            usage: AnthropicUsage {
+                input_tokens: 100,
+                output_tokens: 200,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+            },
+        };
+        let (msg, _) = from_anthropic_response(resp).unwrap();
+        assert_eq!(msg.content.len(), 2);
+        assert!(matches!(&msg.content[0], ContentBlock::Thinking { thinking } if thinking == "Let me think..."));
+        assert!(matches!(&msg.content[1], ContentBlock::Text { text } if text == "Here's my answer."));
     }
 }

@@ -253,6 +253,7 @@ mod tests {
             tools: vec![],
             temperature: Some(0.7),
             cache_breakpoints: vec![],
+            budget_tokens: None,
         }
     }
 
@@ -312,6 +313,7 @@ mod tests {
             tools: vec![],
             temperature: None,
             cache_breakpoints: vec![],
+            budget_tokens: None,
         };
         let chat_req = to_chat_completion_request(&req, false);
         let m = &chat_req.messages[0];
@@ -334,6 +336,7 @@ mod tests {
             tools: vec![],
             temperature: None,
             cache_breakpoints: vec![],
+            budget_tokens: None,
         };
         let chat_req = to_chat_completion_request(&req, false);
         let m = &chat_req.messages[0];
@@ -481,5 +484,46 @@ mod tests {
         assert_eq!(internal.output_tokens, 50);
         assert_eq!(internal.cache_read_tokens, 0);
         assert_eq!(internal.cache_creation_tokens, 0);
+    }
+
+    #[test]
+    fn openai_ignores_budget_tokens() {
+        // When budget_tokens is set, OpenAI conversion should produce
+        // the same request as without it — thinking is Anthropic-only.
+        let mut req = make_request();
+        req.budget_tokens = Some(10000);
+        let chat_req = to_chat_completion_request(&req, true);
+        // No thinking field in ChatCompletionRequest — it's just ignored
+        assert_eq!(chat_req.model, "gpt-4o");
+        assert!(chat_req.stream);
+    }
+
+    #[test]
+    fn openai_ignores_thinking_content_block() {
+        // Thinking blocks in messages should be silently dropped
+        let msg = Message::new(
+            crab_core::message::Role::Assistant,
+            vec![
+                ContentBlock::Thinking {
+                    thinking: "internal reasoning".into(),
+                },
+                ContentBlock::text("visible answer"),
+            ],
+        );
+        let req = MessageRequest {
+            model: ModelId::from("gpt-4o"),
+            messages: std::borrow::Cow::Owned(vec![msg]),
+            system: None,
+            max_tokens: 1024,
+            tools: vec![],
+            temperature: None,
+            cache_breakpoints: vec![],
+            budget_tokens: None,
+        };
+        let chat_req = to_chat_completion_request(&req, false);
+        let m = &chat_req.messages[0];
+        // Only the text content should survive, thinking is filtered out
+        assert_eq!(m.content.as_deref(), Some("visible answer"));
+        assert!(m.tool_calls.is_none());
     }
 }

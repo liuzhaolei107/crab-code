@@ -41,6 +41,13 @@ fn test_session_config() -> SessionConfig {
         memory_dir: None,
         sessions_dir: None,
         resume_session_id: None,
+        effort: None,
+        thinking_mode: None,
+        additional_dirs: Vec::new(),
+        session_name: None,
+        max_turns: None,
+        max_budget_usd: None,
+        fallback_model: None,
     }
 }
 
@@ -420,6 +427,15 @@ fn default_registry_includes_all_builtin_tools() {
         "task_list",
         "task_update",
         "task_get",
+        "team_create",
+        "team_delete",
+        "send_message",
+        "task_stop",
+        "task_output",
+        "cron_create",
+        "cron_delete",
+        "cron_list",
+        "remote_trigger",
     ];
 
     for name in &expected {
@@ -491,7 +507,10 @@ fn query_loop_config_is_cloneable() {
         tool_schemas: vec![serde_json::json!({"name": "test"})],
         cache_enabled: true,
         _token_budget: None,
+        budget_tokens: None,
         retry_policy: None,
+        hook_executor: None,
+        session_id: None,
     };
     let cloned = config.clone();
     assert_eq!(cloned.model.as_str(), "test-model");

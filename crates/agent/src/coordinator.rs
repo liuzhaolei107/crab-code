@@ -72,6 +72,20 @@ pub struct SessionConfig {
     pub sessions_dir: Option<PathBuf>,
     /// Session ID to resume from (for `--resume`).
     pub resume_session_id: Option<String>,
+    /// Effort level: "low", "medium", "high", "max".
+    pub effort: Option<String>,
+    /// Thinking mode: "enabled", "adaptive", "disabled".
+    pub thinking_mode: Option<String>,
+    /// Additional directories the agent may access beyond `working_dir`.
+    pub additional_dirs: Vec<PathBuf>,
+    /// Session display name (shown in /resume list).
+    pub session_name: Option<String>,
+    /// Maximum agent turns (print mode only).
+    pub max_turns: Option<u32>,
+    /// Maximum budget in USD (print mode only).
+    pub max_budget_usd: Option<f64>,
+    /// Fallback model for overloaded primary.
+    pub fallback_model: Option<String>,
 }
 
 /// A running agent session with all the pieces wired together.
@@ -138,7 +152,7 @@ impl AgentSession {
         let tool_ctx = ToolContext {
             working_dir: session_config.working_dir,
             permission_mode: session_config.permission_policy.mode,
-            session_id: session_config.session_id,
+            session_id: session_config.session_id.clone(),
             cancellation_token: cancel.clone(),
             permission_policy: session_config.permission_policy,
         };
@@ -150,7 +164,10 @@ impl AgentSession {
             tool_schemas,
             cache_enabled: false,
             _token_budget: None,
+            budget_tokens: None,
             retry_policy: None,
+            hook_executor: None,
+            session_id: Some(session_config.session_id),
         };
 
         let (event_tx, event_rx) = mpsc::channel(256);
@@ -180,6 +197,7 @@ impl AgentSession {
             &self.executor,
             &self.tool_ctx,
             &self.config,
+            &mut self.cost,
             self.event_tx.clone(),
             self.cancel.clone(),
         )
@@ -616,6 +634,13 @@ mod tests {
             memory_dir: None,
             sessions_dir: None,
             resume_session_id: None,
+            effort: None,
+            thinking_mode: None,
+            additional_dirs: Vec::new(),
+            session_name: None,
+            max_turns: None,
+            max_budget_usd: None,
+            fallback_model: None,
         };
         assert_eq!(config.session_id, "sess_1");
         assert_eq!(config.context_window, 200_000);
@@ -647,6 +672,13 @@ mod tests {
             memory_dir: Some(memory_dir),
             sessions_dir: None,
             resume_session_id: None,
+            effort: None,
+            thinking_mode: None,
+            additional_dirs: Vec::new(),
+            session_name: None,
+            max_turns: None,
+            max_budget_usd: None,
+            fallback_model: None,
         };
 
         let backend = test_backend();
@@ -690,6 +722,13 @@ mod tests {
             memory_dir: None,
             sessions_dir: Some(sessions_dir),
             resume_session_id: Some("prev_sess".into()),
+            effort: None,
+            thinking_mode: None,
+            additional_dirs: Vec::new(),
+            session_name: None,
+            max_turns: None,
+            max_budget_usd: None,
+            fallback_model: None,
         };
 
         let backend = test_backend();
@@ -717,6 +756,13 @@ mod tests {
             memory_dir: None,
             sessions_dir: None,
             resume_session_id: None,
+            effort: None,
+            thinking_mode: None,
+            additional_dirs: Vec::new(),
+            session_name: None,
+            max_turns: None,
+            max_budget_usd: None,
+            fallback_model: None,
         };
 
         let backend = test_backend();
@@ -751,6 +797,13 @@ mod tests {
             memory_dir: Some(memory_dir.clone()),
             sessions_dir: None,
             resume_session_id: None,
+            effort: None,
+            thinking_mode: None,
+            additional_dirs: Vec::new(),
+            session_name: None,
+            max_turns: None,
+            max_budget_usd: None,
+            fallback_model: None,
         };
 
         let backend = test_backend();
@@ -840,6 +893,13 @@ mod tests {
             memory_dir: None,
             sessions_dir: None,
             resume_session_id: None,
+            effort: None,
+            thinking_mode: None,
+            additional_dirs: Vec::new(),
+            session_name: None,
+            max_turns: None,
+            max_budget_usd: None,
+            fallback_model: None,
         };
 
         let backend = test_backend();
@@ -865,6 +925,13 @@ mod tests {
             memory_dir: None,
             sessions_dir: None,
             resume_session_id: None,
+            effort: None,
+            thinking_mode: None,
+            additional_dirs: Vec::new(),
+            session_name: None,
+            max_turns: None,
+            max_budget_usd: None,
+            fallback_model: None,
         };
 
         let backend = test_backend();
@@ -888,6 +955,13 @@ mod tests {
             memory_dir: None,
             sessions_dir: None,
             resume_session_id: None,
+            effort: None,
+            thinking_mode: None,
+            additional_dirs: Vec::new(),
+            session_name: None,
+            max_turns: None,
+            max_budget_usd: None,
+            fallback_model: None,
         };
 
         let backend = test_backend();
@@ -914,6 +988,13 @@ mod tests {
             memory_dir: None,
             sessions_dir: Some(sessions_dir),
             resume_session_id: Some("nonexistent".into()),
+            effort: None,
+            thinking_mode: None,
+            additional_dirs: Vec::new(),
+            session_name: None,
+            max_turns: None,
+            max_budget_usd: None,
+            fallback_model: None,
         };
 
         let backend = test_backend();

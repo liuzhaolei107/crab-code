@@ -16,6 +16,20 @@ pub struct AnthropicRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<Value>,
     pub stream: bool,
+    /// Extended thinking configuration. When present with `type: "enabled"`,
+    /// the model will produce thinking blocks before responding.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<ThinkingConfig>,
+}
+
+/// Configuration for Anthropic extended thinking.
+#[derive(Debug, Clone, Serialize)]
+pub struct ThinkingConfig {
+    /// Must be `"enabled"` to activate extended thinking.
+    #[serde(rename = "type")]
+    pub thinking_type: String,
+    /// Maximum tokens the model may spend on thinking.
+    pub budget_tokens: u32,
 }
 
 /// System prompt block (supports `cache_control`).
@@ -62,6 +76,9 @@ pub enum AnthropicContentBlock {
     },
     Image {
         source: AnthropicImageSource,
+    },
+    Thinking {
+        thinking: String,
     },
 }
 
@@ -150,6 +167,7 @@ pub struct AnthropicContentBlockInfo {
 pub enum AnthropicDelta {
     TextDelta { text: String },
     InputJsonDelta { partial_json: String },
+    ThinkingDelta { thinking: String },
 }
 
 /// Message delta body.
@@ -392,5 +410,96 @@ mod tests {
         let usage: AnthropicUsage = serde_json::from_value(json).unwrap();
         assert_eq!(usage.cache_read_input_tokens, 80);
         assert_eq!(usage.cache_creation_input_tokens, 20);
+    }
+
+    #[test]
+    fn thinking_config_serializes_correctly() {
+        let config = super::ThinkingConfig {
+            thinking_type: "enabled".into(),
+            budget_tokens: 10000,
+        };
+        let json = serde_json::to_value(&config).unwrap();
+        assert_eq!(json["type"], "enabled");
+        assert_eq!(json["budget_tokens"], 10000);
+    }
+
+    #[test]
+    fn thinking_content_block_serde_roundtrip() {
+        let block = AnthropicContentBlock::Thinking {
+            thinking: "Let me analyze this step by step...".into(),
+        };
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["type"], "thinking");
+        assert_eq!(json["thinking"], "Let me analyze this step by step...");
+        let parsed: AnthropicContentBlock = serde_json::from_value(json).unwrap();
+        assert!(
+            matches!(parsed, AnthropicContentBlock::Thinking { thinking } if thinking == "Let me analyze this step by step...")
+        );
+    }
+
+    #[test]
+    fn thinking_delta_deserde() {
+        let json = json!({
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": "Step 1: "}
+        });
+        let event: AnthropicSseEvent = serde_json::from_value(json).unwrap();
+        assert!(
+            matches!(event, AnthropicSseEvent::ContentBlockDelta { index: 0, delta: AnthropicDelta::ThinkingDelta { thinking } }
+                if thinking == "Step 1: "
+            )
+        );
+    }
+
+    #[test]
+    fn content_block_start_thinking_deserde() {
+        let json = json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking"}
+        });
+        let event: AnthropicSseEvent = serde_json::from_value(json).unwrap();
+        assert!(
+            matches!(event, AnthropicSseEvent::ContentBlockStart { index: 0, content_block }
+                if content_block.block_type == "thinking"
+            )
+        );
+    }
+
+    #[test]
+    fn request_with_thinking_serializes() {
+        let req = AnthropicRequest {
+            model: "claude-sonnet-4-20250514".into(),
+            messages: vec![],
+            max_tokens: 16000,
+            system: None,
+            temperature: None,
+            tools: vec![],
+            stream: true,
+            thinking: Some(super::ThinkingConfig {
+                thinking_type: "enabled".into(),
+                budget_tokens: 10000,
+            }),
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["thinking"]["type"], "enabled");
+        assert_eq!(json["thinking"]["budget_tokens"], 10000);
+    }
+
+    #[test]
+    fn request_without_thinking_omits_field() {
+        let req = AnthropicRequest {
+            model: "claude-sonnet-4-20250514".into(),
+            messages: vec![],
+            max_tokens: 4096,
+            system: None,
+            temperature: None,
+            tools: vec![],
+            stream: true,
+            thinking: None,
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert!(json.get("thinking").is_none());
     }
 }

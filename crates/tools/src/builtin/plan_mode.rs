@@ -154,6 +154,69 @@ impl Tool for EnterPlanModeTool {
     }
 }
 
+/// Tool that exits plan mode, signaling that the plan has been approved.
+///
+/// The actual state transition is handled by the agent loop; this tool
+/// returns a structured JSON signal.
+pub struct ExitPlanModeTool;
+
+impl Tool for ExitPlanModeTool {
+    fn name(&self) -> &'static str {
+        "exit_plan_mode"
+    }
+
+    fn description(&self) -> &'static str {
+        "Exit planning mode after the plan has been reviewed. This signals that \
+         the agent should resume normal operation and can execute write operations. \
+         Optionally provide a list of approved tool+prompt pairs to restrict execution."
+    }
+
+    fn input_schema(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "allowedPrompts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "tool": {
+                                "type": "string",
+                                "description": "Name of the tool to allow"
+                            },
+                            "prompt": {
+                                "type": "string",
+                                "description": "Description of what the tool call should do"
+                            }
+                        },
+                        "required": ["tool", "prompt"]
+                    },
+                    "description": "Optional list of approved tool+prompt pairs"
+                }
+            },
+            "required": []
+        })
+    }
+
+    fn is_read_only(&self) -> bool {
+        true
+    }
+
+    fn execute(
+        &self,
+        _input: Value,
+        _ctx: &ToolContext,
+    ) -> Pin<Box<dyn Future<Output = Result<ToolOutput>> + Send + '_>> {
+        Box::pin(async move {
+            let result = serde_json::json!({
+                "action": "exit_plan_mode",
+                "approved": true
+            });
+            Ok(ToolOutput::success(result.to_string()))
+        })
+    }
+}
+
 /// Parse a JSON array of strings into step descriptions.
 fn parse_steps(value: &Value) -> Vec<String> {
     value.as_array().map_or_else(Vec::new, |arr| {
@@ -373,5 +436,54 @@ mod tests {
         let rendered = progress.render();
         assert!(rendered.contains("[x] Done"));
         assert!(rendered.contains("[ ] Todo"));
+    }
+
+    // ── ExitPlanMode tests ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn exit_plan_mode_returns_json() {
+        let tool = ExitPlanModeTool;
+        let result = tool.execute(json!({}), &test_ctx()).await.unwrap();
+        assert!(!result.is_error);
+        let parsed: serde_json::Value = serde_json::from_str(&result.text()).unwrap();
+        assert_eq!(parsed["action"], "exit_plan_mode");
+        assert_eq!(parsed["approved"], true);
+    }
+
+    #[tokio::test]
+    async fn exit_plan_mode_with_allowed_prompts() {
+        let tool = ExitPlanModeTool;
+        let result = tool
+            .execute(
+                json!({
+                    "allowedPrompts": [
+                        {"tool": "bash", "prompt": "run tests"},
+                        {"tool": "write", "prompt": "create config file"}
+                    ]
+                }),
+                &test_ctx(),
+            )
+            .await
+            .unwrap();
+        assert!(!result.is_error);
+        let parsed: serde_json::Value = serde_json::from_str(&result.text()).unwrap();
+        assert_eq!(parsed["action"], "exit_plan_mode");
+        assert_eq!(parsed["approved"], true);
+    }
+
+    #[test]
+    fn exit_plan_mode_metadata() {
+        let tool = ExitPlanModeTool;
+        assert_eq!(tool.name(), "exit_plan_mode");
+        assert!(tool.is_read_only());
+        assert!(!tool.description().is_empty());
+    }
+
+    #[test]
+    fn exit_plan_mode_schema() {
+        let tool = ExitPlanModeTool;
+        let schema = tool.input_schema();
+        assert_eq!(schema["required"], json!([]));
+        assert!(schema["properties"]["allowedPrompts"].is_object());
     }
 }

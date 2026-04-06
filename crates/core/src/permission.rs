@@ -1,22 +1,50 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PermissionMode {
     /// All non-read-only tools require user confirmation.
     Default,
+    /// Auto-approve file edits within the project; other mutations still prompt.
+    AcceptEdits,
     /// Trust in-project file operations; out-of-project and dangerous still prompt.
     TrustProject,
+    /// Auto-approve everything without prompting the user.
+    DontAsk,
     /// Auto-approve everything (except `denied_tools`). Use with caution.
     Dangerously,
+    /// Planning-only mode: the agent may read but not mutate.
+    Plan,
 }
 
 impl fmt::Display for PermissionMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Default => f.write_str("default"),
+            Self::AcceptEdits => f.write_str("acceptEdits"),
             Self::TrustProject => f.write_str("trust-project"),
+            Self::DontAsk => f.write_str("dontAsk"),
             Self::Dangerously => f.write_str("dangerously"),
+            Self::Plan => f.write_str("plan"),
+        }
+    }
+}
+
+impl FromStr for PermissionMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "default" => Ok(Self::Default),
+            "acceptEdits" | "accept-edits" | "accept_edits" => Ok(Self::AcceptEdits),
+            "trust-project" | "trust_project" => Ok(Self::TrustProject),
+            "dontAsk" | "dont-ask" | "dont_ask" => Ok(Self::DontAsk),
+            "bypassPermissions" | "bypass-permissions" | "bypass_permissions" | "dangerously" => {
+                Ok(Self::Dangerously)
+            }
+            "plan" => Ok(Self::Plan),
+            other => Err(format!("unknown permission mode: {other}")),
         }
     }
 }
@@ -62,6 +90,60 @@ pub enum PermissionDecision {
     Deny(String),
     /// Tool execution requires user confirmation; includes a prompt message.
     AskUser(String),
+}
+
+/// Check whether a tool filter matches a tool invocation.
+///
+/// Supports the following filter formats:
+/// - `*` — matches any tool
+/// - `Bash` — matches all bash invocations
+/// - `Bash(git:*)` — matches bash invocations where the `command` field starts with "git"
+/// - `Edit` — exact tool name match
+///
+/// The `tool_input` is the JSON input object passed to the tool (used for
+/// parameter-level matching like `Bash(git:*)`).
+pub fn matches_tool_filter(filter: &str, tool_name: &str, tool_input: &serde_json::Value) -> bool {
+    let filter = filter.trim();
+
+    // Wildcard: match everything
+    if filter == "*" {
+        return true;
+    }
+
+    // Check for Name(pattern) format
+    if let Some(paren_start) = filter.find('(') {
+        if filter.ends_with(')') {
+            let name_part = &filter[..paren_start];
+            let pattern_part = &filter[paren_start + 1..filter.len() - 1];
+
+            // Tool name must match
+            if !glob_match(name_part, tool_name) {
+                return false;
+            }
+
+            // Parse the parameter constraint: "key:pattern"
+            if let Some(colon_pos) = pattern_part.find(':') {
+                let key = &pattern_part[..colon_pos];
+                let value_pattern = &pattern_part[colon_pos + 1..];
+
+                // Look up the key in tool_input
+                if let Some(value) = tool_input.get(key) {
+                    let value_str = match value {
+                        serde_json::Value::String(s) => s.as_str(),
+                        _ => return false,
+                    };
+                    return glob_match(value_pattern, value_str);
+                }
+                return false;
+            }
+
+            // No colon — just name match (weird format but handle gracefully)
+            return true;
+        }
+    }
+
+    // Plain name match (may contain globs)
+    glob_match(filter, tool_name)
 }
 
 /// Simple glob matching supporting `*` (any chars), `?` (single char),
@@ -151,8 +233,25 @@ mod tests {
     #[test]
     fn permission_mode_display() {
         assert_eq!(PermissionMode::Default.to_string(), "default");
+        assert_eq!(PermissionMode::AcceptEdits.to_string(), "acceptEdits");
         assert_eq!(PermissionMode::TrustProject.to_string(), "trust-project");
+        assert_eq!(PermissionMode::DontAsk.to_string(), "dontAsk");
         assert_eq!(PermissionMode::Dangerously.to_string(), "dangerously");
+        assert_eq!(PermissionMode::Plan.to_string(), "plan");
+    }
+
+    #[test]
+    fn permission_mode_from_str() {
+        assert_eq!("default".parse::<PermissionMode>().unwrap(), PermissionMode::Default);
+        assert_eq!("acceptEdits".parse::<PermissionMode>().unwrap(), PermissionMode::AcceptEdits);
+        assert_eq!("accept-edits".parse::<PermissionMode>().unwrap(), PermissionMode::AcceptEdits);
+        assert_eq!("trust-project".parse::<PermissionMode>().unwrap(), PermissionMode::TrustProject);
+        assert_eq!("trust_project".parse::<PermissionMode>().unwrap(), PermissionMode::TrustProject);
+        assert_eq!("dontAsk".parse::<PermissionMode>().unwrap(), PermissionMode::DontAsk);
+        assert_eq!("bypassPermissions".parse::<PermissionMode>().unwrap(), PermissionMode::Dangerously);
+        assert_eq!("dangerously".parse::<PermissionMode>().unwrap(), PermissionMode::Dangerously);
+        assert_eq!("plan".parse::<PermissionMode>().unwrap(), PermissionMode::Plan);
+        assert!("unknown".parse::<PermissionMode>().is_err());
     }
 
     #[test]
@@ -317,8 +416,11 @@ mod tests {
     fn permission_mode_all_variants_serde() {
         for mode in [
             PermissionMode::Default,
+            PermissionMode::AcceptEdits,
             PermissionMode::TrustProject,
+            PermissionMode::DontAsk,
             PermissionMode::Dangerously,
+            PermissionMode::Plan,
         ] {
             let json = serde_json::to_string(&mode).unwrap();
             let parsed: PermissionMode = serde_json::from_str(&json).unwrap();
@@ -414,5 +516,64 @@ mod tests {
     fn glob_match_char_class_single_char() {
         assert!(glob_match("[x]", "x"));
         assert!(!glob_match("[x]", "y"));
+    }
+
+    // ─── matches_tool_filter tests ───
+
+    #[test]
+    fn tool_filter_wildcard_matches_any() {
+        let input = serde_json::json!({"command": "echo hello"});
+        assert!(matches_tool_filter("*", "bash", &input));
+        assert!(matches_tool_filter("*", "read", &input));
+    }
+
+    #[test]
+    fn tool_filter_exact_name() {
+        let input = serde_json::json!({});
+        assert!(matches_tool_filter("bash", "bash", &input));
+        assert!(!matches_tool_filter("bash", "read", &input));
+        assert!(matches_tool_filter("Edit", "Edit", &input));
+    }
+
+    #[test]
+    fn tool_filter_name_glob() {
+        let input = serde_json::json!({});
+        assert!(matches_tool_filter("mcp__*", "mcp__playwright", &input));
+        assert!(!matches_tool_filter("mcp__*", "bash", &input));
+    }
+
+    #[test]
+    fn tool_filter_name_with_param_pattern() {
+        let input = serde_json::json!({"command": "git status"});
+        assert!(matches_tool_filter("Bash(command:git*)", "Bash", &input));
+        assert!(matches_tool_filter("Bash(command:git *)", "Bash", &input));
+
+        let other = serde_json::json!({"command": "rm -rf /"});
+        assert!(!matches_tool_filter("Bash(command:git*)", "Bash", &other));
+    }
+
+    #[test]
+    fn tool_filter_param_wrong_tool_name() {
+        let input = serde_json::json!({"command": "git log"});
+        assert!(!matches_tool_filter("Bash(command:git*)", "read", &input));
+    }
+
+    #[test]
+    fn tool_filter_param_missing_key() {
+        let input = serde_json::json!({"file_path": "/tmp/foo"});
+        assert!(!matches_tool_filter("Bash(command:git*)", "Bash", &input));
+    }
+
+    #[test]
+    fn tool_filter_param_non_string_value() {
+        let input = serde_json::json!({"command": 42});
+        assert!(!matches_tool_filter("Bash(command:git*)", "Bash", &input));
+    }
+
+    #[test]
+    fn tool_filter_case_sensitive() {
+        let input = serde_json::json!({});
+        assert!(!matches_tool_filter("bash", "Bash", &input));
+        assert!(matches_tool_filter("Bash", "Bash", &input));
     }
 }

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use crab_api::LlmBackend;
 use crab_api::capabilities::StreamingUsage;
@@ -9,7 +10,8 @@ use crab_core::event::Event;
 use crab_core::message::{ContentBlock, Message, Role};
 use crab_core::model::{ModelId, TokenUsage};
 use crab_core::tool::{ToolContext, ToolOutput};
-use crab_session::{CompactionStrategy, ContextAction, ContextManager, Conversation};
+use crab_plugin::hook::{HookAction, HookContext, HookExecutor, HookTrigger};
+use crab_session::{CompactionStrategy, CostAccumulator, ContextAction, ContextManager, Conversation};
 use crab_tools::executor::ToolExecutor;
 use futures::StreamExt;
 use tokio::sync::mpsc;
@@ -28,8 +30,15 @@ pub struct QueryLoopConfig {
     pub cache_enabled: bool,
     /// Reserved for future token budget integration.
     pub _token_budget: Option<()>,
+    /// Extended thinking budget in tokens. When set and > 0, enables
+    /// Anthropic extended thinking mode. Other providers ignore this.
+    pub budget_tokens: Option<u32>,
     /// Retry policy for API requests. Uses default if `None`.
     pub retry_policy: Option<RetryPolicy>,
+    /// Lifecycle hook executor for PreToolUse / PostToolUse / UserPromptSubmit.
+    pub hook_executor: Option<Arc<HookExecutor>>,
+    /// Session ID passed to hooks via `CRAB_SESSION_ID` env var.
+    pub session_id: Option<String>,
 }
 
 /// Core agent loop: user input -> LLM SSE stream -> parse tool calls ->
@@ -41,10 +50,12 @@ pub async fn query_loop(
     executor: &ToolExecutor,
     tool_ctx: &ToolContext,
     config: &QueryLoopConfig,
+    cost_tracker: &mut CostAccumulator,
     event_tx: mpsc::Sender<Event>,
     cancel: CancellationToken,
 ) -> crab_common::Result<()> {
     let mut turn_index: usize = 0;
+    let mut plan_mode = false;
     let context_mgr = ContextManager::default();
     let retry_policy = config.retry_policy.clone().unwrap_or_default();
 
@@ -78,6 +89,7 @@ pub async fn query_loop(
             tools: config.tool_schemas.clone(),
             temperature: config.temperature,
             cache_breakpoints,
+            budget_tokens: config.budget_tokens,
         };
 
         // Stream the LLM response with retry support
@@ -85,6 +97,7 @@ pub async fn query_loop(
             stream_with_retry(backend, req, &retry_policy, &event_tx, &cancel).await?;
 
         // Record usage
+        cost_tracker.add_usage(config.model.as_str(), &total_usage);
         conversation.record_usage(total_usage.clone());
         let _ = event_tx
             .send(Event::MessageEnd { usage: total_usage })
@@ -99,9 +112,29 @@ pub async fn query_loop(
             return Ok(());
         }
 
-        // Extract tool calls and execute them
-        let tool_results =
-            execute_tool_calls(&assistant_msg, executor, tool_ctx, &event_tx, &cancel).await?;
+        // Extract tool calls and execute them (with hook integration + plan mode)
+        let tool_results = execute_tool_calls(
+            &assistant_msg,
+            executor,
+            tool_ctx,
+            &event_tx,
+            &cancel,
+            config.hook_executor.as_deref(),
+            config.session_id.as_deref(),
+            plan_mode,
+        )
+        .await?;
+
+        // Update plan mode state based on tool calls in this turn
+        for block in &assistant_msg.content {
+            if let ContentBlock::ToolUse { name, .. } = block {
+                match name.as_str() {
+                    "enter_plan_mode" => plan_mode = true,
+                    "exit_plan_mode" => plan_mode = false,
+                    _ => {}
+                }
+            }
+        }
 
         // Build tool result message and add to conversation
         let result_msg = tool_results_message(tool_results);
@@ -178,6 +211,10 @@ async fn stream_response(
     let mut tool_parser = StreamingToolParser::new();
     // Use StreamingUsage for accurate token accumulation
     let mut usage_tracker = StreamingUsage::new();
+    // Track thinking content blocks by index
+    let mut thinking_blocks: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    // Track which block indices are thinking blocks
+    let mut thinking_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
     while let Some(event) = stream.next().await {
         if cancel.is_cancelled() {
@@ -205,6 +242,21 @@ async fn stream_response(
                     })
                     .await;
             }
+            StreamEvent::ThinkingDelta { index, delta } => {
+                thinking_blocks
+                    .entry(*index)
+                    .or_default()
+                    .push_str(delta);
+                let _ = event_tx
+                    .send(Event::ThinkingDelta {
+                        index: *index,
+                        delta: delta.clone(),
+                    })
+                    .await;
+            }
+            StreamEvent::ContentBlockStart { index, content_type } if content_type == "thinking" => {
+                thinking_indices.insert(*index);
+            }
             StreamEvent::ContentBlockStop { index } => {
                 let _ = event_tx
                     .send(Event::ContentBlockStop { index: *index })
@@ -231,6 +283,17 @@ async fn stream_response(
 
     // Assemble content blocks into a Message using the tool parser
     let mut content: Vec<ContentBlock> = Vec::new();
+
+    // Add thinking blocks (sorted by index to preserve order)
+    let mut thinking_indices_sorted: Vec<usize> = thinking_blocks.keys().copied().collect();
+    thinking_indices_sorted.sort();
+    for idx in thinking_indices_sorted {
+        if let Some(thinking) = thinking_blocks.remove(&idx) {
+            if !thinking.is_empty() {
+                content.push(ContentBlock::Thinking { thinking });
+            }
+        }
+    }
 
     // Add text content if any
     let text = tool_parser.text();
@@ -323,12 +386,17 @@ async fn check_and_compact(
 /// Execute all tool calls from an assistant message.
 ///
 /// Read-only tools are executed concurrently; write tools sequentially.
+/// PreToolUse / PostToolUse hooks are invoked around each tool execution.
+#[allow(clippy::too_many_arguments)]
 async fn execute_tool_calls(
     assistant_msg: &Message,
     executor: &ToolExecutor,
     ctx: &ToolContext,
     event_tx: &mpsc::Sender<Event>,
     cancel: &CancellationToken,
+    hook_executor: Option<&HookExecutor>,
+    session_id: Option<&str>,
+    plan_mode: bool,
 ) -> crab_common::Result<Vec<(String, Result<ToolOutput, crab_common::Error>)>> {
     let registry = executor.registry();
     let mut results = Vec::new();
@@ -337,6 +405,7 @@ async fn execute_tool_calls(
     let (reads, writes) = partition_tool_calls(&assistant_msg.content, registry);
 
     // Execute read-only tools concurrently
+    // (hooks are not run for read-only tools to avoid serialization overhead)
     if !reads.is_empty() {
         let read_futures: Vec<_> = reads
             .iter()
@@ -371,13 +440,80 @@ async fn execute_tool_calls(
         results.extend(read_results);
     }
 
-    // Execute write tools sequentially
+    // Execute write tools sequentially (with hook support)
     for call in &writes {
         if cancel.is_cancelled() {
             break;
         }
         let id = call.id.to_string();
         let name = call.name.to_string();
+        let mut input = call.input.clone();
+
+        // ── Plan mode gate ─────────────────────────────────────────
+        // In plan mode, block write tools (except exit_plan_mode itself)
+        if plan_mode && name != "exit_plan_mode" {
+            let _ = event_tx
+                .send(Event::ToolUseStart {
+                    id: id.clone(),
+                    name: name.clone(),
+                })
+                .await;
+            let output = ToolOutput::error(
+                "Cannot execute write operations in plan mode. \
+                 Use exit_plan_mode to get approval before making changes.",
+            );
+            let _ = event_tx
+                .send(Event::ToolResult {
+                    id: id.clone(),
+                    output: output.clone(),
+                })
+                .await;
+            results.push((id, Ok(output)));
+            continue;
+        }
+
+        // ── PreToolUse hook ─────────────────────────────────────────
+        if let Some(hooks) = hook_executor {
+            let hook_ctx = HookContext {
+                tool_name: name.clone(),
+                tool_input: serde_json::to_string(&input).unwrap_or_default(),
+                working_dir: Some(ctx.working_dir.clone()),
+                tool_output: None,
+                tool_exit_code: None,
+                session_id: session_id.map(String::from),
+            };
+            match hooks.run(HookTrigger::PreToolUse, &hook_ctx).await {
+                Ok(hr) if hr.action == HookAction::Deny => {
+                    let msg = hr
+                        .message
+                        .unwrap_or_else(|| "blocked by pre-tool-use hook".into());
+                    let _ = event_tx
+                        .send(Event::ToolUseStart {
+                            id: id.clone(),
+                            name: name.clone(),
+                        })
+                        .await;
+                    let output = ToolOutput::error(format!("<hook-blocked> {msg}"));
+                    let _ = event_tx
+                        .send(Event::ToolResult {
+                            id: id.clone(),
+                            output: output.clone(),
+                        })
+                        .await;
+                    results.push((id, Ok(output)));
+                    continue;
+                }
+                Ok(hr) if hr.action == HookAction::Modify => {
+                    if let Some(modified) = hr.modified_input {
+                        input = modified;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(error = %e, "PreToolUse hook error, proceeding anyway");
+                }
+            }
+        }
 
         let _ = event_tx
             .send(Event::ToolUseStart {
@@ -386,7 +522,7 @@ async fn execute_tool_calls(
             })
             .await;
 
-        let result = executor.execute(&name, call.input.clone(), ctx).await;
+        let result = executor.execute(&name, input.clone(), ctx).await;
 
         let _ = event_tx
             .send(Event::ToolResult {
@@ -397,6 +533,30 @@ async fn execute_tool_calls(
                 },
             })
             .await;
+
+        // ── PostToolUse hook ────────────────────────────────────────
+        if let Some(hooks) = hook_executor {
+            let output_text = match &result {
+                Ok(o) => o.text(),
+                Err(e) => e.to_string(),
+            };
+            let exit_code = match &result {
+                Ok(o) if o.is_error => 1,
+                Ok(_) => 0,
+                Err(_) => 1,
+            };
+            let hook_ctx = HookContext {
+                tool_name: name.clone(),
+                tool_input: serde_json::to_string(&input).unwrap_or_default(),
+                working_dir: Some(ctx.working_dir.clone()),
+                tool_output: Some(output_text),
+                tool_exit_code: Some(exit_code),
+                session_id: session_id.map(String::from),
+            };
+            if let Err(e) = hooks.run(HookTrigger::PostToolUse, &hook_ctx).await {
+                tracing::warn!(error = %e, "PostToolUse hook error");
+            }
+        }
 
         results.push((id, result));
     }
@@ -597,7 +757,10 @@ mod tests {
             tool_schemas: vec![],
             cache_enabled: false,
             _token_budget: None,
+            budget_tokens: None,
             retry_policy: None,
+            hook_executor: None,
+            session_id: None,
         };
         assert_eq!(config.model.as_str(), "claude-sonnet-4-20250514");
         assert_eq!(config.max_tokens, 4096);
@@ -613,7 +776,10 @@ mod tests {
             tool_schemas: vec![],
             cache_enabled: false,
             _token_budget: None,
+            budget_tokens: None,
             retry_policy: Some(policy),
+            hook_executor: None,
+            session_id: None,
         };
         assert!(config.retry_policy.is_some());
         assert_eq!(config.retry_policy.unwrap().max_retries, 5);

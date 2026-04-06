@@ -17,6 +17,9 @@ pub struct MessageRequest<'a> {
     pub temperature: Option<f32>,
     /// Cache breakpoints — Anthropic-specific, ignored by other providers.
     pub cache_breakpoints: Vec<CacheBreakpoint>,
+    /// Extended thinking budget in tokens. When > 0, Anthropic provider enables
+    /// extended thinking mode. Other providers silently ignore this.
+    pub budget_tokens: Option<u32>,
 }
 
 /// Specifies where to place a `cache_control: {"type": "ephemeral"}` marker.
@@ -45,6 +48,11 @@ pub enum StreamEvent {
         content_type: String,
     },
     ContentDelta {
+        index: usize,
+        delta: String,
+    },
+    /// Incremental thinking content from extended thinking mode.
+    ThinkingDelta {
         index: usize,
         delta: String,
     },
@@ -86,6 +94,7 @@ mod tests {
             tools: vec![],
             temperature: None,
             cache_breakpoints: vec![],
+            budget_tokens: None,
         };
         assert_eq!(req.model.as_str(), "claude-sonnet-4-20250514");
         assert_eq!(req.messages.len(), 1);

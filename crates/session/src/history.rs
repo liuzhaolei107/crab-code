@@ -129,6 +129,35 @@ impl SessionHistory {
         Ok(())
     }
 
+    /// Find the most recent session (by file modification time).
+    ///
+    /// This is used by the `-c` / `--continue` flag to resume the latest
+    /// session. The `_dir` parameter is accepted for future use when sessions
+    /// store their working directory; currently it is unused and the most
+    /// recent session file (by mtime) is returned regardless.
+    pub fn find_latest_for_dir(&self, _dir: &std::path::Path) -> Option<String> {
+        if !self.base_dir.exists() {
+            return None;
+        }
+        let mut best: Option<(String, std::time::SystemTime)> = None;
+        if let Ok(entries) = std::fs::read_dir(&self.base_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if let Some(id) = name.strip_suffix(".json") {
+                    if let Ok(meta) = entry.metadata() {
+                        if let Ok(mtime) = meta.modified() {
+                            if best.as_ref().is_none_or(|(_, t)| mtime > *t) {
+                                best = Some((id.to_string(), mtime));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        best.map(|(id, _)| id)
+    }
+
     // ── Search ─────────────────────────────────────────────────────
 
     /// Search a single session's messages for a keyword (case-insensitive).
@@ -202,6 +231,7 @@ fn block_text(block: &ContentBlock) -> Option<&str> {
         ContentBlock::Text { text } => Some(text),
         ContentBlock::ToolResult { content, .. } => Some(content),
         ContentBlock::ToolUse { name, .. } => Some(name),
+        ContentBlock::Thinking { thinking } => Some(thinking),
         ContentBlock::Image { .. } => None,
     }
 }
@@ -276,6 +306,9 @@ fn export_markdown(session_id: &str, messages: &[Message]) -> String {
                     };
                     let _ = writeln!(md, "**{label}** (id: `{tool_use_id}`)\n");
                     let _ = writeln!(md, "```\n{content}\n```\n");
+                }
+                ContentBlock::Thinking { thinking } => {
+                    let _ = writeln!(md, "*[thinking]* {thinking}\n");
                 }
                 ContentBlock::Image { .. } => {
                     let _ = writeln!(md, "*[image]*\n");
@@ -825,5 +858,28 @@ mod tests {
         let md = export_markdown("s1", &[Message::system("Be helpful")]);
         assert!(md.contains("## [0] System"));
         assert!(md.contains("Be helpful"));
+    }
+
+    // ── find_latest_for_dir tests ─────────────────────────────────
+
+    #[test]
+    fn find_latest_for_dir_empty_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = SessionHistory::new(dir.path().join("sessions"));
+        assert!(history.find_latest_for_dir(std::path::Path::new("/tmp")).is_none());
+    }
+
+    #[test]
+    fn find_latest_for_dir_returns_most_recent() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = SessionHistory::new(dir.path().to_path_buf());
+
+        history.save("session-old", &[Message::user("old")]).unwrap();
+        // Small delay to ensure different mtime
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        history.save("session-new", &[Message::user("new")]).unwrap();
+
+        let latest = history.find_latest_for_dir(std::path::Path::new("/tmp")).unwrap();
+        assert_eq!(latest, "session-new");
     }
 }
