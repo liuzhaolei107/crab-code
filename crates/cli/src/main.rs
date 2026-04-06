@@ -888,8 +888,10 @@ async fn run_single_shot(
     let printer = tokio::spawn(print_events(event_rx, output_format));
 
     let result = session.handle_user_input(prompt).await;
-    // Drop the event_tx side so printer finishes
-    drop(session.event_tx.clone());
+    // Replace the event_tx with a dummy so the printer's rx sees all senders dropped.
+    let (dummy_tx, dummy_rx) = mpsc::channel::<Event>(1);
+    session.event_tx = dummy_tx;
+    drop(dummy_rx);
     let _ = printer.await;
 
     result.map_err(Into::into)
@@ -944,6 +946,10 @@ async fn run_repl(
             }
         }
 
+        // Replace tx so the printer's rx sees all senders dropped and finishes.
+        let (fresh_tx, fresh_rx) = mpsc::channel::<Event>(1);
+        session.event_tx = fresh_tx;
+        drop(fresh_rx);
         let _ = printer.await;
         println!();
     }
@@ -953,10 +959,10 @@ async fn run_repl(
 
 /// Swap the session's `event_rx` with a fresh one, returning the old receiver.
 fn take_event_rx(session: &mut AgentSession) -> mpsc::Receiver<Event> {
-    let (new_tx, new_rx) = mpsc::channel(256);
-    let old_rx = std::mem::replace(&mut session.event_rx, new_rx);
-    session.event_tx = new_tx;
-    old_rx
+    // Create a fresh channel: session sends via tx, printer reads via rx.
+    let (tx, rx) = mpsc::channel(256);
+    session.event_tx = tx;
+    rx
 }
 
 /// Drain events from the receiver and print them to stdout/stderr.

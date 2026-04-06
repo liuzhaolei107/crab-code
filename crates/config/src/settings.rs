@@ -1,5 +1,7 @@
-use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
 
 /// Global config directory name.
 const CONFIG_DIR: &str = ".crab";
@@ -26,6 +28,9 @@ pub struct Settings {
     pub hooks: Option<serde_json::Value>,
     pub theme: Option<String>,
     pub git_context: Option<GitContextConfig>,
+    /// Environment variables to inject into the process.
+    /// CC-compatible: `{"env": {"ANTHROPIC_API_KEY": "sk-ant-xxx"}}`.
+    pub env: Option<HashMap<String, String>>,
 }
 
 /// Configuration for git context injection into system prompts.
@@ -65,6 +70,16 @@ impl Settings {
             hooks: other.hooks.clone().or(self.hooks),
             theme: other.theme.clone().or(self.theme),
             git_context: other.git_context.clone().or(self.git_context),
+            env: match (&self.env, &other.env) {
+                (Some(base), Some(over)) => {
+                    let mut merged = base.clone();
+                    merged.extend(over.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    Some(merged)
+                }
+                (None, Some(over)) => Some(over.clone()),
+                (Some(base), None) => Some(base.clone()),
+                (None, None) => None,
+            },
         }
     }
 }
@@ -248,8 +263,19 @@ where
         merged
     };
 
-    // 5. Environment variable overrides (always applied, highest priority)
-    let env_overlay = build_env_overlay(&env_lookup, merged.api_provider.as_deref());
+    // 5. Environment variable overrides (always applied, highest priority).
+    //    The env_lookup falls back to settings.env (CC-compatible) so that
+    //    `{"env": {"ANTHROPIC_API_KEY": "sk-..."}}` in settings.json works.
+    let settings_env = merged.env.clone();
+    let env_with_fallback = move |key: &str| -> std::result::Result<String, std::env::VarError> {
+        env_lookup(key).or_else(|_| {
+            settings_env
+                .as_ref()
+                .and_then(|m| m.get(key).cloned())
+                .ok_or(std::env::VarError::NotPresent)
+        })
+    };
+    let env_overlay = build_env_overlay(&env_with_fallback, merged.api_provider.as_deref());
     Ok(merged.merge(&env_overlay))
 }
 
@@ -262,7 +288,11 @@ where
     F: Fn(&str) -> std::result::Result<String, std::env::VarError>,
 {
     let api_provider = env_lookup("CRAB_API_PROVIDER").ok();
-    let api_base_url = env_lookup("CRAB_API_BASE_URL").ok();
+    let api_base_url = env_lookup("CRAB_API_BASE_URL")
+        .ok()
+        // CC-compatible: ANTHROPIC_BASE_URL as fallback
+        .or_else(|| env_lookup("ANTHROPIC_BASE_URL").ok())
+        .filter(|v| !v.is_empty());
     let model = env_lookup("CRAB_MODEL").ok();
 
     // For API key: CRAB_API_KEY takes priority, then provider-specific vars
@@ -293,7 +323,19 @@ where
         "openai" | "ollama" | "vllm" => "OPENAI_API_KEY",
         _ => "ANTHROPIC_API_KEY",
     };
-    env_lookup(var_name).ok().filter(|v| !v.is_empty())
+    env_lookup(var_name)
+        .ok()
+        .filter(|v| !v.is_empty())
+        // CC-compatible: ANTHROPIC_AUTH_TOKEN as fallback for Anthropic providers
+        .or_else(|| {
+            if var_name == "ANTHROPIC_API_KEY" {
+                env_lookup("ANTHROPIC_AUTH_TOKEN")
+                    .ok()
+                    .filter(|v| !v.is_empty())
+            } else {
+                None
+            }
+        })
 }
 
 #[cfg(test)]
@@ -465,6 +507,7 @@ mod tests {
                 enabled: true,
                 max_diff_lines: 100,
             }),
+            env: None,
         };
         let overlay = Settings {
             api_provider: Some("openai".into()),
@@ -482,6 +525,7 @@ mod tests {
                 enabled: false,
                 max_diff_lines: 50,
             }),
+            env: None,
         };
         let merged = base.merge(&overlay);
         assert_eq!(merged.api_provider.as_deref(), Some("openai"));
@@ -545,6 +589,7 @@ mod tests {
             hooks: Some(serde_json::json!([{"trigger": "pre_tool_use", "command": "echo"}])),
             theme: Some("dark".into()),
             git_context: Some(GitContextConfig::default()),
+            env: Some(HashMap::from([("FOO".into(), "bar".into())])),
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
         let deserialized: Settings = serde_json::from_str(&json).unwrap();
@@ -694,6 +739,39 @@ mod tests {
         assert_eq!(provider_api_key_env("ollama", &env), Some("oai".into()));
         assert_eq!(provider_api_key_env("vllm", &env), Some("oai".into()));
         assert_eq!(provider_api_key_env("unknown", &env), Some("ant".into()));
+    }
+
+    #[test]
+    fn build_env_overlay_anthropic_auth_token_fallback() {
+        let env = fake_env(HashMap::from([("ANTHROPIC_AUTH_TOKEN", "cr_token123")]));
+        let overlay = build_env_overlay(&env, None);
+        assert_eq!(overlay.api_key.as_deref(), Some("cr_token123"));
+    }
+
+    #[test]
+    fn build_env_overlay_anthropic_base_url_fallback() {
+        let env = fake_env(HashMap::from([(
+            "ANTHROPIC_BASE_URL",
+            "http://proxy.example.com/api",
+        )]));
+        let overlay = build_env_overlay(&env, None);
+        assert_eq!(
+            overlay.api_base_url.as_deref(),
+            Some("http://proxy.example.com/api")
+        );
+    }
+
+    #[test]
+    fn build_env_overlay_crab_base_url_overrides_anthropic() {
+        let env = fake_env(HashMap::from([
+            ("CRAB_API_BASE_URL", "http://crab.example.com"),
+            ("ANTHROPIC_BASE_URL", "http://anthropic.example.com"),
+        ]));
+        let overlay = build_env_overlay(&env, None);
+        assert_eq!(
+            overlay.api_base_url.as_deref(),
+            Some("http://crab.example.com")
+        );
     }
 
     #[test]
