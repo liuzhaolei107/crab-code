@@ -90,7 +90,9 @@ impl AutoComplete {
         if token.starts_with('/')
             && !token[1..].contains('/')
             && !token[1..].contains('\\')
-            && token[1..].chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            && token[1..]
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         {
             return CompletionContext::SlashCommand;
         }
