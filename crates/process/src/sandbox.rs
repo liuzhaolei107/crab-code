@@ -275,10 +275,10 @@ impl Sandbox for LandlockSandbox {
         // with LANDLOCK_CREATE_RULESET_VERSION. For now, check the kernel
         // version heuristic (5.13+).
         let info = sysinfo::System::kernel_version();
-        if let Some(version) = info {
-            if let Some((major, minor)) = parse_kernel_version(&version) {
-                return major > 5 || (major == 5 && minor >= 13);
-            }
+        if let Some(version) = info
+            && let Some((major, minor)) = parse_kernel_version(&version)
+        {
+            return major > 5 || (major == 5 && minor >= 13);
         }
         false
     }

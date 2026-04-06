@@ -1310,7 +1310,7 @@ mod tests {
 
     #[test]
     fn coordinator_worker_id_auto_increments_on_spawn_worker() {
-        let mut coord = AgentCoordinator::new("main".into(), "Main".into());
+        let coord = AgentCoordinator::new("main".into(), "Main".into());
         assert_eq!(coord.next_worker_id, 1);
 
         // We can't call spawn_worker without a real backend/executor,

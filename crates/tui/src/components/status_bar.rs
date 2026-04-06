@@ -351,7 +351,8 @@ mod tests {
     #[test]
     fn session_duration_is_positive() {
         let bar = StatusBar::new();
-        assert!(bar.session_duration().as_nanos() >= 0);
+        // Duration is always non-negative; just verify it returns without panic
+        let _ = bar.session_duration();
     }
 
     #[test]

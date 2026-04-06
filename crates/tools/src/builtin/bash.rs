@@ -487,7 +487,7 @@ mod tests {
         };
         let input = serde_json::json!({ "command": cmd });
 
-        let mut ctx = make_ctx();
+        let ctx = make_ctx();
         let cancel = ctx.cancellation_token.clone();
 
         // Cancel after a short delay

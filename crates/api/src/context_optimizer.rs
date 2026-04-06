@@ -720,7 +720,8 @@ mod tests {
             // Something was dropped — recent turns should still be present if budget allows.
             for &turn in &kept_turns {
                 // At minimum, the recent turns should be preferred.
-                assert!(turn >= 0); // basic sanity
+                // turn is usize, always >= 0 — just ensure it exists
+                let _ = turn;
             }
         }
     }

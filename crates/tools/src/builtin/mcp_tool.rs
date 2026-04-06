@@ -163,7 +163,7 @@ pub async fn register_mcp_tools(
 mod tests {
     use super::*;
     use crab_mcp::Transport;
-    use crab_mcp::protocol::{JsonRpcRequest, JsonRpcResponse, ServerCapabilities, ServerInfo};
+    use crab_mcp::protocol::{JsonRpcRequest, JsonRpcResponse};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Mock transport for testing the adapter.
@@ -264,7 +264,7 @@ mod tests {
     #[tokio::test]
     async fn adapter_execute_forwards_to_mcp_client() {
         // Mock: initialize response, then tool call response
-        let mut responses = vec![
+        let responses = vec![
             serde_json::json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
@@ -377,7 +377,7 @@ mod tests {
             .unwrap();
 
         // Build a manager with the mock client injected
-        let mut mgr = crab_mcp::McpManager::new();
+        let _mgr = crab_mcp::McpManager::new();
         // We need to insert the client into the manager — use the public API
         // by wrapping in a DiscoveredTool directly via discovered_tools after
         // adding through internal means. Since McpManager.clients is private,

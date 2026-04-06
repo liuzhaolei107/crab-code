@@ -126,6 +126,9 @@ crab-telemetry = { path = "crates/telemetry" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+# Keep in sync with CI (RUSTFLAGS=-Dwarnings)
+unused_mut = "deny"
+unused_comparisons = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

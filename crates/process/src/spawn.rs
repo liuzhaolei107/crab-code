@@ -101,7 +101,10 @@ pub fn shell_command(cmd_str: &str) -> SpawnOptions {
 /// Attempt graceful termination: on Unix, send SIGTERM via the `kill` command
 /// and wait for the grace period before escalating to SIGKILL. On Windows,
 /// immediately force-kill (no graceful shutdown equivalent).
-async fn graceful_kill(child: &mut tokio::process::Child, _grace_period: Duration) {
+async fn graceful_kill(
+    child: &mut tokio::process::Child,
+    #[cfg_attr(not(unix), allow(unused))] grace_period: Duration,
+) {
     #[cfg(unix)]
     if let Some(pid) = child.id() {
         // Send SIGTERM via the kill command (avoids unsafe libc calls)
@@ -111,7 +114,7 @@ async fn graceful_kill(child: &mut tokio::process::Child, _grace_period: Duratio
             .await;
 
         // Wait for the grace period or until the child exits on its own
-        if tokio::time::timeout(_grace_period, child.wait())
+        if tokio::time::timeout(grace_period, child.wait())
             .await
             .is_ok()
         {

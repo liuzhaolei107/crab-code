@@ -395,7 +395,8 @@ mod tests {
     fn tracker_elapsed() {
         let tracker = ProgressTracker::new(ProgressToken::from_number(1));
         // Elapsed should be non-negative (just created)
-        assert!(tracker.elapsed().as_nanos() >= 0);
+        // elapsed() returns a Duration which is always non-negative
+        let _ = tracker.elapsed();
     }
 
     #[test]

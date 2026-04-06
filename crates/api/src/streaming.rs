@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn accumulator_basic() {
-        let mut acc = ToolUseAccumulator::new(0, "tc_1".into(), "read_file".into());
+        let acc = ToolUseAccumulator::new(0, "tc_1".into(), "read_file".into());
         assert_eq!(acc.index, 0);
         assert_eq!(acc.id, "tc_1");
         assert_eq!(acc.name, "read_file");

@@ -395,18 +395,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// A handler that always allows permission.
-    struct AllowAll;
-    impl PermissionHandler for AllowAll {
-        fn ask_permission(
-            &self,
-            _tool_name: &str,
-            _prompt: &str,
-        ) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
-            Box::pin(async { true })
-        }
-    }
-
     #[tokio::test]
     async fn permission_handler_deny_blocks_execution() {
         let mut executor = make_executor();
