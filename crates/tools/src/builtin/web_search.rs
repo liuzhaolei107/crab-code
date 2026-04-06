@@ -64,9 +64,7 @@ impl DomainFilter {
     #[must_use]
     pub fn allows(&self, url: &str) -> bool {
         let host = extract_host(url);
-        if !self.blocked.is_empty()
-            && self.blocked.iter().any(|d| host_matches(&host, d))
-        {
+        if !self.blocked.is_empty() && self.blocked.iter().any(|d| host_matches(&host, d)) {
             return false;
         }
         if !self.allowed.is_empty() {
@@ -78,9 +76,7 @@ impl DomainFilter {
 
 /// Extract the host portion from a URL.
 fn extract_host(url: &str) -> String {
-    let after_scheme = url
-        .find("://")
-        .map_or(url, |pos| &url[pos + 3..]);
+    let after_scheme = url.find("://").map_or(url, |pos| &url[pos + 3..]);
     let host = after_scheme.split('/').next().unwrap_or("");
     host.split(':').next().unwrap_or("").to_lowercase()
 }
@@ -138,7 +134,7 @@ impl SearchCache {
         let is_expired = self
             .entries
             .get(&key)
-            .map_or(true, |e| e.cached_at.elapsed() > self.ttl);
+            .is_none_or(|e| e.cached_at.elapsed() > self.ttl);
         if is_expired {
             self.entries.remove(&key);
             return None;
@@ -174,8 +170,7 @@ impl SearchCache {
     pub fn cleanup(&mut self) -> usize {
         let before = self.entries.len();
         let ttl = self.ttl;
-        self.entries
-            .retain(|_, v| v.cached_at.elapsed() <= ttl);
+        self.entries.retain(|_, v| v.cached_at.elapsed() <= ttl);
         before - self.entries.len()
     }
 }
@@ -236,9 +231,10 @@ impl SearchHistory {
     #[must_use]
     pub fn was_recently_searched(&self, query: &str, within: Duration) -> bool {
         let normalized = normalize_query(query);
-        self.entries.iter().rev().any(|e| {
-            normalize_query(&e.query) == normalized && e.searched_at.elapsed() <= within
-        })
+        self.entries
+            .iter()
+            .rev()
+            .any(|e| normalize_query(&e.query) == normalized && e.searched_at.elapsed() <= within)
     }
 
     /// Number of recorded searches.

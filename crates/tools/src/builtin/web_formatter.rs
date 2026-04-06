@@ -23,7 +23,13 @@ pub fn html_to_markdown(html: &str) -> String {
 
     while let Some(ch) = chars.next() {
         if ch == '<' {
-            process_tag(&mut chars, &mut out, &mut in_pre, &mut list_stack, &mut ol_counter);
+            process_tag(
+                &mut chars,
+                &mut out,
+                &mut in_pre,
+                &mut list_stack,
+                &mut ol_counter,
+            );
         } else if ch == '&' {
             decode_entity(&mut chars, &mut out);
         } else {
@@ -87,15 +93,13 @@ fn process_tag(
             list_stack.pop();
             out.push('\n');
         }
-        "li" if !is_closing => {
-            match list_stack.last() {
-                Some(ListKind::Ordered) => {
-                    *ol_counter += 1;
-                    let _ = write!(out, "{}. ", *ol_counter);
-                }
-                _ => out.push_str("- "),
+        "li" if !is_closing => match list_stack.last() {
+            Some(ListKind::Ordered) => {
+                *ol_counter += 1;
+                let _ = write!(out, "{}. ", *ol_counter);
             }
-        }
+            _ => out.push_str("- "),
+        },
         "a" if !is_closing => {
             if let Some(href) = extract_attr(&tag, "href") {
                 out.push('[');
@@ -207,10 +211,7 @@ fn collect_until_closing_tag(
 }
 
 /// Skip all content until the closing tag.
-fn skip_until_closing_tag(
-    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
-    tag_name: &str,
-) {
+fn skip_until_closing_tag(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, tag_name: &str) {
     let closing = format!("/{tag_name}");
     while let Some(ch) = chars.next() {
         if ch == '<' {
@@ -229,11 +230,9 @@ fn collect_entity(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Strin
         if ch == ';' {
             break;
         }
-        if ch.is_alphanumeric() || ch == '#' {
-            entity.push(ch);
-        } else {
+        entity.push(ch);
+        if !(ch.is_alphanumeric() || ch == '#') {
             // Not a valid entity, return what we have
-            entity.push(ch);
             break;
         }
     }
@@ -247,7 +246,7 @@ fn collapse_blank_lines(text: &str) -> String {
     for line in text.lines() {
         if line.trim().is_empty() {
             blank_count += 1;
-            if blank_count <= 2 {
+            if blank_count <= 1 {
                 result.push('\n');
             }
         } else {
@@ -263,8 +262,7 @@ fn collapse_blank_lines(text: &str) -> String {
 
 /// Tags considered boilerplate that should be stripped entirely.
 const BOILERPLATE_TAGS: &[&str] = &[
-    "nav", "header", "footer", "aside", "script", "style", "noscript",
-    "iframe", "form",
+    "nav", "header", "footer", "aside", "script", "style", "noscript", "iframe", "form",
 ];
 
 /// Extract main content from HTML, removing boilerplate elements.
@@ -330,17 +328,17 @@ pub fn truncate_content(content: &str, max_chars: usize) -> String {
 
     // Try to break at a paragraph boundary (double newline)
     let search_region = &content[..max_chars];
-    if let Some(pos) = search_region.rfind("\n\n") {
-        if pos > max_chars / 2 {
-            return format!("{}\n\n[Content truncated]", &content[..pos]);
-        }
+    if let Some(pos) = search_region.rfind("\n\n")
+        && pos > max_chars / 2
+    {
+        return format!("{}\n\n[Content truncated]", &content[..pos]);
     }
 
     // Fall back to breaking at a single newline
-    if let Some(pos) = search_region.rfind('\n') {
-        if pos > max_chars / 2 {
-            return format!("{}\n\n[Content truncated]", &content[..pos]);
-        }
+    if let Some(pos) = search_region.rfind('\n')
+        && pos > max_chars / 2
+    {
+        return format!("{}\n\n[Content truncated]", &content[..pos]);
     }
 
     // Last resort: break at a space
@@ -477,7 +475,8 @@ mod tests {
 
     #[test]
     fn table_basic() {
-        let html = "<table><tr><th>Name</th><th>Age</th></tr><tr><td>Alice</td><td>30</td></tr></table>";
+        let html =
+            "<table><tr><th>Name</th><th>Age</th></tr><tr><td>Alice</td><td>30</td></tr></table>";
         let md = html_to_markdown(html);
         assert!(md.contains("Name"));
         assert!(md.contains("Alice"));

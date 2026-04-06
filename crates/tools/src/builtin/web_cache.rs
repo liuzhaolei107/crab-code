@@ -251,9 +251,7 @@ pub fn cache_key(url: &str) -> String {
         let (scheme, rest) = normalized.split_at(pos);
         let scheme_lower = scheme.to_lowercase();
         let after_scheme = &rest[3..];
-        let host_end = after_scheme
-            .find('/')
-            .unwrap_or(after_scheme.len());
+        let host_end = after_scheme.find('/').unwrap_or(after_scheme.len());
         let (host, path) = after_scheme.split_at(host_end);
         let host_lower = host.to_lowercase();
 
@@ -346,11 +344,7 @@ mod tests {
     #[test]
     fn put_and_get() {
         let mut cache = WebCache::new(10, 300);
-        cache.put(
-            "https://example.com",
-            "Hello".into(),
-            "text/html".into(),
-        );
+        cache.put("https://example.com", "Hello".into(), "text/html".into());
         assert_eq!(cache.len(), 1);
         let entry = cache.get("https://example.com").unwrap();
         assert_eq!(entry.content, "Hello");
@@ -415,11 +409,7 @@ mod tests {
             "text/plain".into(),
             Duration::from_secs(0),
         );
-        cache.put(
-            "https://fresh.com",
-            "Fresh".into(),
-            "text/plain".into(),
-        );
+        cache.put("https://fresh.com", "Fresh".into(), "text/plain".into());
         std::thread::sleep(Duration::from_millis(5));
         let removed = cache.cleanup_expired();
         assert_eq!(removed, 1);
