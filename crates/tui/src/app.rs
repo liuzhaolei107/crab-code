@@ -537,12 +537,7 @@ impl App {
         );
 
         // Header (3 lines art/info + 1 line separator, no border box)
-        render_header(
-            &self.model_name,
-            &self.working_dir,
-            layout.header,
-            buf,
-        );
+        render_header(&self.model_name, &self.working_dir, layout.header, buf);
 
         // Sidebar placeholder
         if let Some(_sidebar_area) = layout.sidebar {
@@ -581,12 +576,7 @@ impl App {
         }
 
         // Bottom bar
-        render_bottom_bar(
-            self.state,
-            self.search.is_active(),
-            layout.bottom_bar,
-            buf,
-        );
+        render_bottom_bar(self.state, self.search.is_active(), layout.bottom_bar, buf);
 
         // Autocomplete popup (renders above input)
         if self.autocomplete.is_active() {
@@ -617,12 +607,7 @@ const CRAB_BG: Color = Color::Black;
 /// ────────────────────────────────────────
 /// ```
 #[allow(clippy::cast_possible_truncation)]
-fn render_header(
-    model_name: &str,
-    working_dir: &str,
-    area: Rect,
-    buf: &mut Buffer,
-) {
+fn render_header(model_name: &str, working_dir: &str, area: Rect, buf: &mut Buffer) {
     if area.height == 0 || area.width < 10 {
         return;
     }
@@ -654,9 +639,7 @@ fn render_header(
         Line::from(vec![
             Span::styled(
                 "Crab Code",
-                Style::default()
-                    .fg(CRAB_COLOR)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(CRAB_COLOR).add_modifier(Modifier::BOLD),
             ),
             Span::styled(" v0.1.0", Style::default().fg(Color::DarkGray)),
         ]),
@@ -716,7 +699,10 @@ fn shorten_path(path: &str, max_chars: usize) -> String {
     }
     let suffix_budget = max_chars.saturating_sub(4);
     if let Some(pos) = path[path.len().saturating_sub(suffix_budget)..].find(['/', '\\']) {
-        format!("...{}", &path[path.len().saturating_sub(suffix_budget) + pos..])
+        format!(
+            "...{}",
+            &path[path.len().saturating_sub(suffix_budget) + pos..]
+        )
     } else {
         format!("...{}", &path[path.len().saturating_sub(suffix_budget)..])
     }
@@ -746,9 +732,7 @@ fn render_input_with_prompt(input: &InputBox, area: Rect, buf: &mut Buffer) {
 
     let prompt_span = Span::styled(
         "❯ ",
-        Style::default()
-            .fg(CRAB_COLOR)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(CRAB_COLOR).add_modifier(Modifier::BOLD),
     );
     let prompt_area = Rect {
         x: area.x,
@@ -881,12 +865,7 @@ fn classify_tool_risk(tool_name: &str) -> RiskLevel {
     }
 }
 
-fn render_bottom_bar(
-    state: AppState,
-    search_active: bool,
-    area: Rect,
-    buf: &mut Buffer,
-) {
+fn render_bottom_bar(state: AppState, search_active: bool, area: Rect, buf: &mut Buffer) {
     let line = if search_active {
         Line::from(Span::styled(
             "Enter: next match | Esc: close | type to search",

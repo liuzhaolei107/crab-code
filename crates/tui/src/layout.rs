@@ -150,9 +150,18 @@ mod tests {
         assert_eq!(layout.header.y, 0);
         assert_eq!(layout.content.y, layout.header.y + layout.header.height);
         assert_eq!(layout.status.y, layout.content.y + layout.content.height);
-        assert_eq!(layout.separator_top.y, layout.status.y + layout.status.height);
-        assert_eq!(layout.input.y, layout.separator_top.y + layout.separator_top.height);
-        assert_eq!(layout.separator_bottom.y, layout.input.y + layout.input.height);
+        assert_eq!(
+            layout.separator_top.y,
+            layout.status.y + layout.status.height
+        );
+        assert_eq!(
+            layout.input.y,
+            layout.separator_top.y + layout.separator_top.height
+        );
+        assert_eq!(
+            layout.separator_bottom.y,
+            layout.input.y + layout.input.height
+        );
         assert_eq!(
             layout.bottom_bar.y,
             layout.separator_bottom.y + layout.separator_bottom.height
