@@ -301,7 +301,7 @@ fn convert_prompt(prompt: rmcp::model::Prompt) -> McpPrompt {
     }
 }
 
-fn convert_resource(resource: rmcp::model::Resource) -> McpResource {
+fn convert_resource(resource: &rmcp::model::Resource) -> McpResource {
     McpResource {
         uri: resource.uri.clone(),
         name: resource.name.clone(),
@@ -473,7 +473,7 @@ async fn list_resources_rmcp(
     peer.list_all_resources()
         .await
         .map_err(map_rmcp_error)
-        .map(|resources| resources.into_iter().map(convert_resource).collect())
+        .map(|resources| resources.iter().map(convert_resource).collect())
 }
 
 async fn read_resource_legacy(
