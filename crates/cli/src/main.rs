@@ -1691,27 +1691,27 @@ mod tests {
     #[test]
     fn cli_parses_allowed_tools() {
         let cli =
-            Cli::try_parse_from(["crab", "--allowed-tools", "read,write,edit", "hello"]).unwrap();
-        assert_eq!(cli.allowed_tools, vec!["read", "write", "edit"]);
+            Cli::try_parse_from(["crab", "--allowed-tools", "Read,Write,Edit", "hello"]).unwrap();
+        assert_eq!(cli.allowed_tools, vec!["Read", "Write", "Edit"]);
     }
 
     #[test]
     fn cli_parses_allowed_tools_camel_case_alias() {
-        let cli = Cli::try_parse_from(["crab", "--allowedTools", "bash,read", "hello"]).unwrap();
-        assert_eq!(cli.allowed_tools, vec!["bash", "read"]);
+        let cli = Cli::try_parse_from(["crab", "--allowedTools", "Bash,Read", "hello"]).unwrap();
+        assert_eq!(cli.allowed_tools, vec!["Bash", "Read"]);
     }
 
     #[test]
     fn cli_parses_disallowed_tools() {
         let cli =
-            Cli::try_parse_from(["crab", "--disallowed-tools", "bash,mcp__*", "hello"]).unwrap();
-        assert_eq!(cli.disallowed_tools, vec!["bash", "mcp__*"]);
+            Cli::try_parse_from(["crab", "--disallowed-tools", "Bash,mcp__*", "hello"]).unwrap();
+        assert_eq!(cli.disallowed_tools, vec!["Bash", "mcp__*"]);
     }
 
     #[test]
     fn cli_parses_tools_flag() {
-        let cli = Cli::try_parse_from(["crab", "--tools", "read,write", "hello"]).unwrap();
-        assert_eq!(cli.tools.as_deref(), Some("read,write"));
+        let cli = Cli::try_parse_from(["crab", "--tools", "Read,Write", "hello"]).unwrap();
+        assert_eq!(cli.tools.as_deref(), Some("Read,Write"));
     }
 
     #[test]
@@ -1752,9 +1752,9 @@ mod tests {
     #[test]
     fn resolve_tool_filters_passthrough_lists() {
         let (allowed, denied) =
-            resolve_tool_filters(&["read".into(), "write".into()], &["bash".into()], None);
-        assert_eq!(allowed, vec!["read", "write"]);
-        assert_eq!(denied, vec!["bash"]);
+            resolve_tool_filters(&["Read".into(), "Write".into()], &["Bash".into()], None);
+        assert_eq!(allowed, vec!["Read", "Write"]);
+        assert_eq!(denied, vec!["Bash"]);
     }
 
     #[test]
@@ -1773,8 +1773,8 @@ mod tests {
 
     #[test]
     fn resolve_tool_filters_tools_explicit_list() {
-        let (allowed, denied) = resolve_tool_filters(&[], &[], Some("read,write,edit"));
-        assert_eq!(allowed, vec!["read", "write", "edit"]);
+        let (allowed, denied) = resolve_tool_filters(&[], &[], Some("Read,Write,Edit"));
+        assert_eq!(allowed, vec!["Read", "Write", "Edit"]);
         assert!(denied.is_empty());
     }
 

@@ -97,6 +97,8 @@ pub async fn run(args: &ServeArgs) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crab_tools::builtin::bash::BASH_TOOL_NAME;
+    use crab_tools::builtin::read::READ_TOOL_NAME;
 
     #[test]
     fn serve_args_defaults() {
@@ -127,13 +129,13 @@ mod tests {
     fn serve_args_with_tool_filter() {
         let args = ServeArgs {
             port: None,
-            tools: Some(vec!["bash".into(), "read".into()]),
+            tools: Some(vec![BASH_TOOL_NAME.into(), READ_TOOL_NAME.into()]),
             working_dir: None,
             info: false,
         };
         let filter = args.tools.unwrap();
         assert_eq!(filter.len(), 2);
-        assert!(filter.contains(&"bash".to_string()));
+        assert!(filter.contains(&BASH_TOOL_NAME.to_string()));
     }
 
     #[test]
@@ -169,14 +171,14 @@ mod tests {
         let all = registry.all_tools();
         let total = all.len();
 
-        // Filter to just "bash"
-        let filter = ["bash".to_string()];
+        // Filter to just Bash
+        let filter = [BASH_TOOL_NAME.to_string()];
         let filtered: Vec<_> = all
             .into_iter()
             .filter(|t| filter.iter().any(|f| f == t.name()))
             .collect();
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].name(), "bash");
+        assert_eq!(filtered[0].name(), BASH_TOOL_NAME);
         assert!(total > 1); // Sanity check there were more tools
     }
 }
