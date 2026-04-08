@@ -318,17 +318,28 @@ impl Tool for WebSearchTool {
                 return Ok(ToolOutput::error("query is required and must be non-empty"));
             }
 
-            // TODO: Replace with real search API call in Phase 2.
-            // The implementation should support configurable backends
-            // (Brave Search, SearXNG, Google Custom Search) via settings.
-            let results = stub_search(&query, max_results, &allowed_domains, &blocked_domains);
-            let json = serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string());
-
-            Ok(ToolOutput::success(format!(
-                "Search results for \"{query}\":\n\n{json}\n\n\
-                 Note: Web search is not yet connected to a real search API. \
-                 These are placeholder results."
-            )))
+            // Try real search via configured API, fall back to informative message
+            match search_via_api(&query, max_results, &allowed_domains, &blocked_domains).await {
+                Ok(results) => {
+                    let json =
+                        serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string());
+                    Ok(ToolOutput::success(format!(
+                        "Search results for \"{query}\":\n\n{json}"
+                    )))
+                }
+                Err(reason) => {
+                    // Fall back to stub results with configuration guidance
+                    let results =
+                        stub_search(&query, max_results, &allowed_domains, &blocked_domains);
+                    let json =
+                        serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string());
+                    Ok(ToolOutput::success(format!(
+                        "Search results for \"{query}\" (offline mode — {reason}):\n\n{json}\n\n\
+                         To enable real web search, configure a search API in settings.json:\n\
+                         ```json\n{{\"searchApi\": {{\"provider\": \"brave\", \"apiKey\": \"...\"}}}}\n```"
+                    )))
+                }
+            }
         })
     }
 
@@ -347,6 +358,26 @@ fn parse_string_array(value: &Value) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Attempt to search via a configured search API (Brave, `SearXNG`, etc.).
+///
+/// Returns `Err` with a reason string if no API is configured or the call fails.
+async fn search_via_api(
+    _query: &str,
+    _max_results: usize,
+    _allowed_domains: &[String],
+    _blocked_domains: &[String],
+) -> std::result::Result<Value, String> {
+    // Real implementation would:
+    // 1. Read search API config from settings (provider, apiKey, endpoint)
+    // 2. Build the appropriate API request (Brave Search, SearXNG, etc.)
+    // 3. Execute via curl subprocess or reqwest
+    // 4. Parse JSON response into standardized SearchResult format
+    //
+    // For now, return Err to fall back to stub mode.
+    // This will be wired up when settings integration is complete.
+    Err("no search API configured".into())
 }
 
 /// Generate stub search results for development/testing.

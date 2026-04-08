@@ -87,18 +87,29 @@ impl Tool for WebFetchTool {
                 return Ok(ToolOutput::error(reason));
             }
 
-            // TODO: Replace with real HTTP fetch + HTML-to-text in Phase 2.
-            // Implementation plan:
-            //   1. reqwest::Client with timeout_secs, redirect policy (max 5)
-            //   2. Check Content-Length against max_size before downloading
-            //   3. Download body with streaming size limit
-            //   4. Detect Content-Type: HTML → strip tags, JSON → pretty-print,
-            //      plain text → return as-is
-            //   5. Truncate to ~100k chars to avoid context overflow
-            //   6. Apply prompt as extraction instruction (optional LLM pass)
+            let content = fetch_url(&url, timeout_secs, max_size).await?;
 
-            let stub_content = stub_fetch(&url, &prompt, timeout_secs, max_size);
-            Ok(ToolOutput::success(stub_content))
+            // Strip HTML tags if the response looks like HTML
+            let text = if content.contains("<html") || content.contains("<!DOCTYPE") {
+                strip_html_tags(&content)
+            } else {
+                content
+            };
+
+            // Truncate to prevent context overflow (~100k chars)
+            let truncated = if text.len() > 100_000 {
+                format!(
+                    "{}...\n\n[truncated — full page was {} chars]",
+                    &text[..100_000],
+                    text.len()
+                )
+            } else {
+                text
+            };
+
+            Ok(ToolOutput::success(format!(
+                "# Web Fetch: {url}\n\n**Prompt:** {prompt}\n\n---\n\n{truncated}"
+            )))
         })
     }
 
@@ -128,23 +139,78 @@ fn validate_url(url: &str) -> std::result::Result<(), String> {
     Ok(())
 }
 
-/// Generate a stub response for development/testing.
-fn stub_fetch(url: &str, prompt: &str, timeout_secs: u64, max_size: u64) -> String {
-    format!(
-        "# Web Fetch Result\n\n\
-         **URL:** {url}\n\
-         **Prompt:** {prompt}\n\
-         **Timeout:** {timeout_secs}s\n\
-         **Max size:** {max_size} bytes\n\n\
-         ---\n\n\
-         This is a placeholder response. Web fetching is not yet connected to a \
-         real HTTP client. In Phase 2, this tool will:\n\
-         - Fetch the page via reqwest with configurable timeout\n\
-         - Convert HTML to plain text (strip tags, extract main content)\n\
-         - Apply size limits to prevent context overflow\n\
-         - Optionally use the prompt to guide content extraction\n\n\
-         To test with real content, configure an HTTP client in the tools crate."
-    )
+/// Fetch a URL using curl subprocess.
+async fn fetch_url(url: &str, timeout_secs: u64, max_size: u64) -> crab_common::Result<String> {
+    let cmd = format!(
+        "curl -sS -L --max-time {timeout_secs} --max-filesize {max_size} -A 'CrabCode/1.0' '{url}'"
+    );
+    let mut opts = crab_process::spawn::shell_command(&cmd);
+    opts.timeout = Some(std::time::Duration::from_secs(timeout_secs + 5));
+
+    let output = crab_process::spawn::run(opts).await?;
+    if output.exit_code != 0 {
+        return Err(crab_common::Error::Other(format!(
+            "curl failed (exit {}): {}",
+            output.exit_code,
+            output.stderr.trim()
+        )));
+    }
+    Ok(output.stdout)
+}
+
+/// Strip HTML tags to extract plain text content.
+fn strip_html_tags(html: &str) -> String {
+    let mut result = String::with_capacity(html.len() / 2);
+    let mut in_tag = false;
+    let mut in_script = false;
+    let mut in_style = false;
+
+    let lower = html.to_lowercase();
+    let chars: Vec<char> = html.chars().collect();
+    let lower_chars: Vec<char> = lower.chars().collect();
+
+    let mut i = 0;
+    while i < chars.len() {
+        if !in_tag && chars[i] == '<' {
+            // Check for script/style start
+            let remaining: String = lower_chars[i..].iter().take(10).collect();
+            if remaining.starts_with("<script") {
+                in_script = true;
+            } else if remaining.starts_with("<style") {
+                in_style = true;
+            }
+            in_tag = true;
+        } else if in_tag && chars[i] == '>' {
+            let remaining: String = lower_chars[i.saturating_sub(8)..=i].iter().collect();
+            if remaining.contains("</script>") {
+                in_script = false;
+            } else if remaining.contains("</style>") {
+                in_style = false;
+            }
+            in_tag = false;
+        } else if !in_tag && !in_script && !in_style {
+            result.push(chars[i]);
+        }
+        i += 1;
+    }
+
+    // Clean up excessive whitespace
+    let mut cleaned = String::with_capacity(result.len());
+    let mut prev_newline = false;
+    for line in result.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if !prev_newline {
+                cleaned.push('\n');
+                prev_newline = true;
+            }
+        } else {
+            cleaned.push_str(trimmed);
+            cleaned.push('\n');
+            prev_newline = false;
+        }
+    }
+    cleaned
 }
 
 #[cfg(test)]
