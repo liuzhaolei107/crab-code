@@ -1,3 +1,20 @@
+pub mod denial_tracker;
+pub mod explainer;
+pub mod path_validator;
+pub mod rule_parser;
+pub mod shadowed_rules;
+
+// Re-export submodule public items for backwards compatibility.
+// Consumers can continue to use `crab_core::permission::PermissionRule` etc.
+pub use denial_tracker::{DenialRecord, DenialTracker};
+pub use explainer::{PermissionExplanation, explain_decision};
+pub use path_validator::{PathError, PathPermission, PathValidator};
+pub use rule_parser::{
+    BashPattern, ParseError, PermissionRule, RuleContent, matches_rule, parse_bash_pattern,
+    parse_rule,
+};
+pub use shadowed_rules::{ShadowedRule, detect_shadowed_rules};
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
