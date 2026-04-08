@@ -8,7 +8,7 @@
 
 [![Rust](https://img.shields.io/badge/Built%20with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![CI](https://github.com/crabforge/crab-code/actions/workflows/ci.yml/badge.svg)](https://github.com/crabforge/crab-code/actions/workflows/ci.yml)
+[![CI](https://github.com/lingcoder/crab-code/actions/workflows/ci.yml/badge.svg)](https://github.com/lingcoder/crab-code/actions/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#贡献)
 
 [English](README.md) | **中文**
@@ -17,7 +17,7 @@
 
 ---
 
-> **状态：积极开发中** -- 已实现 46 个内置工具、6 种权限模式、扩展思维、多 Agent 协调，17 个 crate 共 3500+ 测试。
+> **状态：积极开发中** -- 已实现 49 个内置工具、6 种权限模式、扩展思维、多 Agent 协调、187 个 spinner verbs 的 TUI，17 个 crate 共 3500+ 测试。零 `todo!()` 残留。
 
 ## 什么是 Crab Code？
 
@@ -35,7 +35,7 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/crabforge/crab-code.git
+git clone https://github.com/lingcoder/crab-code.git
 cd crab-code
 cargo build --release
 
@@ -80,7 +80,7 @@ Crab Code 支持 Claude Code 的 `settings.json` 格式，包括 `env` 字段：
 - **重试 + 降级** -- 瞬态错误自动重试，过载时自动切换备用模型
 - **Effort 级别** -- low/medium/high/max 映射到 API 参数
 
-### 内置工具（32 个）
+### 内置工具（49 个）
 
 | 类别 | 工具 |
 |------|------|
@@ -209,7 +209,7 @@ crab auth login                   # 配置认证
 
 ```bash
 cargo build --workspace                    # 构建全部
-cargo test --workspace                     # 运行所有测试（3100+）
+cargo test --workspace                     # 运行所有测试（3500+）
 cargo clippy --workspace -- -D warnings    # Lint 检查
 cargo fmt --all --check                    # 格式检查
 cargo run --bin crab                       # 运行 CLI
@@ -225,7 +225,7 @@ cargo run --bin crab                       # 运行 CLI
 | 自托管 | 支持 | 不支持 | 支持 | 支持 |
 | MCP | stdio + SSE + WS | 6 种传输 | LSP | 2 种传输 |
 | TUI | ratatui | Ink (React) | Custom | ratatui |
-| 内置工具 | 32 | 30+ | ~10 | ~10 |
+| 内置工具 | 49 | 52 | ~10 | ~10 |
 | 权限模式 | 6 | 6 | 2 | 3 |
 
 ## 贡献
@@ -246,7 +246,7 @@ cargo run --bin crab                       # 运行 CLI
 
 <div align="center">
 
-**由 [CrabForge](https://github.com/crabforge) 社区用 Rust 打造**
+**由 [lingcoder](https://github.com/lingcoder) 用 Rust 打造**
 
 *Claude Code 展示了 Agentic Coding 的未来，Crab Code 让每个人都能参与。*
 

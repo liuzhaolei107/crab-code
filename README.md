@@ -8,7 +8,7 @@
 
 [![Rust](https://img.shields.io/badge/Built%20with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![CI](https://github.com/crabforge/crab-code/actions/workflows/ci.yml/badge.svg)](https://github.com/crabforge/crab-code/actions/workflows/ci.yml)
+[![CI](https://github.com/lingcoder/crab-code/actions/workflows/ci.yml/badge.svg)](https://github.com/lingcoder/crab-code/actions/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
 **English** | [**中文**](README.zh-CN.md)
@@ -17,7 +17,7 @@
 
 ---
 
-> **Status: Active Development** -- 46 built-in tools, 6 permission modes, extended thinking, multi-agent coordination, and 3500+ tests across 17 crates.
+> **Status: Active Development** -- 49 built-in tools, 6 permission modes, extended thinking, multi-agent coordination, TUI with 187 spinner verbs, and 3500+ tests across 17 crates. Zero `todo!()` macros.
 
 ## What is Crab Code?
 
@@ -35,7 +35,7 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/crabforge/crab-code.git
+git clone https://github.com/lingcoder/crab-code.git
 cd crab-code
 cargo build --release
 
@@ -80,7 +80,7 @@ Crab Code supports Claude Code's `settings.json` format, including the `env` fie
 - **Retry + fallback** -- automatic retry on transient errors, model fallback on overload
 - **Effort levels** -- low/medium/high/max mapped to API parameters
 
-### Built-in Tools (32)
+### Built-in Tools (49)
 
 | Category | Tools |
 |----------|-------|
@@ -209,7 +209,7 @@ crab auth login                   # Configure authentication
 
 ```bash
 cargo build --workspace                    # Build all
-cargo test --workspace                     # Run all tests (3100+)
+cargo test --workspace                     # Run all tests (3500+)
 cargo clippy --workspace -- -D warnings    # Lint
 cargo fmt --all --check                    # Check formatting
 cargo run --bin crab                       # Run CLI
@@ -225,7 +225,7 @@ cargo run --bin crab                       # Run CLI
 | Self-hosted | Yes | No | Yes | Yes |
 | MCP Support | stdio + SSE + WS | 6 transports | LSP | 2 transports |
 | TUI | ratatui | Ink (React) | Custom | ratatui |
-| Built-in Tools | 32 | 30+ | ~10 | ~10 |
+| Built-in Tools | 49 | 52 | ~10 | ~10 |
 | Permission Modes | 6 | 6 | 2 | 3 |
 
 ## Contributing
@@ -246,7 +246,7 @@ We'd love your help! See areas where we need contributions:
 
 <div align="center">
 
-**Built with Rust by the [CrabForge](https://github.com/crabforge) community**
+**Built with Rust by [lingcoder](https://github.com/lingcoder)**
 
 *Claude Code showed us the future of agentic coding. Crab Code makes it open for everyone.*
 

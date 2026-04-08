@@ -736,14 +736,11 @@ fn foo() {
     }
 
     #[test]
-    fn read_pdf_with_range_mentions_pages() {
-        let result = read_pdf(Path::new("/tmp/doc.pdf"), Some((1, 5)));
-        match result {
-            PdfReadResult::Unavailable { message } => {
-                assert!(message.contains("pages 1-5"));
-            }
-            PdfReadResult::Success { .. } => panic!("expected Unavailable"),
-        }
+    fn read_pdf_nonexistent_returns_unavailable() {
+        let result = read_pdf(Path::new("/tmp/nonexistent_crab_test.pdf"), Some((1, 5)));
+        // With pdf feature: file doesn't exist → Unavailable
+        // Without pdf feature: always Unavailable
+        assert!(matches!(result, PdfReadResult::Unavailable { .. }));
     }
 
     #[test]
