@@ -123,65 +123,69 @@
 
 ## 3. Core Library Alternatives
 
-28 TS -> Rust mappings in total, grouped by function:
+28 TS -> Rust mappings in total, grouped by function. Versions are pinned in `Cargo.toml` and omitted here to avoid staleness.
 
 ### 3.1 CLI / UI
 
-| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
-|---|----------|---------------------|------------------|---------|------|
-| 1 | CLI framework | Commander.js | clap (derive) | 4.x | [docs.rs/clap](https://docs.rs/clap) |
-| 2 | Terminal UI | React/Ink | ratatui + crossterm | 0.30 / 0.29 | [ratatui.rs](https://ratatui.rs) |
-| 3 | Terminal styling | chalk | crossterm Style | 0.29 | [docs.rs/crossterm](https://docs.rs/crossterm) |
-| 4 | Markdown rendering | marked | pulldown-cmark | 0.13 | [docs.rs/pulldown-cmark](https://docs.rs/pulldown-cmark) |
-| 5 | Syntax highlighting | highlight.js | syntect | 5.x | [docs.rs/syntect](https://docs.rs/syntect) |
-| 6 | Fuzzy search | Fuse.js | nucleo | 0.5 | [docs.rs/nucleo](https://docs.rs/nucleo) |
+| # | Function | TypeScript Original | Rust Alternative | Docs |
+|---|----------|---------------------|------------------|------|
+| 1 | CLI framework | Commander.js | clap (derive) | [docs.rs/clap](https://docs.rs/clap) |
+| 2 | Terminal UI | React/Ink | ratatui + crossterm | [ratatui.rs](https://ratatui.rs) |
+| 3 | Terminal styling | chalk | crossterm Style | [docs.rs/crossterm](https://docs.rs/crossterm) |
+| 4 | Markdown rendering | marked | pulldown-cmark | [docs.rs/pulldown-cmark](https://docs.rs/pulldown-cmark) |
+| 5 | Syntax highlighting | highlight.js | syntect | [docs.rs/syntect](https://docs.rs/syntect) |
+| 6 | Fuzzy search | Fuse.js | nucleo *(planned)* | [docs.rs/nucleo](https://docs.rs/nucleo) |
 
 ### 3.2 Network / API
 
-| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
-|---|----------|---------------------|------------------|---------|------|
-| 7 | HTTP client | axios/undici | reqwest | 0.13 | [docs.rs/reqwest](https://docs.rs/reqwest) |
-| 8 | WebSocket | ws | tokio-tungstenite | 0.29 | [docs.rs/tokio-tungstenite](https://docs.rs/tokio-tungstenite) |
-| 9 | Streaming SSE | Anthropic SDK | eventsource-stream | 0.2 | [docs.rs/eventsource-stream](https://docs.rs/eventsource-stream) |
-| 10 | OAuth | google-auth-library | oauth2 | 5.x | [docs.rs/oauth2](https://docs.rs/oauth2) |
+| # | Function | TypeScript Original | Rust Alternative | Docs |
+|---|----------|---------------------|------------------|------|
+| 7 | HTTP client | axios/undici | reqwest | [docs.rs/reqwest](https://docs.rs/reqwest) |
+| 8 | WebSocket | ws | tokio-tungstenite | [docs.rs/tokio-tungstenite](https://docs.rs/tokio-tungstenite) |
+| 9 | Streaming SSE | Anthropic SDK | eventsource-stream | [docs.rs/eventsource-stream](https://docs.rs/eventsource-stream) |
+| 10 | OAuth | google-auth-library | oauth2 | [docs.rs/oauth2](https://docs.rs/oauth2) |
 
 ### 3.3 Serialization / Validation
 
-| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
-|---|----------|---------------------|------------------|---------|------|
-| 11 | JSON | Built-in JSON | serde + serde_json | 1.x / 1.x | [serde.rs](https://serde.rs) |
-| 12 | YAML | yaml | serde_yml | 0.0.12 | [docs.rs/serde_yml](https://docs.rs/serde_yml) |
-| 13 | TOML | -- | toml | 0.8 | [docs.rs/toml](https://docs.rs/toml) |
-| 14 | Schema validation | Zod | schemars | 1.x | [docs.rs/schemars](https://docs.rs/schemars) |
+| # | Function | TypeScript Original | Rust Alternative | Docs |
+|---|----------|---------------------|------------------|------|
+| 11 | JSON | Built-in JSON | serde + serde_json | [serde.rs](https://serde.rs) |
+| 12 | YAML | yaml | serde_yml | [docs.rs/serde_yml](https://docs.rs/serde_yml) |
+| 13 | TOML | -- | toml | [docs.rs/toml](https://docs.rs/toml) |
+| 14 | Schema validation | Zod | schemars | [docs.rs/schemars](https://docs.rs/schemars) |
+
+> Note: `serde_yml` is the community successor to the archived `serde_yaml` (dtolnay). It is the correct modern choice.
 
 ### 3.4 File System / Search
 
-| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
-|---|----------|---------------------|------------------|---------|------|
-| 15 | Glob | glob | globset | 0.4 | [docs.rs/globset](https://docs.rs/globset) |
-| 16 | Grep/search | ripgrep bindings | grep crate family | 0.3 | [docs.rs/grep](https://docs.rs/grep) |
-| 17 | Gitignore | -- | ignore | 0.4 | [docs.rs/ignore](https://docs.rs/ignore) |
-| 18 | File watching | chokidar | notify | 8.x | [docs.rs/notify](https://docs.rs/notify) |
-| 19 | Diff | diff | similar | 3.x | [docs.rs/similar](https://docs.rs/similar) |
-| 20 | File locking | proper-lockfile | fd-lock | 4.0 | [docs.rs/fd-lock](https://docs.rs/fd-lock) |
+| # | Function | TypeScript Original | Rust Alternative | Docs |
+|---|----------|---------------------|------------------|------|
+| 15 | Glob | glob | globset | [docs.rs/globset](https://docs.rs/globset) |
+| 16 | Grep/search | ripgrep bindings | regex + ignore | [docs.rs/regex](https://docs.rs/regex) |
+| 17 | Gitignore | -- | ignore | [docs.rs/ignore](https://docs.rs/ignore) |
+| 18 | File watching | chokidar | notify | [docs.rs/notify](https://docs.rs/notify) |
+| 19 | Diff | diff | similar | [docs.rs/similar](https://docs.rs/similar) |
+| 20 | File locking | proper-lockfile | fd-lock | [docs.rs/fd-lock](https://docs.rs/fd-lock) |
+
+> Note: #16 uses `regex` crate for pattern matching + `ignore` crate for `.gitignore`-respecting directory traversal, rather than the unmaintained `grep` crate family.
 
 ### 3.5 System / Process
 
-| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
-|---|----------|---------------------|------------------|---------|------|
-| 21 | Subprocess | execa | tokio::process | 1.x | [docs.rs/tokio](https://docs.rs/tokio) |
-| 22 | Process tree | tree-kill | sysinfo | 0.38 | [docs.rs/sysinfo](https://docs.rs/sysinfo) |
-| 23 | System directories | -- | directories | 6.x | [docs.rs/directories](https://docs.rs/directories) |
-| 24 | Keychain | Custom impl | keyring | 3.x | [docs.rs/keyring](https://docs.rs/keyring) |
+| # | Function | TypeScript Original | Rust Alternative | Docs |
+|---|----------|---------------------|------------------|------|
+| 21 | Subprocess | execa | tokio::process | [docs.rs/tokio](https://docs.rs/tokio) |
+| 22 | Process tree | tree-kill | sysinfo | [docs.rs/sysinfo](https://docs.rs/sysinfo) |
+| 23 | System directories | -- | directories | [docs.rs/directories](https://docs.rs/directories) |
+| 24 | Keychain | Custom impl | keyring | [docs.rs/keyring](https://docs.rs/keyring) |
 
 ### 3.6 Observability / Cache
 
-| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
-|---|----------|---------------------|------------------|---------|------|
-| 25 | OpenTelemetry | @opentelemetry/* | opentelemetry-rust | 0.31 | [docs.rs/opentelemetry](https://docs.rs/opentelemetry) |
-| 26 | Logging/tracing | console.log | tracing | 0.1 | [docs.rs/tracing](https://docs.rs/tracing) |
-| 27 | LRU cache | lru-cache | lru | 0.12 | [docs.rs/lru](https://docs.rs/lru) |
-| 28 | Error handling | Error class | thiserror + anyhow | 2.x / 1.x | [docs.rs/thiserror](https://docs.rs/thiserror) |
+| # | Function | TypeScript Original | Rust Alternative | Docs |
+|---|----------|---------------------|------------------|------|
+| 25 | OpenTelemetry | @opentelemetry/* | opentelemetry | [docs.rs/opentelemetry](https://docs.rs/opentelemetry) |
+| 26 | Logging/tracing | console.log | tracing | [docs.rs/tracing](https://docs.rs/tracing) |
+| 27 | LRU cache | lru-cache | lru | [docs.rs/lru](https://docs.rs/lru) |
+| 28 | Error handling | Error class | thiserror + anyhow | [docs.rs/thiserror](https://docs.rs/thiserror) |
 
 ---
 
