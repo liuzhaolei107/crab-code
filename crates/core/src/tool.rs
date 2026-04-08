@@ -76,6 +76,22 @@ pub struct ToolContext {
     pub cancellation_token: CancellationToken,
     /// Permission policy (merged result from all config layers).
     pub permission_policy: PermissionPolicy,
+    /// Extended context for tools that need richer application state.
+    pub ext: ToolContextExt,
+}
+
+/// Extended tool context fields — populated by the agent loop when available.
+///
+/// These fields are optional enrichment data. Tools that need them should
+/// check and degrade gracefully if they are empty.
+#[derive(Debug, Clone, Default)]
+pub struct ToolContextExt {
+    /// Pre-rendered tool name+description pairs for `ToolSearch`.
+    pub tool_descriptions: Vec<String>,
+    /// Recent conversation summary for `BriefTool`.
+    pub conversation_summary: Option<String>,
+    /// Names of connected MCP servers for `McpAuth`/`McpResource`.
+    pub mcp_server_names: Vec<String>,
 }
 
 /// A single content block within a tool output.

@@ -4,10 +4,12 @@
 //! to include in the system prompt. Supports fuzzy name matching and
 //! keyword search in descriptions.
 
+use std::fmt::Write;
+use std::future::Future;
+
 use crab_common::Result;
 use crab_core::tool::{Tool, ToolContext, ToolOutput};
 use serde_json::Value;
-use std::future::Future;
 use std::pin::Pin;
 
 /// Tool name constant for `ToolSearchTool`.
@@ -50,30 +52,61 @@ impl Tool for ToolSearchTool {
     fn execute(
         &self,
         input: Value,
-        _ctx: &ToolContext,
+        ctx: &ToolContext,
     ) -> Pin<Box<dyn Future<Output = Result<ToolOutput>> + Send + '_>> {
         let query = input["query"].as_str().unwrap_or("").to_owned();
+        let tool_descs = ctx.ext.tool_descriptions.clone();
 
         Box::pin(async move {
             if query.is_empty() {
                 return Ok(ToolOutput::error("query must be non-empty"));
             }
-            search_tools(&query).await
+            search_tools(&query, &tool_descs)
         })
     }
 }
 
 /// Search the tool registry for tools matching the query.
-async fn search_tools(query: &str) -> Result<ToolOutput> {
-    // The tool registry is not accessible from within a tool invocation.
-    // Return a descriptive message. The `match_score` helper is available
-    // for callers that have access to the registry (e.g. the agent loop).
-    Ok(ToolOutput::success(format!(
-        "Tool search for '{query}' cannot be performed from within a tool \
-         invocation because the ToolRegistry is not yet available in the \
-         ToolContext. The agent loop can use the `match_score` helper to \
-         search tools directly against the registry."
-    )))
+fn search_tools(query: &str, tool_descriptions: &[String]) -> Result<ToolOutput> {
+    if tool_descriptions.is_empty() {
+        return Ok(ToolOutput::success(format!(
+            "Tool search for '{query}': no tool descriptions available in current context. \
+             The agent loop populates tool_descriptions when creating the ToolContext."
+        )));
+    }
+
+    let q = query.to_lowercase();
+    let mut matches: Vec<(&str, u32)> = tool_descriptions
+        .iter()
+        .filter_map(|desc| {
+            let lower = desc.to_lowercase();
+            let mut score = 0u32;
+            for word in q.split_whitespace() {
+                if lower.contains(word) {
+                    score += 10;
+                }
+            }
+            if score > 0 {
+                Some((desc.as_str(), score))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    matches.sort_by(|a, b| b.1.cmp(&a.1));
+
+    if matches.is_empty() {
+        return Ok(ToolOutput::success(format!(
+            "No tools found matching '{query}'. Try a different search term."
+        )));
+    }
+
+    let mut result = format!("Found {} tools matching '{query}':\n\n", matches.len());
+    for (desc, _) in matches.iter().take(10) {
+        let _ = writeln!(result, "- {desc}");
+    }
+    Ok(ToolOutput::success(result))
 }
 
 /// Score how well a tool matches a search query.

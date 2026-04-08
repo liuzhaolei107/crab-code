@@ -48,32 +48,35 @@ impl Tool for BriefTool {
     fn execute(
         &self,
         input: Value,
-        _ctx: &ToolContext,
+        ctx: &ToolContext,
     ) -> Pin<Box<dyn Future<Output = Result<ToolOutput>> + Send + '_>> {
         let scope = input["scope"].as_str().unwrap_or("all").to_owned();
+        let summary = ctx.ext.conversation_summary.clone();
 
-        Box::pin(async move { generate_brief(&scope).await })
+        Box::pin(async move { generate_brief(&scope, summary.as_deref()).await })
     }
 }
 
 /// Generate a brief summary for the given scope.
-async fn generate_brief(scope: &str) -> Result<ToolOutput> {
-    // Conversation history is managed by the agent loop and is not yet
-    // accessible from within a tool invocation. Return a descriptive
-    // message so the caller knows what was requested.
+async fn generate_brief(scope: &str, conversation_summary: Option<&str>) -> Result<ToolOutput> {
     let scope_desc = match scope {
         "recent" => "the most recent conversation turns",
         "tools" => "tool usage throughout the conversation",
         "all" => "the entire conversation",
         other => other,
     };
-    Ok(ToolOutput::success(format!(
-        "Brief requested for scope: {scope_desc}. \
-         Conversation history is not yet accessible from within tool \
-         execution. The agent loop manages message history directly; \
-         this tool will be functional once session history is plumbed \
-         into the ToolContext."
-    )))
+
+    if let Some(summary) = conversation_summary {
+        Ok(ToolOutput::success(format!(
+            "# Brief ({scope_desc})\n\n{summary}"
+        )))
+    } else {
+        Ok(ToolOutput::success(format!(
+            "Brief requested for scope: {scope_desc}. \
+             No conversation summary available yet — the agent loop \
+             populates this as the conversation progresses."
+        )))
+    }
 }
 
 #[cfg(test)]

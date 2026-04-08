@@ -423,6 +423,7 @@ impl ToolHandler for ToolRegistryHandler {
                 session_id: "mcp-server".into(),
                 cancellation_token: CancellationToken::new(),
                 permission_policy: PermissionPolicy::default(),
+                ext: crab_core::tool::ToolContextExt::default(),
             };
 
             match tool.execute(arguments, &ctx).await {

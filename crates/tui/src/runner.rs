@@ -107,6 +107,7 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
         session_id: session_id.clone(),
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         permission_policy: config.session_config.permission_policy,
+        ext: crab_core::tool::ToolContextExt::default(),
     };
 
     let loop_config = crab_agent::QueryLoopConfig {

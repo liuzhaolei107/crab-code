@@ -194,6 +194,7 @@ impl AgentSession {
             session_id: session_config.session_id.clone(),
             cancellation_token: cancel.clone(),
             permission_policy: session_config.permission_policy,
+            ext: crab_core::tool::ToolContextExt::default(),
         };
 
         let config = QueryLoopConfig {
