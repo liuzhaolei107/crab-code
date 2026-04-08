@@ -1,209 +1,216 @@
-# Crab Code 架构设计
+# Crab Code Architecture
 
-> 版本：v2.1
-> 更新：2026-04-06
+> Version: v2.1
+> Updated: 2026-04-06
 
 ---
 
-## 一、全局架构鸟瞰
+## 1. Architecture Overview
 
-### 四层架构
+### Four-Layer Architecture
 
-| 层级 | Crate | 职责 |
-|------|-------|------|
-| **Layer 4** 入口层 | `crates/cli` `crates/daemon` | CLI 入口 (clap)、后台守护进程 |
-| **Layer 3** 引擎层 | `agent` `session` | 多 Agent 协调、会话管理、上下文压缩 |
-| **Layer 2** 服务层 | `tools` `mcp` `api` `fs` `process` `plugin` `telemetry` `tui` `bridge` | 工具系统、MCP 协议栈、多模型 API 客户端、文件/进程操作、TUI 组件、IDE 桥接 |
-| **Layer 1** 基础层 | `core` `common` `config` `auth` | 领域模型、配置热重载、Auth 认证 |
+| Layer | Crate | Responsibility |
+|-------|-------|----------------|
+| **Layer 4** Entry Layer | `crates/cli` `crates/daemon` | CLI entry point (clap), background daemon |
+| **Layer 3** Engine Layer | `agent` `session` | Multi-Agent orchestration, session management, context compaction |
+| **Layer 2** Service Layer | `tools` `mcp` `api` `fs` `process` `plugin` `telemetry` `tui` `bridge` | Tool system, MCP protocol stack, multi-model API client, file/process operations, TUI components, IDE bridge |
+| **Layer 1** Foundation Layer | `core` `common` `config` `auth` | Domain model, config hot reload, authentication |
 
-> 依赖方向：上层依赖下层，禁止反向依赖。`core` 定义 `Tool` trait 避免 tools/agent 循环依赖。
+> Dependency direction: upper layers depend on lower layers; reverse dependencies are prohibited. `core` defines the `Tool` trait to avoid circular dependencies between tools/agent.
 
-### 架构全景图
+### Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        Layer 4: 入口层                              │
+│                        Layer 4: Entry Layer                         │
 │  ┌──────────────────────────┐   ┌────────────────────────────────┐  │
 │  │      crates/cli          │   │       crates/daemon            │  │
-│  │  clap 子命令 + tokio rt  │   │  后台守护 + session pool      │  │
+│  │  clap subcommands +      │   │  background daemon +           │  │
+│  │  tokio runtime           │   │  session pool                  │  │
 │  └────────────┬─────────────┘   └──────────────┬─────────────────┘  │
 ├───────────────┼────────────────────────────────┼────────────────────┤
-│               │        Layer 3: 引擎层         │                    │
+│               │        Layer 3: Engine Layer   │                    │
 │  ┌────────────▼─────────────┐   ┌──────────────▼─────────────────┐  │
 │  │         agent            │   │          session               │  │
-│  │  Agent 编排 + 任务分发   │   │  会话状态 + 上下文压缩 + 记忆  │  │
+│  │  Agent orchestration +   │   │  Session state + context       │  │
+│  │  task dispatch           │   │  compaction + memory           │  │
 │  └──┬───────────┬───────────┘   └───────┬──────────────┬─────────┘  │
 ├─────┼───────────┼───────────────────────┼──────────────┼────────────┤
-│     │           │   Layer 2: 服务层     │              │            │
+│     │           │   Layer 2: Service    │              │            │
+│     │           │   Layer              │              │            │
 │  ┌──▼────┐  ┌───▼───┐  ┌────┐  ┌───────▼──┐  ┌───────▼────┐      │
 │  │ tools │  │  mcp  │  │tui │  │   api    │  │  telemetry │      │
 │  │ 21+   │  │JSON-  │  │rata│  │LlmBack- │  │OpenTelemetry│      │
-│  │内置   │  │RPC    │  │tui │  │end 枚举  │  │  traces    │      │
+│  │built- │  │RPC    │  │tui │  │end enum  │  │  traces    │      │
+│  │in     │  │       │  │    │  │          │  │            │      │
 │  └┬────┬─┘  └───────┘  └────┘  └──────────┘  └────────────┘      │
 │   │    │                                                           │
 │  ┌▼──┐ ┌▼──────┐  ┌──────┐                                        │
 │  │fs │ │process │  │plugin│                                        │
-│  │glob│ │子进程  │  │WASM  │                                        │
-│  │grep│ │信号    │  │沙箱  │                                        │
+│  │glob│ │sub-   │  │WASM  │                                        │
+│  │grep│ │process│  │sand- │                                        │
+│  │    │ │signal │  │box   │                                        │
 │  └───┘ └───────┘  └──────┘                                        │
 ├───────────────────────────────────────────────────────────────────┤
-│                      Layer 1: 基础层                               │
+│                      Layer 1: Foundation Layer                      │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
 │  │   core   │  │  common  │  │  config  │  │   auth   │          │
-│  │领域模型  │  │错误/工具 │  │多层配置  │  │OAuth/Key │          │
-│  │Tool trait│  │路径/文本 │  │CRAB.md   │  │Keychain  │          │
+│  │Domain    │  │Error/    │  │Multi-    │  │OAuth/Key │          │
+│  │model     │  │utility   │  │layer     │  │Keychain  │          │
+│  │Tool trait│  │Path/text │  │config    │  │          │          │
+│  │          │  │          │  │CRAB.md   │  │          │          │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘          │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-### 与 Claude Code 五层架构映射
+### Mapping to Claude Code's Five-Layer Architecture
 
-| Claude Code (TS) | 路径 | Crab Code (Rust) | 说明 |
-|-------------------|------|-------------------|------|
-| **入口层** entrypoints/ | `cli.tsx` `main.tsx` | `crates/cli` `crates/daemon` | CC 用 React/Ink 渲染，Crab 用 ratatui |
-| **命令层** commands/ | `query.ts` `QueryEngine.ts` | `agent` + `session` | CC 的 query loop 对应 agent 编排 |
-| **工具层** tools/ | 52 Tool 目录 | `tools` + `mcp` | CC 工具与 MCP 混在 services/，Crab 独立拆分 |
-| **服务层** services/ | `api/` `mcp/` `oauth/` `compact/` | `api` `mcp` `auth` `plugin` `telemetry` | CC 服务层较扁平，Crab 按职责细分 |
-| **基础层** utils/ types/ | `Tool.ts` `context.ts` | `core` `common` `config` | CC 类型散落各处，Crab 集中到 core |
+| Claude Code (TS) | Path | Crab Code (Rust) | Notes |
+|-------------------|------|-------------------|-------|
+| **Entry Layer** entrypoints/ | `cli.tsx` `main.tsx` | `crates/cli` `crates/daemon` | CC uses React/Ink for rendering, Crab uses ratatui |
+| **Command Layer** commands/ | `query.ts` `QueryEngine.ts` | `agent` + `session` | CC's query loop maps to agent orchestration |
+| **Tool Layer** tools/ | 52 Tool directories | `tools` + `mcp` | CC mixes tools and MCP in services/; Crab separates them |
+| **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` | `api` `mcp` `auth` `plugin` `telemetry` | CC's service layer is flat; Crab splits by responsibility |
+| **Foundation Layer** utils/ types/ | `Tool.ts` `context.ts` | `core` `common` `config` | CC scatters types across files; Crab centralizes them in core |
 
-### 核心设计哲学
+### Core Design Philosophy
 
-1. **core 零 I/O** — 纯数据结构和 trait 定义，可被 CLI/GUI/WASM 任意前端复用
-2. **消息循环驱动** — 一切围绕 query loop：用户输入 → API 调用 → 工具执行 → 结果返回
-3. **Workspace 隔离** — 14 个 library crate 职责正交（~176 模块），增量编译只触发改动部分
-4. **Feature Flag 控依赖** — 不用 Bedrock 不编译 AWS SDK，不用 WASM 不编译 wasmtime
-
----
-
-## 二、为什么选 Rust
-
-### 2.1 Go vs Rust 对比
-
-| 维度 | Go | Rust | 结论 |
-|------|-----|------|------|
-| **开发效率** | 快，学习曲线低 | 慢 2-3x，生命周期/所有权摩擦 | Go 胜 |
-| **CLI 生态** | cobra 成熟 | clap 同样成熟 | 平手 |
-| **TUI** | Charm (bubbletea) 优秀 | ratatui 优秀 | 平手 |
-| **GUI 扩展** | 弱（fyne/gio 小众） | **强**（Tauri 2.0 桌面+移动端） | **Rust 胜** |
-| **WASM** | Go→WASM ~10MB+，性能差 | **一等公民**，产物小、性能原生 | **Rust 胜** |
-| **FFI/跨语言** | cgo 有性能惩罚 | **零开销 FFI**，C ABI 原生 | **Rust 胜** |
-| **AI/ML 生态** | 绑定少 | candle、burn、ort(ONNX) | **Rust 胜** |
-| **序列化** | encoding/* 够用 | serde **统治级** | **Rust 胜** |
-| **编译速度** | 10-30s | 5-15min | Go 胜 |
-| **交叉编译** | 极简单 | 中等（需 target 工具链） | Go 胜 |
-| **招人** | 开发者池大 | 开发者池小 | Go 胜 |
-
-### 2.2 选择 Rust 的 5 个核心理由
-
-1. **未来扩展天花板高** — CLI → Tauri 桌面 → 浏览器 WASM → 移动端，核心逻辑 100% 共享
-2. **Tauri 生态** — Electron 主流替代，内存 20-30MB vs 150MB+，包体 5-15MB vs 100MB+
-3. **三方库质量** — serde、tokio、ratatui、clap 均为各领域顶尖实现
-4. **本地 AI 推理** — 未来可通过 candle/burn 集成本地模型，无需 cgo 桥接
-5. **插件沙箱** — wasmtime 本身就是 Rust 写的，WASM 插件系统天然适配
-
-### 2.3 性能预期对比
-
-| 指标 | TypeScript/Bun | Rust | 倍数 |
-|------|---------------|------|------|
-| **冷启动** | ~135ms | ~5-10ms | **15-25x** |
-| **内存占用（空闲）** | ~80-150MB | ~5-10MB | **10-20x** |
-| **API 流式处理** | 基线 | ~同等 | 1x（I/O bound） |
-| **终端 UI 渲染** | 较慢（React 开销） | 快（ratatui 零开销） | **3-5x** |
-| **JSON 序列化** | 快（V8 内置） | 最快（serde 零拷贝） | **2-3x** |
-| **二进制大小** | ~100MB+（含 runtime） | ~10-20MB | **5-10x** |
+1. **core has zero I/O** -- Pure data structures and trait definitions, reusable by any frontend (CLI/GUI/WASM)
+2. **Message loop driven** -- Everything revolves around the query loop: user input -> API call -> tool execution -> result return
+3. **Workspace isolation** -- 14 library crates with orthogonal responsibilities (~176 modules); incremental compilation only triggers on changed parts
+4. **Feature flags control dependencies** -- No Bedrock? AWS SDK is not compiled. No WASM? wasmtime is not compiled.
 
 ---
 
-## 三、核心库替代方案
+## 2. Why Rust
 
-共 28 个 TS → Rust 映射，按功能分组：
+### 2.1 Go vs Rust Comparison
+
+| Dimension | Go | Rust | Conclusion |
+|-----------|-----|------|------------|
+| **Development speed** | Fast, low learning curve | 2-3x slower, lifetime/ownership friction | Go wins |
+| **CLI ecosystem** | cobra is mature | clap is equally mature | Tie |
+| **TUI** | Charm (bubbletea) is excellent | ratatui is excellent | Tie |
+| **GUI extensibility** | Weak (fyne/gio are niche) | **Strong** (Tauri 2.0 desktop + mobile) | **Rust wins** |
+| **WASM** | Go->WASM ~10MB+, poor performance | **First-class citizen**, small output, native perf | **Rust wins** |
+| **FFI/cross-language** | cgo has performance penalty | **Zero-overhead FFI**, native C ABI | **Rust wins** |
+| **AI/ML ecosystem** | Few bindings | candle, burn, ort (ONNX) | **Rust wins** |
+| **Serialization** | encoding/* is adequate | serde is **dominant** | **Rust wins** |
+| **Compile speed** | 10-30s | 5-15min | Go wins |
+| **Cross-compilation** | Extremely simple | Moderate (needs target toolchain) | Go wins |
+| **Hiring** | Larger developer pool | Smaller developer pool | Go wins |
+
+### 2.2 Five Core Reasons for Choosing Rust
+
+1. **High ceiling for future expansion** -- CLI -> Tauri desktop -> browser WASM -> mobile, 100% core logic sharing
+2. **Tauri ecosystem** -- Mainstream Electron alternative, 20-30MB memory vs 150MB+, 5-15MB bundle vs 100MB+
+3. **Third-party library quality** -- serde, tokio, ratatui, clap are all top-tier implementations in their domains
+4. **Local AI inference** -- Future integration of local models via candle/burn, no cgo bridging needed
+5. **Plugin sandbox** -- wasmtime itself is written in Rust; WASM plugin system is a natural fit
+
+### 2.3 Expected Performance Comparison
+
+| Metric | TypeScript/Bun | Rust | Factor |
+|--------|---------------|------|--------|
+| **Cold start** | ~135ms | ~5-10ms | **15-25x** |
+| **Memory usage (idle)** | ~80-150MB | ~5-10MB | **10-20x** |
+| **API streaming** | Baseline | ~Equal | 1x (I/O bound) |
+| **Terminal UI rendering** | Slower (React overhead) | Fast (ratatui zero-overhead) | **3-5x** |
+| **JSON serialization** | Fast (V8 built-in) | Fastest (serde zero-copy) | **2-3x** |
+| **Binary size** | ~100MB+ (including runtime) | ~10-20MB | **5-10x** |
+
+---
+
+## 3. Core Library Alternatives
+
+28 TS -> Rust mappings in total, grouped by function:
 
 ### 3.1 CLI / UI
 
-| # | 功能 | TypeScript 原版 | Rust 替代 | 版本 | 文档 |
-|---|------|----------------|-----------|------|------|
-| 1 | CLI 框架 | Commander.js | clap (derive) | 4.x | [docs.rs/clap](https://docs.rs/clap) |
-| 2 | 终端 UI | React/Ink | ratatui + crossterm | 0.30 / 0.29 | [ratatui.rs](https://ratatui.rs) |
-| 3 | 终端样式 | chalk | crossterm Style | 0.29 | [docs.rs/crossterm](https://docs.rs/crossterm) |
-| 4 | Markdown 渲染 | marked | pulldown-cmark | 0.13 | [docs.rs/pulldown-cmark](https://docs.rs/pulldown-cmark) |
-| 5 | 语法高亮 | highlight.js | syntect | 5.x | [docs.rs/syntect](https://docs.rs/syntect) |
-| 6 | 模糊搜索 | Fuse.js | nucleo | 0.5 | [docs.rs/nucleo](https://docs.rs/nucleo) |
+| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
+|---|----------|---------------------|------------------|---------|------|
+| 1 | CLI framework | Commander.js | clap (derive) | 4.x | [docs.rs/clap](https://docs.rs/clap) |
+| 2 | Terminal UI | React/Ink | ratatui + crossterm | 0.30 / 0.29 | [ratatui.rs](https://ratatui.rs) |
+| 3 | Terminal styling | chalk | crossterm Style | 0.29 | [docs.rs/crossterm](https://docs.rs/crossterm) |
+| 4 | Markdown rendering | marked | pulldown-cmark | 0.13 | [docs.rs/pulldown-cmark](https://docs.rs/pulldown-cmark) |
+| 5 | Syntax highlighting | highlight.js | syntect | 5.x | [docs.rs/syntect](https://docs.rs/syntect) |
+| 6 | Fuzzy search | Fuse.js | nucleo | 0.5 | [docs.rs/nucleo](https://docs.rs/nucleo) |
 
-### 3.2 网络 / API
+### 3.2 Network / API
 
-| # | 功能 | TypeScript 原版 | Rust 替代 | 版本 | 文档 |
-|---|------|----------------|-----------|------|------|
-| 7 | HTTP 客户端 | axios/undici | reqwest | 0.13 | [docs.rs/reqwest](https://docs.rs/reqwest) |
+| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
+|---|----------|---------------------|------------------|---------|------|
+| 7 | HTTP client | axios/undici | reqwest | 0.13 | [docs.rs/reqwest](https://docs.rs/reqwest) |
 | 8 | WebSocket | ws | tokio-tungstenite | 0.29 | [docs.rs/tokio-tungstenite](https://docs.rs/tokio-tungstenite) |
-| 9 | 流式 SSE | Anthropic SDK | eventsource-stream | 0.2 | [docs.rs/eventsource-stream](https://docs.rs/eventsource-stream) |
+| 9 | Streaming SSE | Anthropic SDK | eventsource-stream | 0.2 | [docs.rs/eventsource-stream](https://docs.rs/eventsource-stream) |
 | 10 | OAuth | google-auth-library | oauth2 | 5.x | [docs.rs/oauth2](https://docs.rs/oauth2) |
 
-### 3.3 序列化 / 校验
+### 3.3 Serialization / Validation
 
-| # | 功能 | TypeScript 原版 | Rust 替代 | 版本 | 文档 |
-|---|------|----------------|-----------|------|------|
-| 11 | JSON | 内置 JSON | serde + serde_json | 1.x / 1.x | [serde.rs](https://serde.rs) |
+| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
+|---|----------|---------------------|------------------|---------|------|
+| 11 | JSON | Built-in JSON | serde + serde_json | 1.x / 1.x | [serde.rs](https://serde.rs) |
 | 12 | YAML | yaml | serde_yml | 0.0.12 | [docs.rs/serde_yml](https://docs.rs/serde_yml) |
-| 13 | TOML | — | toml | 0.8 | [docs.rs/toml](https://docs.rs/toml) |
-| 14 | Schema 校验 | Zod | schemars | 1.x | [docs.rs/schemars](https://docs.rs/schemars) |
+| 13 | TOML | -- | toml | 0.8 | [docs.rs/toml](https://docs.rs/toml) |
+| 14 | Schema validation | Zod | schemars | 1.x | [docs.rs/schemars](https://docs.rs/schemars) |
 
-### 3.4 文件系统 / 搜索
+### 3.4 File System / Search
 
-| # | 功能 | TypeScript 原版 | Rust 替代 | 版本 | 文档 |
-|---|------|----------------|-----------|------|------|
+| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
+|---|----------|---------------------|------------------|---------|------|
 | 15 | Glob | glob | globset | 0.4 | [docs.rs/globset](https://docs.rs/globset) |
-| 16 | Grep/搜索 | ripgrep 绑定 | grep crate 家族 | 0.3 | [docs.rs/grep](https://docs.rs/grep) |
-| 17 | Gitignore | — | ignore | 0.4 | [docs.rs/ignore](https://docs.rs/ignore) |
-| 18 | 文件监听 | chokidar | notify | 8.x | [docs.rs/notify](https://docs.rs/notify) |
+| 16 | Grep/search | ripgrep bindings | grep crate family | 0.3 | [docs.rs/grep](https://docs.rs/grep) |
+| 17 | Gitignore | -- | ignore | 0.4 | [docs.rs/ignore](https://docs.rs/ignore) |
+| 18 | File watching | chokidar | notify | 8.x | [docs.rs/notify](https://docs.rs/notify) |
 | 19 | Diff | diff | similar | 3.x | [docs.rs/similar](https://docs.rs/similar) |
-| 20 | 文件锁 | proper-lockfile | fd-lock | 4.0 | [docs.rs/fd-lock](https://docs.rs/fd-lock) |
+| 20 | File locking | proper-lockfile | fd-lock | 4.0 | [docs.rs/fd-lock](https://docs.rs/fd-lock) |
 
-### 3.5 系统 / 进程
+### 3.5 System / Process
 
-| # | 功能 | TypeScript 原版 | Rust 替代 | 版本 | 文档 |
-|---|------|----------------|-----------|------|------|
-| 21 | 子进程 | execa | tokio::process | 1.x | [docs.rs/tokio](https://docs.rs/tokio) |
-| 22 | 进程树 | tree-kill | sysinfo | 0.38 | [docs.rs/sysinfo](https://docs.rs/sysinfo) |
-| 23 | 系统目录 | — | directories | 6.x | [docs.rs/directories](https://docs.rs/directories) |
-| 24 | Keychain | 自实现 | keyring | 3.x | [docs.rs/keyring](https://docs.rs/keyring) |
+| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
+|---|----------|---------------------|------------------|---------|------|
+| 21 | Subprocess | execa | tokio::process | 1.x | [docs.rs/tokio](https://docs.rs/tokio) |
+| 22 | Process tree | tree-kill | sysinfo | 0.38 | [docs.rs/sysinfo](https://docs.rs/sysinfo) |
+| 23 | System directories | -- | directories | 6.x | [docs.rs/directories](https://docs.rs/directories) |
+| 24 | Keychain | Custom impl | keyring | 3.x | [docs.rs/keyring](https://docs.rs/keyring) |
 
-### 3.6 可观测性 / 缓存
+### 3.6 Observability / Cache
 
-| # | 功能 | TypeScript 原版 | Rust 替代 | 版本 | 文档 |
-|---|------|----------------|-----------|------|------|
+| # | Function | TypeScript Original | Rust Alternative | Version | Docs |
+|---|----------|---------------------|------------------|---------|------|
 | 25 | OpenTelemetry | @opentelemetry/* | opentelemetry-rust | 0.31 | [docs.rs/opentelemetry](https://docs.rs/opentelemetry) |
-| 26 | 日志/追踪 | console.log | tracing | 0.1 | [docs.rs/tracing](https://docs.rs/tracing) |
-| 27 | LRU 缓存 | lru-cache | lru | 0.12 | [docs.rs/lru](https://docs.rs/lru) |
-| 28 | 错误处理 | Error class | thiserror + anyhow | 2.x / 1.x | [docs.rs/thiserror](https://docs.rs/thiserror) |
+| 26 | Logging/tracing | console.log | tracing | 0.1 | [docs.rs/tracing](https://docs.rs/tracing) |
+| 27 | LRU cache | lru-cache | lru | 0.12 | [docs.rs/lru](https://docs.rs/lru) |
+| 28 | Error handling | Error class | thiserror + anyhow | 2.x / 1.x | [docs.rs/thiserror](https://docs.rs/thiserror) |
 
 ---
 
-## 四、Workspace 工程结构
+## 4. Workspace Project Structure
 
-### 4.1 完整目录树
+### 4.1 Complete Directory Tree
 
 ```
 crab-code/
 ├── Cargo.toml                         # workspace root
 ├── Cargo.lock
 ├── rust-toolchain.toml                # pinned toolchain
-├── rustfmt.toml                       # 格式化配置
-├── clippy.toml                        # lint 配置
+├── rustfmt.toml                       # formatting config
+├── clippy.toml                        # lint config
 ├── .gitignore
 ├── LICENSE
 │
 ├── crates/
-│   ├── common/                        # crab-common: 共享基础
+│   ├── common/                        # crab-common: shared foundation
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── error.rs               # thiserror 统一错误枚举
+│   │       ├── error.rs               # thiserror unified error enum
 │   │       ├── result.rs              # type Result<T>
-│   │       ├── text.rs                # Unicode 宽度、ANSI strip
-│   │       ├── path.rs                # 跨平台路径规范化
-│   │       └── id.rs                  # ULID 生成
+│   │       ├── text.rs                # Unicode width, ANSI strip
+│   │       ├── path.rs                # cross-platform path normalization
+│   │       └── id.rs                  # ULID generation
 │   │
-│   ├── core/                          # crab-core: 领域模型
+│   ├── core/                          # crab-core: domain model
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -211,373 +218,373 @@ crab-code/
 │   │       ├── conversation.rs        # Conversation, Turn
 │   │       ├── tool.rs                # trait Tool + ToolContext + ToolOutput
 │   │       ├── model.rs               # ModelId, TokenUsage, CostTracker
-│   │       ├── permission/            # 权限系统（模块目录）
+│   │       ├── permission/            # Permission system (module directory)
 │   │       │   ├── mod.rs             # PermissionMode, PermissionPolicy, re-exports
-│   │       │   ├── rule_parser.rs     # [P0] 规则 AST 解析："Bash(cmd:git*)" 格式
-│   │       │   ├── path_validator.rs  # [P0] 文件路径权限引擎、symlink 解析
-│   │       │   ├── denial_tracker.rs  # [P1] 连续拒绝计数、模式检测
-│   │       │   ├── explainer.rs       # [P1] 人类可读的权限决策解释
-│   │       │   └── shadowed_rules.rs  # [P2] 被遮蔽规则检测
+│   │       │   ├── rule_parser.rs     # [P0] Rule AST parsing: "Bash(cmd:git*)" format
+│   │       │   ├── path_validator.rs  # [P0] File path permission engine, symlink resolution
+│   │       │   ├── denial_tracker.rs  # [P1] Consecutive denial counting, pattern detection
+│   │       │   ├── explainer.rs       # [P1] Human-readable permission decision explanation
+│   │       │   └── shadowed_rules.rs  # [P2] Shadowed rule detection
 │   │       ├── config.rs              # trait ConfigSource
-│   │       ├── event.rs               # 领域事件枚举（crate 间解耦通信）
-│   │       └── capability.rs          # Agent 能力声明
+│   │       ├── event.rs               # Domain event enum (inter-crate decoupled communication)
+│   │       └── capability.rs          # Agent capability declaration
 │   │
-│   ├── config/                        # crab-config: 配置系统
+│   ├── config/                        # crab-config: configuration system
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── settings.rs            # settings.json 读写、层级合并
-│   │       ├── crab_md.rs             # CRAB.md 解析（项目/用户/全局）
-│   │       ├── hooks.rs               # Hook 定义与触发
-│   │       ├── feature_flag.rs        # [P1] 运行时 Feature Flag 管理（本地评估）
-│   │       ├── policy.rs              # [P0] 权限策略限制、MDM/managed-path
-│   │       ├── keybinding.rs          # [P1] 快捷键 schema/解析/校验/resolver
-│   │       ├── config_toml.rs         # config.toml 多提供商配置
-│   │       ├── hot_reload.rs          # settings.json 热重载监听
-│   │       ├── permissions.rs         # 权限决策统一入口
-│   │       ├── validation.rs          # [P1] Settings 校验引擎
-│   │       ├── settings_cache.rs      # [P1] 记忆化 settings 缓存
-│   │       ├── change_detector.rs     # [P2] 按 source 的变更检测
-│   │       └── mdm.rs                 # [P2] 企业 MDM managed settings
+│   │       ├── settings.rs            # settings.json read/write, layered merging
+│   │       ├── crab_md.rs             # CRAB.md parsing (project/user/global)
+│   │       ├── hooks.rs               # Hook definition and triggering
+│   │       ├── feature_flag.rs        # [P1] Runtime feature flag management (local evaluation)
+│   │       ├── policy.rs              # [P0] Permission policy restrictions, MDM/managed-path
+│   │       ├── keybinding.rs          # [P1] Keybinding schema/parsing/validation/resolver
+│   │       ├── config_toml.rs         # config.toml multi-provider configuration
+│   │       ├── hot_reload.rs          # settings.json hot reload monitoring
+│   │       ├── permissions.rs         # Unified permission decision entry point
+│   │       ├── validation.rs          # [P1] Settings validation engine
+│   │       ├── settings_cache.rs      # [P1] Memoized settings cache
+│   │       ├── change_detector.rs     # [P2] Per-source change detection
+│   │       └── mdm.rs                 # [P2] Enterprise MDM managed settings
 │   │
-│   ├── auth/                          # crab-auth: 认证
+│   ├── auth/                          # crab-auth: authentication
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── oauth.rs               # OAuth2 PKCE 流程
-│   │       ├── keychain.rs            # 系统 Keychain (macOS/Win/Linux)
-│   │       ├── api_key.rs             # API Key 管理
-│   │       ├── bedrock_auth.rs        # AWS SigV4 签名 (feature)
-│   │       ├── vertex_auth.rs         # GCP Vertex 认证
+│   │       ├── oauth.rs               # OAuth2 PKCE flow
+│   │       ├── keychain.rs            # System Keychain (macOS/Win/Linux)
+│   │       ├── api_key.rs             # API key management
+│   │       ├── bedrock_auth.rs        # AWS SigV4 signing (feature)
+│   │       ├── vertex_auth.rs         # GCP Vertex authentication
 │   │       ├── aws_iam.rs             # AWS IAM Roles + IRSA
 │   │       ├── gcp_identity.rs        # GCP Workload Identity Federation
-│   │       └── credential_chain.rs    # 凭证链（优先级顺序解析）
+│   │       └── credential_chain.rs    # Credential chain (priority-ordered resolution)
 │   │
-│   ├── api/                           # crab-api: LLM API 客户端
+│   ├── api/                           # crab-api: LLM API client
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   │       ├── lib.rs                 # LlmBackend 枚举 + create_backend()
-│   │       ├── types.rs               # 内部统一请求/响应/事件类型
-│   │       ├── anthropic/             # 独立 Anthropic Messages API client
+│   │       ├── lib.rs                 # LlmBackend enum + create_backend()
+│   │       ├── types.rs               # Internal unified request/response/event types
+│   │       ├── anthropic/             # Standalone Anthropic Messages API client
 │   │       │   ├── mod.rs
 │   │       │   ├── client.rs          # HTTP + SSE + retry
-│   │       │   ├── types.rs           # Anthropic 原生 API 类型
-│   │       │   └── convert.rs         # Anthropic ↔ 内部类型转换
-│   │       ├── openai/                # 独立 OpenAI Chat Completions client
+│   │       │   ├── types.rs           # Anthropic native API types
+│   │       │   └── convert.rs         # Anthropic <-> internal type conversion
+│   │       ├── openai/                # Standalone OpenAI Chat Completions client
 │   │       │   ├── mod.rs
 │   │       │   ├── client.rs          # HTTP + SSE + retry
-│   │       │   ├── types.rs           # OpenAI 原生 API 类型
-│   │       │   └── convert.rs         # OpenAI ↔ 内部类型转换
-│   │       ├── bedrock.rs             # AWS Bedrock (feature, 包装 anthropic)
-│   │       ├── vertex.rs              # Google Vertex (feature, 包装 anthropic)
-│   │       ├── rate_limit.rs          # 共享速率限制、指数退避
-│   │       ├── cache.rs               # Prompt cache (Anthropic 路径)
+│   │       │   ├── types.rs           # OpenAI native API types
+│   │       │   └── convert.rs         # OpenAI <-> internal type conversion
+│   │       ├── bedrock.rs             # AWS Bedrock (feature, wraps anthropic)
+│   │       ├── vertex.rs              # Google Vertex (feature, wraps anthropic)
+│   │       ├── rate_limit.rs          # Shared rate limiting, exponential backoff
+│   │       ├── cache.rs               # Prompt cache (Anthropic path)
 │   │       ├── error.rs
-│   │       ├── streaming.rs           # 流式工具调用解析
-│   │       ├── fallback.rs            # 多模型回退链
-│   │       ├── capabilities.rs        # 模型能力协商与发现
-│   │       ├── context_optimizer.rs   # 上下文窗口优化 + 智能截断
-│   │       ├── retry_strategy.rs      # 增强重试策略
-│   │       ├── error_classifier.rs    # 错误分类（可重试/不可重试）
-│   │       ├── token_estimation.rs    # [P1] Token 数量近似估算
-│   │       ├── ttft_tracker.rs        # [P1] Time-to-first-token 延迟统计
-│   │       ├── fast_mode.rs           # [P1] 快速模式切换
-│   │       └── usage_tracker.rs       # [P1] 使用量聚合（per-session/model）
+│   │       ├── streaming.rs           # Streaming tool call parsing
+│   │       ├── fallback.rs            # Multi-model fallback chain
+│   │       ├── capabilities.rs        # Model capability negotiation and discovery
+│   │       ├── context_optimizer.rs   # Context window optimization + smart truncation
+│   │       ├── retry_strategy.rs      # Enhanced retry strategy
+│   │       ├── error_classifier.rs    # Error classification (retryable/non-retryable)
+│   │       ├── token_estimation.rs    # [P1] Approximate token count estimation
+│   │       ├── ttft_tracker.rs        # [P1] Time-to-first-token latency tracking
+│   │       ├── fast_mode.rs           # [P1] Fast mode switching
+│   │       └── usage_tracker.rs       # [P1] Usage aggregation (per-session/model)
 │   │
-│   ├── mcp/                           # crab-mcp: MCP façade + 协议适配层
+│   ├── mcp/                           # crab-mcp: MCP facade + protocol adaptation layer
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── protocol.rs            # JSON-RPC 消息定义
-│   │       ├── client.rs              # MCP 客户端
-│   │       ├── server.rs              # MCP 服务端
-│   │       ├── manager.rs             # 生命周期管理，多 server 协调
+│   │       ├── protocol.rs            # JSON-RPC message definitions
+│   │       ├── client.rs              # MCP client
+│   │       ├── server.rs              # MCP server
+│   │       ├── manager.rs             # Lifecycle management, multi-server coordination
 │   │       ├── transport/
 │   │       │   ├── mod.rs
-│   │       │   ├── stdio.rs           # stdin/stdout 传输
+│   │       │   ├── stdio.rs           # stdin/stdout transport
 │   │       │   └── ws.rs              # WebSocket (feature)
-│   │       ├── resource.rs            # Resource 缓存、模板
-│   │       ├── discovery.rs           # Server 自动发现
-│   │       ├── sse_server.rs          # SSE server transport（crab 作为 server）
-│   │       ├── sampling.rs            # MCP sampling（LLM 推理请求）
-│   │       ├── roots.rs               # MCP roots（工作区根目录声明）
-│   │       ├── logging.rs             # MCP logging 协议消息
-│   │       ├── handshake.rs           # 初始化握手流程
-│   │       ├── negotiation.rs         # 能力协商
-│   │       ├── capability.rs          # 能力声明类型
-│   │       ├── notification.rs        # 服务端通知推送
-│   │       ├── progress.rs            # 进度报告
-│   │       ├── cancellation.rs        # 请求取消机制
-│   │       ├── health.rs              # 健康检查 + 心跳
-│   │       ├── auth.rs                # [P1] MCP OAuth2/API key 认证
-│   │       ├── channel_permissions.rs # [P1] Channel 级工具/资源权限
-│   │       ├── elicitation.rs         # [P1] 用户输入请求处理
-│   │       ├── env_expansion.rs       # [P1] 配置中 ${VAR} 环境变量展开
-│   │       ├── official_registry.rs   # [P2] 官方 MCP server 注册表
-│   │       └── normalization.rs       # [P2] 工具/资源名称规范化
+│   │       ├── resource.rs            # Resource caching, templates
+│   │       ├── discovery.rs           # Server auto-discovery
+│   │       ├── sse_server.rs          # SSE server transport (crab as server)
+│   │       ├── sampling.rs            # MCP sampling (LLM inference requests)
+│   │       ├── roots.rs               # MCP roots (workspace root directory declaration)
+│   │       ├── logging.rs             # MCP logging protocol messages
+│   │       ├── handshake.rs           # Initialization handshake flow
+│   │       ├── negotiation.rs         # Capability negotiation
+│   │       ├── capability.rs          # Capability declaration types
+│   │       ├── notification.rs        # Server notification push
+│   │       ├── progress.rs            # Progress reporting
+│   │       ├── cancellation.rs        # Request cancellation mechanism
+│   │       ├── health.rs              # Health check + heartbeat
+│   │       ├── auth.rs                # [P1] MCP OAuth2/API key authentication
+│   │       ├── channel_permissions.rs # [P1] Channel-level tool/resource permissions
+│   │       ├── elicitation.rs         # [P1] User input request handling
+│   │       ├── env_expansion.rs       # [P1] ${VAR} environment variable expansion in config
+│   │       ├── official_registry.rs   # [P2] Official MCP server registry
+│   │       └── normalization.rs       # [P2] Tool/resource name normalization
 │   │
-│   ├── fs/                            # crab-fs: 文件系统
+│   ├── fs/                            # crab-fs: file system
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── glob.rs                # globset 封装
-│   │       ├── grep.rs                # ripgrep 内核集成
-│   │       ├── gitignore.rs           # .gitignore 规则解析
-│   │       ├── watch.rs               # notify 文件监听（含防抖、批量）
-│   │       ├── lock.rs                # 文件锁 (fd-lock)
-│   │       ├── diff.rs                # similar 封装, patch 生成
-│   │       └── symlink.rs             # 符号链接处理 + 安全解析
+│   │       ├── glob.rs                # globset wrapper
+│   │       ├── grep.rs                # ripgrep core integration
+│   │       ├── gitignore.rs           # .gitignore rule parsing
+│   │       ├── watch.rs               # notify file watching (with debouncing, batching)
+│   │       ├── lock.rs                # File locking (fd-lock)
+│   │       ├── diff.rs                # similar wrapper, patch generation
+│   │       └── symlink.rs             # Symbolic link handling + secure resolution
 │   │
-│   ├── process/                       # crab-process: 子进程管理
+│   ├── process/                       # crab-process: subprocess management
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── spawn.rs               # 子进程启动、环境继承
-│   │       ├── pty.rs                 # 伪终端 (feature = "pty")
-│   │       ├── tree.rs                # 进程树 kill (sysinfo)
-│   │       ├── signal.rs              # 信号处理、优雅关闭
-│   │       └── sandbox.rs             # 沙箱策略 (feature = "sandbox")
+│   │       ├── spawn.rs               # Subprocess launching, environment inheritance
+│   │       ├── pty.rs                 # Pseudo-terminal (feature = "pty")
+│   │       ├── tree.rs                # Process tree kill (sysinfo)
+│   │       ├── signal.rs              # Signal handling, graceful shutdown
+│   │       └── sandbox.rs             # Sandbox policy (feature = "sandbox")
 │   │
-│   ├── tools/                         # crab-tools: 工具系统
+│   ├── tools/                         # crab-tools: tool system
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── registry.rs            # ToolRegistry: 注册、查找
-│   │       ├── executor.rs            # 带权限检查的统一执行器
+│   │       ├── registry.rs            # ToolRegistry: registration, lookup
+│   │       ├── executor.rs            # Unified executor with permission checking
 │   │       ├── builtin/
 │   │       │   ├── mod.rs
 │   │       │   ├── bash.rs            # BashTool
-│   │       │   ├── bash_security.rs   # Bash 安全检查
-│   │       │   ├── bash_classifier.rs # [P0] Bash 命令分类（read-only/write/dangerous）
+│   │       │   ├── bash_security.rs   # Bash security checks
+│   │       │   ├── bash_classifier.rs # [P0] Bash command classification (read-only/write/dangerous)
 │   │       │   ├── read.rs            # ReadTool
-│   │       │   ├── read_enhanced.rs   # 增强文件读取（PDF/图片/Notebook）
+│   │       │   ├── read_enhanced.rs   # Enhanced file reading (PDF/image/Notebook)
 │   │       │   ├── edit.rs            # EditTool (diff-based)
 │   │       │   ├── write.rs           # WriteTool
 │   │       │   ├── glob.rs            # GlobTool
 │   │       │   ├── grep.rs            # GrepTool
-│   │       │   ├── lsp.rs             # LSP 集成工具
+│   │       │   ├── lsp.rs             # LSP integration tool
 │   │       │   ├── web_search.rs      # WebSearchTool
 │   │       │   ├── web_fetch.rs       # WebFetchTool
-│   │       │   ├── web_cache.rs       # 网页缓存
-│   │       │   ├── web_formatter.rs   # 网页格式化
-│   │       │   ├── web_browser.rs     # [P2] Playwright/CDP 浏览器自动化
-│   │       │   ├── agent.rs           # AgentTool (子 Agent)
-│   │       │   ├── send_message.rs    # [P0] SendMessageTool（跨 Agent 消息）
-│   │       │   ├── skill.rs           # [P0] SkillTool（按名称调用 skill）
+│   │       │   ├── web_cache.rs       # Web page cache
+│   │       │   ├── web_formatter.rs   # Web page formatter
+│   │       │   ├── web_browser.rs     # [P2] Playwright/CDP browser automation
+│   │       │   ├── agent.rs           # AgentTool (sub-Agent)
+│   │       │   ├── send_message.rs    # [P0] SendMessageTool (cross-Agent messaging)
+│   │       │   ├── skill.rs           # [P0] SkillTool (invoke skill by name)
 │   │       │   ├── notebook.rs        # NotebookTool
 │   │       │   ├── task.rs            # TaskCreate/Get/List/Update
-│   │       │   ├── todo_write.rs      # [P1] TodoWriteTool（结构化 TODO）
+│   │       │   ├── todo_write.rs      # [P1] TodoWriteTool (structured TODO)
 │   │       │   ├── team.rs            # TeamCreate/Delete
-│   │       │   ├── mcp_tool.rs        # MCP 工具适配器
+│   │       │   ├── mcp_tool.rs        # MCP tool adapter
 │   │       │   ├── mcp_resource.rs    # [P1] ListMcpResources + ReadMcpResource
-│   │       │   ├── mcp_auth.rs        # [P1] MCP 服务器认证工具
-│   │       │   ├── worktree.rs        # Git Worktree 工具
-│   │       │   ├── ask_user.rs        # 用户交互工具
-│   │       │   ├── image_read.rs      # 图片读取工具
-│   │       │   ├── plan_mode.rs       # 计划模式工具
-│   │       │   ├── plan_file.rs       # 计划文件操作
-│   │       │   ├── plan_approval.rs   # 计划审批工具
-│   │       │   ├── verify_plan.rs     # [P1] 计划执行验证
-│   │       │   ├── config_tool.rs     # [P1] ConfigTool（编程式 settings 读写）
-│   │       │   ├── brief.rs           # [P1] BriefTool（对话摘要）
-│   │       │   ├── snip.rs            # [P1] SnipTool（裁剪大工具输出）
-│   │       │   ├── sleep.rs           # [P1] SleepTool（异步等待）
-│   │       │   ├── tool_search.rs     # [P1] ToolSearchTool（搜索可用工具）
-│   │       │   ├── monitor.rs         # [P2] MonitorTool（文件/进程监控）
-│   │       │   ├── workflow.rs        # [P2] WorkflowTool（多步工作流）
+│   │       │   ├── mcp_auth.rs        # [P1] MCP server authentication tool
+│   │       │   ├── worktree.rs        # Git Worktree tool
+│   │       │   ├── ask_user.rs        # User interaction tool
+│   │       │   ├── image_read.rs      # Image reading tool
+│   │       │   ├── plan_mode.rs       # Plan mode tool
+│   │       │   ├── plan_file.rs       # Plan file operations
+│   │       │   ├── plan_approval.rs   # Plan approval tool
+│   │       │   ├── verify_plan.rs     # [P1] Plan execution verification
+│   │       │   ├── config_tool.rs     # [P1] ConfigTool (programmatic settings read/write)
+│   │       │   ├── brief.rs           # [P1] BriefTool (conversation summary)
+│   │       │   ├── snip.rs            # [P1] SnipTool (trim large tool output)
+│   │       │   ├── sleep.rs           # [P1] SleepTool (async wait)
+│   │       │   ├── tool_search.rs     # [P1] ToolSearchTool (search available tools)
+│   │       │   ├── monitor.rs         # [P2] MonitorTool (file/process monitoring)
+│   │       │   ├── workflow.rs        # [P2] WorkflowTool (multi-step workflow)
 │   │       │   ├── send_user_file.rs  # [P2] SendUserFileTool
 │   │       │   ├── powershell.rs      # PowerShellTool
 │   │       │   ├── cron.rs            # CronCreate/Delete/List
 │   │       │   └── remote_trigger.rs  # RemoteTriggerTool
-│   │       ├── permission.rs          # 工具权限检查逻辑
-│   │       ├── sandbox.rs             # 工具沙箱策略
-│   │       ├── schema.rs              # 工具 schema 转换
-│   │       └── tool_use_summary.rs    # [P1] 工具结果摘要生成
+│   │       ├── permission.rs          # Tool permission checking logic
+│   │       ├── sandbox.rs             # Tool sandbox policy
+│   │       ├── schema.rs              # Tool schema conversion
+│   │       └── tool_use_summary.rs    # [P1] Tool result summary generation
 │   │
-│   ├── session/                       # crab-session: 会话管理
+│   ├── session/                       # crab-session: session management
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── conversation.rs        # 对话状态机，多轮管理
-│   │       ├── context.rs             # 上下文窗口管理
-│   │       ├── compaction.rs          # 消息压缩策略（5 级）
-│   │       ├── micro_compact.rs       # [P0] 微压缩：逐条替换大工具结果
-│   │       ├── auto_compact.rs        # [P1] 自动压缩触发器 + 清理
-│   │       ├── snip_compact.rs        # [P1] Snip 压缩："[snipped]" 标记
-│   │       ├── history.rs             # 会话持久化、恢复、搜索、导出
-│   │       ├── memory.rs              # 记忆系统 (文件持久化)
-│   │       ├── memory_types.rs        # [P1] 记忆类型 schema (user/project/feedback)
-│   │       ├── memory_relevance.rs    # [P1] 记忆相关性匹配与评分
-│   │       ├── memory_extract.rs      # [P2] 自动记忆提取
-│   │       ├── memory_age.rs          # [P2] 记忆老化与衰减
-│   │       ├── team_memory.rs         # [P2] 团队记忆路径与加载
-│   │       ├── cost.rs                # token 计数、费用追踪
-│   │       ├── template.rs            # 会话模板 + 快速恢复
-│   │       └── migration.rs           # [P2] 数据迁移系统
+│   │       ├── conversation.rs        # Conversation state machine, multi-turn management
+│   │       ├── context.rs             # Context window management
+│   │       ├── compaction.rs          # Message compaction strategies (5 levels)
+│   │       ├── micro_compact.rs       # [P0] Micro-compaction: per-message replacement of large tool results
+│   │       ├── auto_compact.rs        # [P1] Auto-compaction trigger + cleanup
+│   │       ├── snip_compact.rs        # [P1] Snip compaction: "[snipped]" marker
+│   │       ├── history.rs             # Session persistence, recovery, search, export
+│   │       ├── memory.rs              # Memory system (file persistence)
+│   │       ├── memory_types.rs        # [P1] Memory type schema (user/project/feedback)
+│   │       ├── memory_relevance.rs    # [P1] Memory relevance matching and scoring
+│   │       ├── memory_extract.rs      # [P2] Automatic memory extraction
+│   │       ├── memory_age.rs          # [P2] Memory aging and decay
+│   │       ├── team_memory.rs         # [P2] Team memory paths and loading
+│   │       ├── cost.rs                # Token counting, cost tracking
+│   │       ├── template.rs            # Session template + quick recovery
+│   │       └── migration.rs           # [P2] Data migration system
 │   │
-│   ├── agent/                         # crab-agent: 多 Agent 系统
+│   ├── agent/                         # crab-agent: multi-Agent system
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── coordinator.rs         # Agent 编排、workers pool + 工作窃取调度
-│   │       ├── query_loop.rs          # 核心消息循环
-│   │       ├── task.rs                # TaskList, 依赖图
-│   │       ├── team.rs                # Team 创建、成员管理
-│   │       ├── message_bus.rs         # Agent 间消息 (tokio::mpsc)
-│   │       ├── message_router.rs      # Agent 间消息路由
-│   │       ├── worker.rs              # 子 Agent worker
-│   │       ├── system_prompt/         # 系统提示（模块目录）
+│   │       ├── coordinator.rs         # Agent orchestration, workers pool + work-stealing scheduler
+│   │       ├── query_loop.rs          # Core message loop
+│   │       ├── task.rs                # TaskList, dependency graph
+│   │       ├── team.rs                # Team creation, member management
+│   │       ├── message_bus.rs         # Inter-Agent messaging (tokio::mpsc)
+│   │       ├── message_router.rs      # Inter-Agent message routing
+│   │       ├── worker.rs              # Sub-Agent worker
+│   │       ├── system_prompt/         # System prompt (module directory)
 │   │       │   ├── mod.rs             # re-exports
-│   │       │   ├── builder.rs         # [重构] 主组装逻辑（原 system_prompt.rs）
-│   │       │   ├── sections.rs        # [P0] 模块化 section 架构 + 动态边界
-│   │       │   └── cache.rs           # [P1] per-section 记忆化缓存
-│   │       ├── token_budget.rs        # [P1] Token 预算管理
-│   │       ├── stop_hooks.rs          # [P1] 停止条件钩子
-│   │       ├── summarizer.rs          # 对话摘要生成
-│   │       ├── rollback.rs            # 回滚机制
-│   │       ├── error_recovery.rs      # 错误恢复策略
-│   │       ├── retry.rs               # 自动重试机制
-│   │       ├── slash_commands.rs      # 斜杠命令注册与执行
-│   │       ├── repl_commands.rs       # REPL 命令（/undo /branch /fork）
-│   │       ├── effort.rs              # 模型 effort 级别
-│   │       ├── git_context.rs         # Git 上下文收集
-│   │       ├── pr_context.rs          # PR 上下文收集
-│   │       ├── prompt_suggestion.rs   # [P2] 后续 prompt 建议
-│   │       └── tips.rs                # [P2] 上下文提示
+│   │       │   ├── builder.rs         # [Refactored] Main assembly logic (formerly system_prompt.rs)
+│   │       │   ├── sections.rs        # [P0] Modular section architecture + dynamic boundaries
+│   │       │   └── cache.rs           # [P1] Per-section memoized cache
+│   │       ├── token_budget.rs        # [P1] Token budget management
+│   │       ├── stop_hooks.rs          # [P1] Stop condition hooks
+│   │       ├── summarizer.rs          # Conversation summary generation
+│   │       ├── rollback.rs            # Rollback mechanism
+│   │       ├── error_recovery.rs      # Error recovery strategy
+│   │       ├── retry.rs              # Auto-retry mechanism
+│   │       ├── slash_commands.rs      # Slash command registration and execution
+│   │       ├── repl_commands.rs       # REPL commands (/undo /branch /fork)
+│   │       ├── effort.rs              # Model effort level
+│   │       ├── git_context.rs         # Git context collection
+│   │       ├── pr_context.rs          # PR context collection
+│   │       ├── prompt_suggestion.rs   # [P2] Follow-up prompt suggestions
+│   │       └── tips.rs                # [P2] Contextual tips
 │   │
-│   ├── tui/                           # crab-tui: 终端 UI（21 组件）
+│   ├── tui/                           # crab-tui: terminal UI (21 components)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── app.rs                 # App 状态机，主循环
-│   │       ├── event.rs               # crossterm Event → AppEvent 映射分发
-│   │       ├── layout.rs              # 布局计算
-│   │       ├── runner.rs              # TUI 运行器（启动/停止）
-│   │       ├── keybindings.rs         # 快捷键配置绑定
-│   │       ├── ansi.rs                # ANSI 转义 → ratatui Span 转换
+│   │       ├── app.rs                 # App state machine, main loop
+│   │       ├── event.rs               # crossterm Event -> AppEvent mapping/dispatch
+│   │       ├── layout.rs              # Layout calculation
+│   │       ├── runner.rs              # TUI runner (startup/shutdown)
+│   │       ├── keybindings.rs         # Keybinding configuration
+│   │       ├── ansi.rs                # ANSI escape -> ratatui Span conversion
 │   │       ├── components/
 │   │       │   ├── mod.rs
-│   │       │   ├── input.rs           # 多行输入框 + Vim motion
-│   │       │   ├── markdown.rs        # Markdown 渲染
-│   │       │   ├── syntax.rs          # 代码高亮 (syntect)
-│   │       │   ├── spinner.rs         # 加载指示器
-│   │       │   ├── diff.rs            # Diff 可视化（unified）
-│   │       │   ├── select.rs          # 选择列表
-│   │       │   ├── dialog.rs          # 确认/权限对话框
-│   │       │   ├── cost_bar.rs        # token/费用状态栏
-│   │       │   ├── task_list.rs       # 任务进度面板
-│   │       │   ├── autocomplete.rs    # 自动补全弹出框
-│   │       │   ├── code_block.rs      # 代码块 + 复制按钮
-│   │       │   ├── command_palette.rs # 命令面板（Ctrl+P）
-│   │       │   ├── input_history.rs   # 输入历史（↑↓）
-│   │       │   ├── loading.rs         # 加载动画组件
-│   │       │   ├── notification.rs    # Toast 通知系统
-│   │       │   ├── progress_indicator.rs # 进度指示器
-│   │       │   ├── search.rs          # 全局搜索面板
-│   │       │   ├── shortcut_hint.rs   # 快捷键提示栏
-│   │       │   ├── status_bar.rs      # 增强状态栏
-│   │       │   ├── tool_output.rs     # 工具输出折叠显示
-│   │       │   ├── output_styles.rs   # [P1] 输出格式化样式配置
-│   │       │   ├── permission_dialog.rs # [P1] 专用权限提示对话框
-│   │       │   ├── session_sidebar.rs # [P1] 会话侧边栏
-│   │       │   └── context_collapse.rs # [P2] 上下文折叠/展开
+│   │       │   ├── input.rs           # Multi-line input box + Vim motion
+│   │       │   ├── markdown.rs        # Markdown rendering
+│   │       │   ├── syntax.rs          # Code highlighting (syntect)
+│   │       │   ├── spinner.rs         # Loading indicator
+│   │       │   ├── diff.rs            # Diff visualization (unified)
+│   │       │   ├── select.rs          # Selection list
+│   │       │   ├── dialog.rs          # Confirmation/permission dialog
+│   │       │   ├── cost_bar.rs        # Token/cost status bar
+│   │       │   ├── task_list.rs       # Task progress panel
+│   │       │   ├── autocomplete.rs    # Autocomplete popup
+│   │       │   ├── code_block.rs      # Code block + copy button
+│   │       │   ├── command_palette.rs # Command palette (Ctrl+P)
+│   │       │   ├── input_history.rs   # Input history (up/down arrows)
+│   │       │   ├── loading.rs         # Loading animation component
+│   │       │   ├── notification.rs    # Toast notification system
+│   │       │   ├── progress_indicator.rs # Progress indicator
+│   │       │   ├── search.rs          # Global search panel
+│   │       │   ├── shortcut_hint.rs   # Shortcut hint bar
+│   │       │   ├── status_bar.rs      # Enhanced status bar
+│   │       │   ├── tool_output.rs     # Collapsible tool output display
+│   │       │   ├── output_styles.rs   # [P1] Output formatting style configuration
+│   │       │   ├── permission_dialog.rs # [P1] Dedicated permission prompt dialog
+│   │       │   ├── session_sidebar.rs # [P1] Session sidebar
+│   │       │   └── context_collapse.rs # [P2] Context collapse/expand
 │   │       ├── vim/
 │   │       │   ├── mod.rs
 │   │       │   ├── motion.rs
 │   │       │   ├── operator.rs
 │   │       │   └── mode.rs
-│   │       └── theme.rs               # 颜色主题（可自定义）
+│   │       └── theme.rs               # Color theme (customizable)
 │   │
-│   ├── plugin/                        # crab-plugin: 插件系统
+│   ├── plugin/                        # crab-plugin: plugin system
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── skill.rs               # Skill 发现、加载、执行
-│   │       ├── skill_builder.rs       # [P1] Skill builder API + MCP skill 加载
-│   │       ├── bundled_skills.rs      # [P1] 内置 skill（commit/review/debug 等）
-│   │       ├── wasm_runtime.rs        # WASM 沙箱 (feature = "wasm")
-│   │       ├── manifest.rs            # 插件清单解析
-│   │       ├── manager.rs             # 插件生命周期管理
-│   │       ├── hook.rs                # 生命周期钩子执行
-│   │       ├── hook_registry.rs       # [P0] 异步钩子注册表 + 事件广播
-│   │       ├── hook_types.rs          # [P0] Agent/Http/Prompt 钩子 + SSRF guard
-│   │       ├── hook_watchers.rs       # [P1] 文件变更触发钩子重注册
-│   │       └── frontmatter_hooks.rs   # [P1] Frontmatter YAML 钩子注册
+│   │       ├── skill.rs               # Skill discovery, loading, execution
+│   │       ├── skill_builder.rs       # [P1] Skill builder API + MCP skill loading
+│   │       ├── bundled_skills.rs      # [P1] Built-in skills (commit/review/debug etc.)
+│   │       ├── wasm_runtime.rs        # WASM sandbox (feature = "wasm")
+│   │       ├── manifest.rs            # Plugin manifest parsing
+│   │       ├── manager.rs             # Plugin lifecycle management
+│   │       ├── hook.rs                # Lifecycle hook execution
+│   │       ├── hook_registry.rs       # [P0] Async hook registry + event broadcast
+│   │       ├── hook_types.rs          # [P0] Agent/Http/Prompt hooks + SSRF guard
+│   │       ├── hook_watchers.rs       # [P1] File change triggered hook re-registration
+│   │       └── frontmatter_hooks.rs   # [P1] Frontmatter YAML hook registration
 │   │
-│   ├── telemetry/                     # crab-telemetry: 可观测性
+│   ├── telemetry/                     # crab-telemetry: observability
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── tracer.rs              # OpenTelemetry tracer
-│   │       ├── metrics.rs             # 自定义 metrics
-│   │       ├── cost.rs                # 费用追踪
-│   │       ├── export.rs              # [P1] 本地 OTLP 导出（无远程）
-│   │       └── session_recorder.rs    # [P2] 会话录制（本地 transcript）
+│   │       ├── metrics.rs             # Custom metrics
+│   │       ├── cost.rs                # Cost tracking
+│   │       ├── export.rs              # [P1] Local OTLP export (no remote)
+│   │       └── session_recorder.rs    # [P2] Session recording (local transcript)
 │   │
-│   └── bridge/                        # [P1] crab-bridge: IDE 桥接/IPC
+│   └── bridge/                        # [P1] crab-bridge: IDE bridge/IPC
 │       ├── Cargo.toml
 │       └── src/
 │           ├── lib.rs
-│           ├── protocol.rs            # JSON-RPC IDE 通信消息类型
-│           ├── repl_bridge.rs         # REPL 中继：IDE ↔ session
-│           ├── remote_bridge.rs       # 远程连接：连接 daemon session
+│           ├── protocol.rs            # JSON-RPC IDE communication message types
+│           ├── repl_bridge.rs         # REPL relay: IDE <-> session
+│           ├── remote_bridge.rs       # Remote connection: connect to daemon session
 │           ├── ws_server.rs           # WebSocket server
 │           ├── session_token.rs       # JWT session token
-│           ├── trusted_device.rs      # 可信设备注册/验证
-│           └── types.rs               # 共享类型
+│           ├── trusted_device.rs      # Trusted device registration/verification
+│           └── types.rs               # Shared types
 │
-│   ├── cli/                           # crab-cli: 终端入口 (binary crate)
+│   ├── cli/                           # crab-cli: terminal entry (binary crate)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── main.rs                # #[tokio::main]
 │   │       ├── commands/
 │   │       │   ├── mod.rs
-│   │       │   ├── chat.rs            # 默认交互模式
-│   │       │   ├── run.rs             # 非交互单次执行
+│   │       │   ├── chat.rs            # Default interactive mode
+│   │       │   ├── run.rs             # Non-interactive single execution
 │   │       │   ├── session.rs         # ps, logs, attach, kill
-│   │       │   ├── config.rs          # 配置管理
-│   │       │   ├── mcp.rs             # MCP server 模式
-│   │       │   └── serve.rs           # 服务模式
-│   │       └── setup.rs               # 初始化、信号注册、panic hook
+│   │       │   ├── config.rs          # Configuration management
+│   │       │   ├── mcp.rs             # MCP server mode
+│   │       │   └── serve.rs           # Serve mode
+│   │       └── setup.rs               # Initialization, signal registration, panic hook
 │   │
-│   ├── daemon/                        # crab-daemon: 守护进程 (binary crate)
+│   ├── daemon/                        # crab-daemon: daemon process (binary crate)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── main.rs
-│   │       ├── protocol.rs            # IPC 消息协议
-│   │       ├── server.rs              # 守护进程服务端
-│   │       └── session_pool.rs        # 会话池管理
+│   │       ├── protocol.rs            # IPC message protocol
+│   │       ├── server.rs              # Daemon server
+│   │       └── session_pool.rs        # Session pool management
 │
-└── xtask/                             # 构建辅助脚本
+└── xtask/                             # Build helper scripts
     ├── Cargo.toml
     └── src/
         └── main.rs                    # codegen, release, bench
 ```
 
-### 4.2 Crate 统计
+### 4.2 Crate Statistics
 
-| 类型 | 数量 | 说明 |
-|------|------|------|
-| Library crate | 15 | `crates/*`（含新增 `bridge`） |
+| Type | Count | Notes |
+|------|-------|-------|
+| Library crate | 15 | `crates/*` (including new `bridge`) |
 | Binary crate | 2 | `crates/cli` `crates/daemon` |
-| 辅助 crate | 1 | `xtask` |
-| **合计** | **18** | — |
-| 模块总数 | ~241 | 分布于 15 个 library crate（含 65 个新增文件） |
-| 测试总数 | ~2654 | `cargo test --workspace`（2026-04-06） |
+| Helper crate | 1 | `xtask` |
+| **Total** | **18** | -- |
+| Total modules | ~241 | Across 15 library crates (including 65 new files) |
+| Total tests | ~2654 | `cargo test --workspace` (2026-04-06) |
 
-> 注：[P0]/[P1]/[P2] 标记表示 CCB 功能对齐优先级。未标记文件为已实现。
+> Note: [P0]/[P1]/[P2] markers indicate CCB feature alignment priority. Unmarked files are already implemented.
 
 ---
 
-## 五、Crate 依赖关系
+## 5. Crate Dependency Graph
 
-### 5.1 依赖关系图
+### 5.1 Dependency Diagram
 
 ```
                        ┌────────────┐
                        │ crates/cli │
                        └────┬───────┘
-                            │ 依赖所有 crate
+                            │ depends on all crates
              ┌──────────────┼──────────────┐
              │              │              │
         ┌────▼────┐   ┌────▼─────┐  ┌─────▼────────┐
@@ -621,70 +628,70 @@ crab-code/
          └───────────────────────────────┘
 
                    ┌────────────┐
-                   │ telemetry  │ ←── 独立旁路，任意 crate 可选依赖
+                   │ telemetry  │ <-- Independent sidecar, optional dependency for any crate
                    └────────────┘
                    ┌────────────┐
-                   │  bridge    │ ←── Layer 2 服务层，IDE 桥接
+                   │  bridge    │ <-- Layer 2 Service Layer, IDE bridge
                    └────────────┘
 ```
 
-### 5.2 依赖清单（自底向上）
+### 5.2 Dependency Manifest (Bottom-Up)
 
-| # | Crate | 内部依赖 | 说明 |
-|---|-------|---------|------|
-| 1 | **common** | 无 | 零依赖基础层 |
-| 2 | **core** | common | 纯领域模型 |
-| 3 | **config** | core, common | 配置读写合并 |
-| 4 | **auth** | config, common | 认证凭证管理 |
-| 5 | **api** | core, auth, common | LlmBackend 枚举 + Anthropic/OpenAI-compatible 独立 client |
-| 6 | **fs** | common | 文件系统操作 |
-| 7 | **process** | common | 子进程管理 |
-| 8 | **mcp** | core, common | MCP 协议客户端/服务端 |
-| 9 | **telemetry** | common | 独立旁路，可选 |
-| 10 | **bridge** | core, config, common | [P1] IDE 桥接 / WebSocket IPC |
-| 11 | **tools** | core, fs, process, mcp, config, common | 40+ 内置工具 |
-| 12 | **session** | core, api, config, common | 会话 + 上下文压缩 + 记忆系统 |
-| 13 | **agent** | core, session, tools, common | Agent 编排 |
-| 14 | **plugin** | core, common | 技能/WASM 沙箱 + 钩子系统 |
-| 15 | **tui** | core, session, config, common | 终端 UI（不直接依赖 tools，通过 core::Event 接收工具状态） |
-| 16 | **cli** (bin) | 所有 crate | 极薄入口 |
-| 17 | **daemon** (bin) | core, session, api, tools, config, agent, bridge, common | 后台服务 |
+| # | Crate | Internal Dependencies | Notes |
+|---|-------|-----------------------|-------|
+| 1 | **common** | None | Zero-dependency foundation layer |
+| 2 | **core** | common | Pure domain model |
+| 3 | **config** | core, common | Configuration read/write/merge |
+| 4 | **auth** | config, common | Authentication credential management |
+| 5 | **api** | core, auth, common | LlmBackend enum + Anthropic/OpenAI-compatible standalone clients |
+| 6 | **fs** | common | File system operations |
+| 7 | **process** | common | Subprocess management |
+| 8 | **mcp** | core, common | MCP protocol client/server |
+| 9 | **telemetry** | common | Independent sidecar, optional |
+| 10 | **bridge** | core, config, common | [P1] IDE bridge / WebSocket IPC |
+| 11 | **tools** | core, fs, process, mcp, config, common | 40+ built-in tools |
+| 12 | **session** | core, api, config, common | Session + context compaction + memory system |
+| 13 | **agent** | core, session, tools, common | Agent orchestration |
+| 14 | **plugin** | core, common | Skill/WASM sandbox + hook system |
+| 15 | **tui** | core, session, config, common | Terminal UI (does not depend on tools directly; receives tool state via core::Event) |
+| 16 | **cli** (bin) | All crates | Extremely thin entry point |
+| 17 | **daemon** (bin) | core, session, api, tools, config, agent, bridge, common | Background service |
 
-### 5.3 依赖方向原则
+### 5.3 Dependency Direction Principles
 
 ```
-规则 1: 上层 → 下层，禁止反向
-规则 2: 同层 crate 不互相依赖（fs ↔ process 禁止）
-规则 3: core 通过 trait 解耦（Tool trait 定义在 core，实现在 tools）
-规则 4: telemetry 是旁路，不参与主依赖链
-规则 5: cli/daemon 只做组装，不含业务逻辑
+Rule 1: Upper layer -> lower layer; reverse dependencies are prohibited
+Rule 2: Same-layer crates do not depend on each other (fs <-> process is prohibited)
+Rule 3: core decouples via traits (Tool trait defined in core, implemented in tools)
+Rule 4: telemetry is a sidecar; it does not participate in the main dependency chain
+Rule 5: cli/daemon only do assembly; they contain no business logic
 ```
 
 ---
 
-## 六、各 Crate 详细设计
+## 6. Detailed Crate Designs
 
-### 6.1 `crates/common/` — 共享基础
+### 6.1 `crates/common/` -- Shared Foundation
 
-**职责**：零业务逻辑的纯工具层，所有 crate 的最底层依赖
+**Responsibility**: A pure utility layer with zero business logic; the lowest-level dependency for all crates
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── error.rs              // thiserror 统一错误类型
+├── error.rs              // thiserror unified error types
 ├── result.rs             // type Result<T> = std::result::Result<T, Error>
-├── text.rs               // Unicode 宽度、ANSI strip、Bidi 处理
-├── path.rs               // 跨平台路径规范化
-└── id.rs                 // ULID 生成
+├── text.rs               // Unicode width, ANSI strip, Bidi handling
+├── path.rs               // Cross-platform path normalization
+└── id.rs                 // ULID generation
 ```
 
-**核心类型**
+**Core Types**
 
 ```rust
-// error.rs — common 层基础错误（仅包含零外部依赖的变体）
-// Http/Api/Mcp/Tool/Auth 等错误留在各自 crate，避免 common 引入 reqwest 等重依赖
+// error.rs -- common layer base errors (only variants with zero external dependencies)
+// Http/Api/Mcp/Tool/Auth errors stay in their respective crates to avoid common pulling in reqwest etc.
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -713,7 +720,7 @@ pub fn strip_ansi(s: &str) -> String {
 }
 
 pub fn truncate_to_width(s: &str, max_width: usize) -> String {
-    // 按显示宽度截断，处理 CJK 字符
+    // Truncate by display width, handling CJK characters
     let mut width = 0;
     let mut result = String::new();
     for ch in s.chars() {
@@ -731,7 +738,7 @@ pub fn truncate_to_width(s: &str, max_width: usize) -> String {
 use std::path::{Path, PathBuf};
 
 pub fn normalize(path: &Path) -> PathBuf {
-    // 统一正斜杠、解析 ~、移除冗余 ..
+    // Unify forward slashes, resolve ~, remove redundant ..
     dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
@@ -743,7 +750,7 @@ pub fn home_dir() -> PathBuf {
 }
 ```
 
-**各 crate 独立错误类型示例**
+**Per-Crate Error Type Examples**
 
 ```rust
 // crates/api/src/error.rs
@@ -796,36 +803,36 @@ pub enum AuthError {
 }
 ```
 
-> 每个 crate 定义自己的 `Error` + `type Result<T>`，通过 `#[from] crab_common::Error` 实现向上层转换。
-> 上层 crate（如 agent）在需要统一处理时可用 `anyhow::Error` 或自定义聚合 enum。
+> Each crate defines its own `Error` + `type Result<T>`, with `#[from] crab_common::Error` enabling upward conversion.
+> Upper-layer crates (such as agent) can use `anyhow::Error` or a custom aggregate enum when unified handling is needed.
 
-**外部依赖**：`thiserror`, `unicode-width`, `strip-ansi-escapes`, `ulid`, `dunce`, `directories`
+**External Dependencies**: `thiserror`, `unicode-width`, `strip-ansi-escapes`, `ulid`, `dunce`, `directories`
 
 ---
 
-### 6.2 `crates/core/` — 领域模型
+### 6.2 `crates/core/` -- Domain Model
 
-**职责**：纯数据结构 + trait 定义，不含任何 I/O 操作。定义"是什么"，不定义"怎么做"。
+**Responsibility**: Pure data structures + trait definitions with no I/O operations. Defines "what it is", not "how to do it".
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
 ├── message.rs        // Message, Role, ContentBlock, ToolUse, ToolResult
-├── conversation.rs   // Conversation, Turn, 上下文窗口抽象
+├── conversation.rs   // Conversation, Turn, context window abstraction
 ├── tool.rs           // trait Tool { fn name(); fn execute(); fn schema(); }
 ├── model.rs          // ModelId, TokenUsage, CostTracker
 ├── permission.rs     // PermissionMode, PermissionPolicy
-├── config.rs         // trait ConfigSource, 配置层级合并逻辑
-├── event.rs          // 领域事件枚举（crate 间解耦）
-└── capability.rs     // Agent 能力声明
+├── config.rs         // trait ConfigSource, config layered merge logic
+├── event.rs          // Domain event enum (inter-crate decoupling)
+└── capability.rs     // Agent capability declaration
 ```
 
-**核心类型定义**
+**Core Type Definitions**
 
 ```rust
-// message.rs — 消息模型（对标 CC src/types/message.ts）
+// message.rs -- Message model (corresponds to CC src/types/message.ts)
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -891,9 +898,9 @@ impl Message {
 ```
 
 ```rust
-// tool.rs — Tool trait（对标 CC src/Tool.ts）
-// 返回 Pin<Box<dyn Future>> 而非原生 async fn，因为需要 dyn Trait 的 object safety
-// （Arc<dyn Tool> 要求 trait 是 object-safe，RPITIT 的 impl Future 不满足此要求）
+// tool.rs -- Tool trait (corresponds to CC src/Tool.ts)
+// Returns Pin<Box<dyn Future>> instead of native async fn because dyn Trait requires object safety
+// (Arc<dyn Tool> requires the trait to be object-safe; RPITIT's impl Future does not satisfy this)
 use serde_json::Value;
 use std::future::Future;
 use std::path::PathBuf;
@@ -903,48 +910,48 @@ use tokio_util::sync::CancellationToken;
 use crate::permission::PermissionMode;
 use crab_common::Result;
 
-/// 工具来源分类 — 决定权限矩阵中的列
+/// Tool source classification -- determines the column in the permission matrix
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolSource {
-    /// 内置工具（Bash/Read/Write/Edit/Glob/Grep 等）
+    /// Built-in tools (Bash/Read/Write/Edit/Glob/Grep etc.)
     BuiltIn,
-    /// 外部 MCP server 提供的工具（不可信来源，Default/TrustProject 需 Prompt）
+    /// Tools provided by external MCP servers (untrusted source, Default/TrustProject require Prompt)
     McpExternal { server_name: String },
-    /// 子 Agent 创建（AgentTool，TrustProject 信任自动放行）
+    /// Created by sub-Agent (AgentTool, TrustProject auto-approves)
     AgentSpawn,
 }
 
 pub trait Tool: Send + Sync {
-    /// 工具唯一标识名
+    /// Unique tool identifier
     fn name(&self) -> &str;
 
-    /// 工具描述（用于 system prompt）
+    /// Tool description (used in system prompt)
     fn description(&self) -> &str;
 
-    /// JSON Schema 描述输入参数
+    /// JSON Schema describing input parameters
     fn input_schema(&self) -> Value;
 
-    /// 执行工具，返回结果
-    /// 长时间执行的工具应通过 ctx.cancellation_token 检查取消信号
+    /// Execute the tool and return the result
+    /// Long-running tools should check for cancellation via ctx.cancellation_token
     fn execute(&self, input: Value, ctx: &ToolContext) -> Pin<Box<dyn Future<Output = Result<ToolOutput>> + Send + '_>>;
 
-    /// 工具来源（默认 BuiltIn）— 影响权限检查矩阵
+    /// Tool source (defaults to BuiltIn) -- affects the permission checking matrix
     fn source(&self) -> ToolSource {
         ToolSource::BuiltIn
     }
 
-    /// 是否需要用户确认（默认 false）
+    /// Whether user confirmation is required (defaults to false)
     fn requires_confirmation(&self) -> bool {
         false
     }
 
-    /// 是否只读（只读工具可跳过确认）
+    /// Whether the tool is read-only (read-only tools can skip confirmation)
     fn is_read_only(&self) -> bool {
         false
     }
 }
 
-// ─── 工具实现示例 ───
+// --- Tool implementation example ---
 // impl Tool for BashTool {
 //     fn name(&self) -> &str { "bash" }
 //     fn description(&self) -> &str { "Execute a shell command" }
@@ -958,19 +965,19 @@ pub trait Tool: Send + Sync {
 //     }
 // }
 
-/// 工具执行上下文
+/// Tool execution context
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub working_dir: PathBuf,
     pub permission_mode: PermissionMode,
     pub session_id: String,
-    /// 取消令牌 — 长时间执行的工具（如 Bash）应定期检查并提前退出
+    /// Cancellation token -- long-running tools (e.g., Bash) should check periodically and exit early
     pub cancellation_token: CancellationToken,
-    /// 权限策略（来自配置合并结果）
+    /// Permission policy (from merged configuration)
     pub permission_policy: crate::permission::PermissionPolicy,
 }
 
-/// 工具输出内容块 — 支持文本、图片、结构化 JSON
+/// Tool output content block -- supports text, image, and structured JSON
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolOutputContent {
@@ -979,7 +986,7 @@ pub enum ToolOutputContent {
     Json { value: Value },
 }
 
-/// 工具执行结果
+/// Tool execution result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolOutput {
     pub content: Vec<ToolOutputContent>,
@@ -1010,7 +1017,7 @@ impl ToolOutput {
 ```
 
 ```rust
-// model.rs — 模型与 Token 追踪
+// model.rs -- Model and token tracking
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1057,62 +1064,62 @@ impl CostTracker {
 ```
 
 ```rust
-// event.rs — 领域事件（crate 间解耦通信）
+// event.rs -- Domain events (inter-crate decoupled communication)
 use crate::model::TokenUsage;
 use crate::permission::PermissionMode;
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    // ─── 消息生命周期 ───
-    /// 新一轮对话开始
+    // --- Message lifecycle ---
+    /// New conversation turn started
     TurnStart { turn_index: usize },
-    /// API 返回消息开始
+    /// API response message started
     MessageStart,
-    /// 文本增量
+    /// Text delta
     ContentDelta(String),
-    /// 消息结束
+    /// Message ended
     MessageEnd { usage: TokenUsage },
 
-    // ─── 工具执行 ───
-    /// 工具调用开始
+    // --- Tool execution ---
+    /// Tool call started
     ToolUseStart { id: String, name: String },
-    /// 工具输入增量（流式）
+    /// Tool input delta (streaming)
     ToolUseInput(String),
-    /// 工具执行结果
+    /// Tool execution result
     ToolResult { id: String, content: String, is_error: bool },
 
-    // ─── 权限交互 ───
-    /// 请求用户确认工具执行权限
+    // --- Permission interaction ---
+    /// Request user confirmation for tool execution permission
     PermissionRequest { tool_name: String, input_summary: String, request_id: String },
-    /// 用户权限回复
+    /// User permission response
     PermissionResponse { request_id: String, approved: bool },
 
-    // ─── 上下文压缩 ───
-    /// 开始压缩
+    // --- Context compaction ---
+    /// Compaction started
     CompactStart { strategy: String, before_tokens: u64 },
-    /// 压缩完成
+    /// Compaction completed
     CompactEnd { after_tokens: u64, removed_messages: usize },
 
-    // ─── Token 预警 ───
-    /// token 使用率超过阈值（80%/90%/95%）
+    // --- Token warnings ---
+    /// Token usage exceeded threshold (80%/90%/95%)
     TokenWarning { usage_percent: u8, used: u64, limit: u64 },
 
-    // ─── 错误 ───
+    // --- Errors ---
     Error(String),
 }
 ```
 
 ```rust
-// permission.rs — 权限模型
+// permission.rs -- Permission model
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PermissionMode {
-    /// 所有工具需确认
+    /// All tools require confirmation
     Default,
-    /// 信任项目内文件操作
+    /// Trust file operations within the project
     TrustProject,
-    /// 全部自动批准（危险）
+    /// Auto-approve everything (dangerous)
     Dangerously,
 }
 
@@ -1120,52 +1127,52 @@ pub enum PermissionMode {
 pub struct PermissionPolicy {
     pub mode: PermissionMode,
     pub allowed_tools: Vec<String>,
-    /// denied_tools 支持 glob 模式匹配（如 "mcp__*"、"bash"），
-    /// 使用 globset crate 进行匹配，支持 * / ? / [abc] 等语法
+    /// denied_tools supports glob pattern matching (e.g., "mcp__*", "bash"),
+    /// uses the globset crate for matching, supporting * / ? / [abc] syntax
     pub denied_tools: Vec<String>,
 }
 ```
 
-**外部依赖**：`serde`, `serde_json`, `tokio-util` (sync), `crab-common`（注意：`std::pin::Pin` / `std::future::Future` 是标准库，无额外依赖）
+**External Dependencies**: `serde`, `serde_json`, `tokio-util` (sync), `crab-common` (note: `std::pin::Pin` / `std::future::Future` are from std, no extra dependencies)
 
-**Feature Flags**：无（纯类型定义）
+**Feature Flags**: None (pure type definitions)
 
 ---
 
-### 6.3 `crates/config/` — 配置系统
+### 6.3 `crates/config/` -- Configuration System
 
-**职责**：多层级配置的读写与合并（对标 CC `src/services/remoteManagedSettings/` + `src/context/` 配置部分）
+**Responsibility**: Read/write and merge multi-layered configuration (corresponds to CC `src/services/remoteManagedSettings/` + `src/context/` config sections)
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── settings.rs           // settings.json 读写、层级合并
-├── crab_md.rs            // CRAB.md 解析（项目/用户/全局）
-├── hooks.rs              // Hook 定义与触发
-├── feature_flag.rs       // Feature Flag 集成
-├── policy.rs             // 权限策略、限制
-├── keybinding.rs         // 快捷键配置
-├── config_toml.rs        // config.toml 多提供商配置格式
-├── hot_reload.rs         // settings.json 热重载（notify 监听）
-└── permissions.rs        // 权限决策统一入口
+├── settings.rs           // settings.json read/write, layered merging
+├── crab_md.rs            // CRAB.md parsing (project/user/global)
+├── hooks.rs              // Hook definition and triggering
+├── feature_flag.rs       // Feature flag integration
+├── policy.rs             // Permission policy, restrictions
+├── keybinding.rs         // Keybinding configuration
+├── config_toml.rs        // config.toml multi-provider configuration format
+├── hot_reload.rs         // settings.json hot reload (notify watcher)
+└── permissions.rs        // Unified permission decision entry point
 ```
 
-**配置层级（三级合并，低优先级 → 高优先级）**
+**Configuration Layers (three-level merge, low priority -> high priority)**
 
 ```
-1. 全局默认   ~/.config/crab-code/settings.json
-2. 用户覆盖   ~/.crab-code/settings.json
-3. 项目覆盖   .crab-code/settings.json
+1. Global defaults   ~/.config/crab-code/settings.json
+2. User overrides    ~/.crab-code/settings.json
+3. Project overrides .crab-code/settings.json
 ```
 
-**核心类型**
+**Core Types**
 
-`Settings` 结构体涵盖：`api_provider`、`api_base_url`、`api_key`、`model`、`small_model`、`permission_mode`、`system_prompt`、`mcp_servers`、`hooks`、`theme` 等字段。三级配置通过 `load_merged_settings()` 逐级合并（全局 → 用户 → 项目），高优先级字段覆盖低优先级。
+The `Settings` struct covers: `api_provider`, `api_base_url`, `api_key`, `model`, `small_model`, `permission_mode`, `system_prompt`, `mcp_servers`, `hooks`, `theme`, and more. The three configuration levels are merged via `load_merged_settings()` (global -> user -> project), with higher-priority fields overriding lower-priority ones.
 
 ```rust
-// crab_md.rs — CRAB.md 解析
+// crab_md.rs -- CRAB.md parsing
 pub struct CrabMd {
     pub content: String,
     pub source: CrabMdSource,
@@ -1173,74 +1180,74 @@ pub struct CrabMd {
 
 pub enum CrabMdSource {
     Global,   // ~/.crab/CRAB.md
-    User,     // 用户目录
-    Project,  // 项目根目录
+    User,     // User directory
+    Project,  // Project root
 }
 
-/// 按优先级收集所有 CRAB.md 内容
+/// Collect all CRAB.md content by priority
 pub fn collect_crab_md(project_dir: &std::path::Path) -> Vec<CrabMd> {
-    // 全局 → 用户 → 项目，逐级叠加
+    // Global -> user -> project, stacking progressively
     // ...
 }
 ```
 
-**外部依赖**：`serde`, `serde_json`, `jsonc-parser`, `directories`, `crab-core`, `crab-common`
+**External Dependencies**: `serde`, `serde_json`, `jsonc-parser`, `directories`, `crab-core`, `crab-common`
 
-**Feature Flags**：无
+**Feature Flags**: None
 
 ---
 
-### 6.4 `crates/auth/` — 认证
+### 6.4 `crates/auth/` -- Authentication
 
-**职责**：所有认证方式的统一管理（对标 CC `src/services/oauth/` + 认证相关代码）
+**Responsibility**: Unified management of all authentication methods (corresponds to CC `src/services/oauth/` + authentication-related code)
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── oauth.rs              // OAuth2 PKCE 流程
-├── keychain.rs           // 系统 Keychain（macOS/Windows/Linux）
-├── api_key.rs            // API Key 管理（环境变量 / 文件）
-├── bedrock_auth.rs       // AWS SigV4 签名 (feature = "bedrock")
-├── vertex_auth.rs        // GCP Vertex AI 认证
-├── aws_iam.rs            // AWS IAM Roles + IRSA（Pod 级别）
+├── oauth.rs              // OAuth2 PKCE flow
+├── keychain.rs           // System Keychain (macOS/Windows/Linux)
+├── api_key.rs            // API key management (environment variable / file)
+├── bedrock_auth.rs       // AWS SigV4 signing (feature = "bedrock")
+├── vertex_auth.rs        // GCP Vertex AI authentication
+├── aws_iam.rs            // AWS IAM Roles + IRSA (pod-level)
 ├── gcp_identity.rs       // GCP Workload Identity Federation
-└── credential_chain.rs   // 凭证链（优先级顺序探测：env → keychain → file → IAM）
+└── credential_chain.rs   // Credential chain (priority-ordered probing: env -> keychain -> file -> IAM)
 ```
 
-**核心接口**
+**Core Interface**
 
 ```rust
-// lib.rs — 统一认证接口
+// lib.rs -- Unified authentication interface
 pub enum AuthMethod {
     ApiKey(String),
     OAuth(OAuthToken),
     Bedrock(BedrockCredentials),
 }
 
-/// 认证提供者 trait
-/// 返回 Pin<Box<dyn Future>> 而非原生 async fn，因为需要 dyn Trait 的 object safety
-/// （Box<dyn AuthProvider> 要求 trait 是 object-safe，RPITIT 的 impl Future 不满足此要求）
-/// 实现内部通过 tokio::sync::RwLock 保护 token 缓存，
-/// get_auth() 读锁热路径，refresh() 写锁刷新
+/// Authentication provider trait
+/// Returns Pin<Box<dyn Future>> instead of native async fn because dyn Trait requires object safety
+/// (Box<dyn AuthProvider> requires the trait to be object-safe; RPITIT's impl Future does not satisfy this)
+/// Implementations use tokio::sync::RwLock internally to protect the token cache;
+/// get_auth() takes a read lock on the hot path, refresh() takes a write lock to refresh
 pub trait AuthProvider: Send + Sync {
-    /// 获取当前有效的认证信息（读锁，通常 <1μs）
+    /// Get the currently valid authentication info (read lock, typically <1us)
     fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>>;
-    /// 刷新认证（如 OAuth token 过期）— 可能触发网络请求
+    /// Refresh authentication (e.g., OAuth token expired) -- may trigger network requests
     fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>>;
 }
 
 // api_key.rs
 pub fn resolve_api_key() -> Option<String> {
-    // 优先级: 环境变量 → keychain → 配置文件
+    // Priority: environment variable -> keychain -> config file
     std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .or_else(|| keychain::get("crab-code", "api-key").ok())
 }
 
-// keychain.rs — 使用 auth crate 本地的 AuthError，而非 crab_common::Error
-// （common 层不包含 Auth 变体，Auth 错误定义在 crates/auth/src/error.rs）
+// keychain.rs -- Uses the auth crate's local AuthError, not crab_common::Error
+// (the common layer does not include Auth variants; Auth errors are defined in crates/auth/src/error.rs)
 use crate::error::AuthError;
 
 pub fn get(service: &str, key: &str) -> Result<String, AuthError> {
@@ -1260,7 +1267,7 @@ pub fn set(service: &str, key: &str, value: &str) -> Result<(), AuthError> {
 }
 ```
 
-**外部依赖**：`keyring`, `oauth2`, `reqwest`, `crab-config`, `crab-common`
+**External Dependencies**: `keyring`, `oauth2`, `reqwest`, `crab-config`, `crab-common`
 
 **Feature Flags**
 
@@ -1272,59 +1279,60 @@ bedrock = ["aws-sdk-bedrockruntime", "aws-config"]
 
 ---
 
-### 6.5 `crates/api/` — LLM API 客户端
+### 6.5 `crates/api/` -- LLM API Client
 
-**职责**：封装所有 LLM API 通信，两个独立 client 分别实现两大 API 标准（对标 CC `src/services/api/`）
+**Responsibility**: Encapsulate all LLM API communication with two independent clients implementing the two major API standards (corresponds to CC `src/services/api/`)
 
-**核心设计**：不使用统一 trait 抽象——Anthropic Messages API 和 OpenAI Chat Completions API
-差异过大（消息格式、流式事件粒度、工具调用协议），强行统一会产生"最小公约数"陷阱，
-丢失 provider 特有能力（Anthropic 的 prompt cache / extended thinking，OpenAI 的 logprobs / structured output）。
+**Core Design**: No unified trait abstraction is used -- the Anthropic Messages API and OpenAI Chat Completions API
+differ too much (message format, streaming event granularity, tool call protocol). Forcing unification would create a
+"lowest common denominator" trap, losing provider-specific capabilities (Anthropic's prompt cache / extended thinking,
+OpenAI's logprobs / structured output).
 
-采用**两个完全独立的 client + 枚举派发**：
-- `anthropic/` — 完整的 Anthropic Messages API client，有自己的类型、SSE 解析、认证
-- `openai/` — 完整的 OpenAI Chat Completions client，覆盖所有兼容端点（Ollama/DeepSeek/vLLM/Gemini 等）
-- `LlmBackend` 枚举 — 编译时确定，零动态派发，穷举 match 保证不遗漏
+Uses **two fully independent clients + enum dispatch**:
+- `anthropic/` -- Complete Anthropic Messages API client with its own types, SSE parsing, authentication
+- `openai/` -- Complete OpenAI Chat Completions client, covering all compatible endpoints (Ollama/DeepSeek/vLLM/Gemini etc.)
+- `LlmBackend` enum -- Determined at compile time, zero dynamic dispatch, exhaustive match ensures nothing is missed
 
-agent/session 层通过 `LlmBackend` 枚举交互，内部统一的 `MessageRequest` / `StreamEvent`
-是 Crab Code 自己的数据模型，不是 API 抽象。各 client 内部独立完成格式转换。
+The agent/session layer interacts through the `LlmBackend` enum. The internal unified `MessageRequest` / `StreamEvent`
+are Crab Code's own data model, not an API abstraction. Each client independently handles format conversion internally.
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
-├── lib.rs                // LlmBackend 枚举 + create_backend()
-├── types.rs              // 内部统一的请求/响应/事件类型（Crab Code 自有格式）
-├── anthropic/            // 完整独立的 Anthropic Messages API client
+├── lib.rs                // LlmBackend enum + create_backend()
+├── types.rs              // Internal unified request/response/event types (Crab Code's own format)
+├── anthropic/            // Fully independent Anthropic Messages API client
 │   ├── mod.rs
 │   ├── client.rs         // HTTP + SSE + retry
-│   ├── types.rs          // Anthropic API 原生请求/响应类型
-│   └── convert.rs        // Anthropic 类型 ↔ 内部类型
-├── openai/               // 完整独立的 OpenAI Chat Completions client
+│   ├── types.rs          // Anthropic API native request/response types
+│   └── convert.rs        // Anthropic types <-> internal types
+├── openai/               // Fully independent OpenAI Chat Completions client
 │   ├── mod.rs
 │   ├── client.rs         // HTTP + SSE + retry
-│   ├── types.rs          // OpenAI API 原生请求/响应类型
-│   └── convert.rs        // OpenAI 类型 ↔ 内部类型
-├── bedrock.rs            // AWS Bedrock 适配 (feature = "bedrock"，包装 anthropic client)
-├── vertex.rs             // Google Vertex 适配 (feature = "vertex"，包装 anthropic client)
-├── rate_limit.rs         // 共享的速率限制、指数退避
-├── cache.rs              // Prompt cache 管理 (仅 Anthropic 路径使用)
+│   ├── types.rs          // OpenAI API native request/response types
+│   └── convert.rs        // OpenAI types <-> internal types
+├── bedrock.rs            // AWS Bedrock adapter (feature = "bedrock", wraps anthropic client)
+├── vertex.rs             // Google Vertex adapter (feature = "vertex", wraps anthropic client)
+├── rate_limit.rs         // Shared rate limiting, exponential backoff
+├── cache.rs              // Prompt cache management (Anthropic path only)
 ├── error.rs
-├── streaming.rs          // 流式工具调用解析（部分工具参数流式输入）
-├── fallback.rs           // 多模型回退链（主模型失败→备用模型）
-├── capabilities.rs       // 模型能力协商与发现
-├── context_optimizer.rs  // 上下文窗口优化 + 智能截断策略
-├── retry_strategy.rs     // 增强重试策略（退避 + jitter）
-└── error_classifier.rs   // 错误分类（可重试/不可重试/速率限制）
+├── streaming.rs          // Streaming tool call parsing (partial tool argument streaming)
+├── fallback.rs           // Multi-model fallback chain (primary fails -> backup model)
+├── capabilities.rs       // Model capability negotiation and discovery
+├── context_optimizer.rs  // Context window optimization + smart truncation strategy
+├── retry_strategy.rs     // Enhanced retry strategy (backoff + jitter)
+└── error_classifier.rs   // Error classification (retryable/non-retryable/rate-limited)
 ```
 
-**核心接口**
+**Core Interface**
 
 ```rust
-// types.rs — Crab Code 内部统一类型（不是 API 抽象，是自有数据模型）
+// types.rs -- Crab Code internal unified types (not an API abstraction, but its own data model)
 use crab_core::message::Message;
 use crab_core::model::{ModelId, TokenUsage};
 
-/// 内部消息请求 — 各 client 内部转为自己的 API 格式
+/// Internal message request -- each client converts it to its own API format internally
 #[derive(Debug, Clone)]
 pub struct MessageRequest<'a> {
     pub model: ModelId,
@@ -1335,7 +1343,7 @@ pub struct MessageRequest<'a> {
     pub temperature: Option<f32>,
 }
 
-/// 内部统一流式事件 — 各 client 将自己的 SSE 格式映射到此枚举
+/// Internal unified stream event -- each client maps its own SSE format to this enum
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     MessageStart { id: String },
@@ -1349,24 +1357,24 @@ pub enum StreamEvent {
 ```
 
 ```rust
-// lib.rs — 枚举派发（不用 dyn trait，编译时确定，零动态派发开销）
+// lib.rs -- Enum dispatch (no dyn trait, determined at compile time, zero dynamic dispatch overhead)
 use futures::stream::{self, Stream, StreamExt};
 use either::Either;
 
-/// LLM 后端枚举 — provider 数量有限（2 个标准 + 2 个云变体），枚举完全够用
-/// 如果将来需要第三方扩展 provider，可在 Phase 2 通过 WASM 插件系统支持
+/// LLM backend enum -- provider count is limited (2 standards + 2 cloud variants), enum is sufficient
+/// If third-party provider extension is needed in the future, WASM plugin system can support it in Phase 2
 pub enum LlmBackend {
     Anthropic(anthropic::AnthropicClient),
     OpenAi(openai::OpenAiClient),
-    // Bedrock 和 Vertex 本质是 Anthropic API 的不同入口，包装 AnthropicClient
+    // Bedrock and Vertex are essentially different entry points for the Anthropic API, wrapping AnthropicClient
     #[cfg(feature = "bedrock")]
-    Bedrock(anthropic::AnthropicClient),  // 不同 auth + base_url
+    Bedrock(anthropic::AnthropicClient),  // Different auth + base_url
     #[cfg(feature = "vertex")]
-    Vertex(anthropic::AnthropicClient),   // 不同 auth + base_url
+    Vertex(anthropic::AnthropicClient),   // Different auth + base_url
 }
 
 impl LlmBackend {
-    /// 流式发送消息
+    /// Stream a message
     pub fn stream_message<'a>(
         &'a self,
         req: types::MessageRequest<'a>,
@@ -1374,11 +1382,11 @@ impl LlmBackend {
         match self {
             Self::Anthropic(c) => Either::Left(c.stream(req)),
             Self::OpenAi(c) => Either::Right(c.stream(req)),
-            // Bedrock/Vertex 走 Anthropic 路径
+            // Bedrock/Vertex use the Anthropic path
         }
     }
 
-    /// 非流式发送（用于压缩等轻量任务）
+    /// Non-streaming send (used for lightweight tasks like compaction)
     pub async fn send_message(
         &self,
         req: types::MessageRequest<'_>,
@@ -1389,7 +1397,7 @@ impl LlmBackend {
         }
     }
 
-    /// Provider 名称
+    /// Provider name
     pub fn name(&self) -> &str {
         match self {
             Self::Anthropic(_) => "anthropic",
@@ -1398,7 +1406,7 @@ impl LlmBackend {
     }
 }
 
-/// 根据配置构造后端
+/// Construct backend from configuration
 pub fn create_backend(settings: &crab_config::Settings) -> LlmBackend {
     match settings.api_provider.as_deref() {
         Some("openai") | Some("ollama") | Some("deepseek") => {
@@ -1419,7 +1427,7 @@ pub fn create_backend(settings: &crab_config::Settings) -> LlmBackend {
 ```
 
 ```rust
-// anthropic/client.rs — Anthropic Messages API (完整独立实现)
+// anthropic/client.rs -- Anthropic Messages API (fully independent implementation)
 pub struct AnthropicClient {
     http: reqwest::Client,
     base_url: String,
@@ -1437,19 +1445,19 @@ impl AnthropicClient {
         Self { http, base_url: base_url.to_string(), auth }
     }
 
-    /// 流式调用 — POST /v1/messages, stream: true
+    /// Streaming call -- POST /v1/messages, stream: true
     pub fn stream<'a>(
         &'a self,
         req: crate::types::MessageRequest<'a>,
     ) -> impl Stream<Item = crab_common::Result<crate::types::StreamEvent>> + Send + 'a {
-        // 1. MessageRequest → Anthropic 原生请求 (self::types::AnthropicRequest)
-        // 2. POST /v1/messages, 设置 stream: true
-        // 3. 解析 Anthropic SSE: message_start / content_block_delta / message_stop
-        // 4. self::convert::to_stream_event() 映射为内部 StreamEvent
+        // 1. MessageRequest -> Anthropic native request (self::types::AnthropicRequest)
+        // 2. POST /v1/messages, set stream: true
+        // 3. Parse Anthropic SSE: message_start / content_block_delta / message_stop
+        // 4. self::convert::to_stream_event() maps to internal StreamEvent
         // ...
     }
 
-    /// 非流式调用
+    /// Non-streaming call
     pub async fn send(
         &self,
         req: crate::types::MessageRequest<'_>,
@@ -1460,10 +1468,10 @@ impl AnthropicClient {
 ```
 
 ```rust
-// openai/client.rs — OpenAI Chat Completions API (完整独立实现)
+// openai/client.rs -- OpenAI Chat Completions API (fully independent implementation)
 //
-// 覆盖所有兼容 /v1/chat/completions 的后端:
-// OpenAI、Ollama、DeepSeek、vLLM、TGI、LiteLLM、Azure OpenAI、Google Gemini (OpenAI 兼容端点)
+// Covers all backends compatible with /v1/chat/completions:
+// OpenAI, Ollama, DeepSeek, vLLM, TGI, LiteLLM, Azure OpenAI, Google Gemini (OpenAI-compatible endpoint)
 pub struct OpenAiClient {
     http: reqwest::Client,
     base_url: String,
@@ -1481,22 +1489,22 @@ impl OpenAiClient {
         Self { http, base_url: base_url.to_string(), api_key }
     }
 
-    /// 流式调用 — POST /v1/chat/completions, stream: true
+    /// Streaming call -- POST /v1/chat/completions, stream: true
     pub fn stream<'a>(
         &'a self,
         req: crate::types::MessageRequest<'a>,
     ) -> impl Stream<Item = crab_common::Result<crate::types::StreamEvent>> + Send + 'a {
-        // 1. MessageRequest → OpenAI 原生请求 (self::types::ChatCompletionRequest)
-        //    - system prompt → messages[0].role="system"
-        //    - ContentBlock::ToolUse → tool_calls 数组
-        //    - ContentBlock::ToolResult → role="tool" 消息
+        // 1. MessageRequest -> OpenAI native request (self::types::ChatCompletionRequest)
+        //    - system prompt -> messages[0].role="system"
+        //    - ContentBlock::ToolUse -> tool_calls array
+        //    - ContentBlock::ToolResult -> role="tool" message
         // 2. POST /v1/chat/completions, stream: true
-        // 3. 解析 OpenAI SSE: data: {"choices":[{"delta":...}]}
-        // 4. self::convert::to_stream_event() 映射为内部 StreamEvent
+        // 3. Parse OpenAI SSE: data: {"choices":[{"delta":...}]}
+        // 4. self::convert::to_stream_event() maps to internal StreamEvent
         // ...
     }
 
-    /// 非流式调用
+    /// Non-streaming call
     pub async fn send(
         &self,
         req: crate::types::MessageRequest<'_>,
@@ -1506,20 +1514,20 @@ impl OpenAiClient {
 }
 ```
 
-**两大 API 标准核心差异**（各 client 内部 `convert.rs` 处理，不外泄给上层）
+**Key Differences Between the Two API Standards** (handled by each client's `convert.rs` internally, not exposed to upper layers)
 
-| 维度 | Anthropic Messages API | OpenAI Chat Completions API |
-|------|----------------------|---------------------------|
-| system prompt | 独立 `system` 字段 | `messages[0].role="system"` |
-| 消息内容 | `content: Vec<ContentBlock>` | `content: string` |
-| 工具调用 | `ContentBlock::ToolUse` | `tool_calls` 数组 |
-| 工具结果 | `ContentBlock::ToolResult` | `role="tool"` 消息 |
-| 流式格式 | `content_block_delta` 事件 | `choices[].delta` |
-| token 统计 | `input_tokens` / `output_tokens` | `prompt_tokens` / `completion_tokens` |
-| 特有能力 | prompt cache, extended thinking | logprobs, structured output |
+| Dimension | Anthropic Messages API | OpenAI Chat Completions API |
+|-----------|----------------------|---------------------------|
+| system prompt | Separate `system` field | `messages[0].role="system"` |
+| Message content | `content: Vec<ContentBlock>` | `content: string` |
+| Tool calls | `ContentBlock::ToolUse` | `tool_calls` array |
+| Tool results | `ContentBlock::ToolResult` | `role="tool"` message |
+| Streaming format | `content_block_delta` events | `choices[].delta` |
+| Token stats | `input_tokens` / `output_tokens` | `prompt_tokens` / `completion_tokens` |
+| Provider-specific | prompt cache, extended thinking | logprobs, structured output |
 
 ```rust
-// rate_limit.rs — 共享的速率限制与退避
+// rate_limit.rs -- Shared rate limiting and backoff
 use std::time::Duration;
 
 pub struct RateLimiter {
@@ -1528,7 +1536,7 @@ pub struct RateLimiter {
     pub reset_at: std::time::Instant,
 }
 
-/// 指数退避策略
+/// Exponential backoff strategy
 pub fn backoff_delay(attempt: u32) -> Duration {
     let base = Duration::from_millis(500);
     let max = Duration::from_secs(30);
@@ -1537,7 +1545,7 @@ pub fn backoff_delay(attempt: u32) -> Duration {
 }
 ```
 
-**外部依赖**：`reqwest`, `tokio`, `serde`, `eventsource-stream`, `futures`, `either`, `crab-core`, `crab-auth`, `crab-common`
+**External Dependencies**: `reqwest`, `tokio`, `serde`, `eventsource-stream`, `futures`, `either`, `crab-core`, `crab-auth`, `crab-common`
 
 **Feature Flags**
 
@@ -1551,53 +1559,53 @@ proxy = ["reqwest/socks"]
 
 ---
 
-### 6.6 `crates/mcp/` — MCP façade
+### 6.6 `crates/mcp/` -- MCP Facade
 
-**职责**：Crab 自己的 MCP façade 与协议适配层（对标 CC `src/services/mcp/`）
+**Responsibility**: Crab's own MCP facade and protocol adaptation layer (corresponds to CC `src/services/mcp/`)
 
-MCP 是让 LLM 连接外部工具/资源的开放协议，基于 JSON-RPC 2.0。  
-`crab-mcp` 不把底层 SDK 直接暴露给 `cli` / `tools` / `session`，而是在 crate 内部吸收官方 SDK，实现稳定的 Crab 侧接口：`McpClient`、`McpManager`、`ToolRegistryHandler`、`mcp__<server>__<tool>` 命名与配置发现逻辑都留在这一层。
+MCP is an open protocol that lets LLMs connect to external tools/resources, based on JSON-RPC 2.0.
+`crab-mcp` does not directly expose the underlying SDK to `cli` / `tools` / `session`; instead, it absorbs the official SDK internally and exposes a stable Crab-side interface: `McpClient`, `McpManager`, `ToolRegistryHandler`, `mcp__<server>__<tool>` naming, and config discovery logic all live in this layer.
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── protocol.rs             // Crab 自己的 MCP façade 类型
-├── client.rs               // MCP 客户端 façade（内部可委托 rmcp）
-├── server.rs               // MCP 服务端 façade（暴露自身工具给外部）
-├── manager.rs              // 生命周期管理，多 server 协调
+├── protocol.rs             // Crab's own MCP facade types
+├── client.rs               // MCP client facade (internally may delegate to rmcp)
+├── server.rs               // MCP server facade (exposes own tools to external callers)
+├── manager.rs              // Lifecycle management, multi-server coordination
 ├── transport/
-│   ├── mod.rs              // 兼容用 Transport trait / 本地传输抽象
-│   ├── stdio.rs            // legacy stdin/stdout 传输
-│   └── ws.rs               // WebSocket 传输 (feature = "ws")
-├── resource.rs             // Resource 缓存、模板
-├── discovery.rs            // Server 自动发现
-├── sse_server.rs           // SSE server transport（crab 作为 MCP server）
-├── sampling.rs             // MCP sampling（服务端请求 LLM 推理）
-├── roots.rs                // MCP roots（工作区根目录声明）
-├── logging.rs              // MCP logging 协议（结构化日志消息）
-├── handshake.rs            // 初始化握手流程（initialize/initialized）
-├── negotiation.rs          // 能力协商（客户端/服务端能力集合）
-├── capability.rs           // 能力声明类型（resources/tools/prompts/sampling）
-├── notification.rs         // 服务端通知推送（工具变更/资源更新）
-├── progress.rs             // 进度报告（长时间工具执行）
-├── cancellation.rs         // 请求取消机制（$/cancelRequest）
-└── health.rs               // 健康检查 + 心跳（自动重连）
+│   ├── mod.rs              // Compatible Transport trait / local transport abstraction
+│   ├── stdio.rs            // Legacy stdin/stdout transport
+│   └── ws.rs               // WebSocket transport (feature = "ws")
+├── resource.rs             // Resource caching, templates
+├── discovery.rs            // Server auto-discovery
+├── sse_server.rs           // SSE server transport (crab as MCP server)
+├── sampling.rs             // MCP sampling (server requests LLM inference)
+├── roots.rs                // MCP roots (workspace root directory declaration)
+├── logging.rs              // MCP logging protocol (structured log messages)
+├── handshake.rs            // Initialization handshake flow (initialize/initialized)
+├── negotiation.rs          // Capability negotiation (client/server capability sets)
+├── capability.rs           // Capability declaration types (resources/tools/prompts/sampling)
+├── notification.rs         // Server notification push (tool changes/resource updates)
+├── progress.rs             // Progress reporting (long-running tool execution)
+├── cancellation.rs         // Request cancellation mechanism ($/cancelRequest)
+└── health.rs               // Health check + heartbeat (auto-reconnect)
 ```
 
-**边界原则**
+**Boundary Principles**
 
-- `crab-mcp` 对外暴露的是 Crab 自己的 façade 类型，不是 `rmcp` 原生类型
-- client 侧 stdio / HTTP 连接优先复用官方 `rmcp`
-- 配置层只保留 `stdio` / `http` / `ws` 三种 transport
-- 上层 crate 只依赖 `crab_mcp::*`，不直接依赖底层 MCP SDK
-- `protocol.rs` 继续承载 Crab 侧稳定数据结构，避免 SDK 类型扩散
+- `crab-mcp` exposes Crab's own facade types, not raw `rmcp` types
+- Client-side stdio / HTTP connections preferably reuse the official `rmcp`
+- The config layer only retains `stdio` / `http` / `ws` as transport options
+- Upper-layer crates only depend on `crab_mcp::*`; they never directly depend on the underlying MCP SDK
+- `protocol.rs` continues to carry Crab-side stable data structures, preventing SDK type leakage
 
-**核心类型**
+**Core Types**
 
 ```rust
-// protocol.rs — JSON-RPC 2.0 消息
+// protocol.rs -- JSON-RPC 2.0 messages
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -1626,7 +1634,7 @@ pub struct JsonRpcError {
     pub data: Option<Value>,
 }
 
-/// MCP 工具定义
+/// MCP tool definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolDef {
     pub name: String,
@@ -1634,7 +1642,7 @@ pub struct McpToolDef {
     pub input_schema: Value,
 }
 
-/// MCP 资源定义
+/// MCP resource definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpResource {
     pub uri: String,
@@ -1645,23 +1653,23 @@ pub struct McpResource {
 ```
 
 ```rust
-// transport/mod.rs — 传输抽象
-// 返回 Pin<Box<dyn Future>> 而非原生 async fn，因为需要 dyn Trait 的 object safety
-// （Box<dyn Transport> 要求 trait 是 object-safe，RPITIT 的 impl Future 不满足此要求）
+// transport/mod.rs -- Transport abstraction
+// Returns Pin<Box<dyn Future>> instead of native async fn because dyn Trait requires object safety
+// (Box<dyn Transport> requires the trait to be object-safe; RPITIT's impl Future does not satisfy this)
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 use std::future::Future;
 use std::pin::Pin;
 
 pub trait Transport: Send + Sync {
-    /// 发送请求，等待响应
+    /// Send a request and wait for a response
     fn send(&self, req: JsonRpcRequest) -> Pin<Box<dyn Future<Output = crab_common::Result<JsonRpcResponse>> + Send + '_>>;
-    /// 发送通知（无需响应）
+    /// Send a notification (no response expected)
     fn notify(&self, method: &str, params: serde_json::Value) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>>;
-    /// 关闭传输
+    /// Close the transport
     fn close(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>>;
 }
 
-// ─── 传输实现示例 ───
+// --- Transport implementation example ---
 // impl Transport for StdioTransport {
 //     fn send(&self, req: JsonRpcRequest) -> Pin<Box<dyn Future<Output = crab_common::Result<JsonRpcResponse>> + Send + '_>> {
 //         Box::pin(async move {
@@ -1669,12 +1677,12 @@ pub trait Transport: Send + Sync {
 //             self.read_response().await
 //         })
 //     }
-//     // ... notify, close 同理
+//     // ... notify, close similarly
 // }
 ```
 
 ```rust
-// client.rs — MCP 客户端 façade
+// client.rs -- MCP client facade
 use crate::protocol::{McpToolDef, ServerCapabilities, ServerInfo};
 
 pub struct McpClient {
@@ -1685,13 +1693,13 @@ pub struct McpClient {
 }
 
 impl McpClient {
-    /// 通过官方 SDK 连接 stdio MCP server
+    /// Connect to a stdio MCP server via the official SDK
     pub async fn connect_stdio(...) -> crab_common::Result<Self> { /* ... */ }
 
-    /// 通过官方 SDK 连接 HTTP MCP endpoint
+    /// Connect to an HTTP MCP endpoint via the official SDK
     pub async fn connect_streamable_http(...) -> crab_common::Result<Self> { /* ... */ }
 
-    /// 调用 MCP 工具
+    /// Call an MCP tool
     pub async fn call_tool(
         &self,
         name: &str,
@@ -1700,7 +1708,7 @@ impl McpClient {
         // ...
     }
 
-    /// 读取 MCP 资源
+    /// Read an MCP resource
     pub async fn read_resource(&self, uri: &str) -> crab_common::Result<String> {
         // ...
     }
@@ -1711,7 +1719,7 @@ impl McpClient {
 }
 ```
 
-**外部依赖**：`tokio`, `serde`, `serde_json`, `rmcp`, `crab-core`, `crab-common`
+**External Dependencies**: `tokio`, `serde`, `serde_json`, `rmcp`, `crab-core`, `crab-common`
 
 **Feature Flags**
 
@@ -1723,28 +1731,28 @@ ws = ["tokio-tungstenite"]
 
 ---
 
-### 6.7 `crates/fs/` — 文件系统操作
+### 6.7 `crates/fs/` -- File System Operations
 
-**职责**：所有文件系统相关操作的封装（对标 CC 中 GlobTool/GrepTool/FileReadTool 底层逻辑）
+**Responsibility**: Encapsulate all file system related operations (corresponds to the underlying logic of GlobTool/GrepTool/FileReadTool in CC)
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── glob.rs               // globset 封装
-├── grep.rs               // ripgrep 内核集成
-├── gitignore.rs          // .gitignore 规则解析与过滤
-├── watch.rs              // notify 文件监听（含防抖 + 批量聚合）
-├── lock.rs               // 文件锁 (fd-lock)
-├── diff.rs               // similar 封装，edit/patch 生成
-└── symlink.rs            // 符号链接处理 + 安全路径解析（防逃逸）
+├── glob.rs               // globset wrapper
+├── grep.rs               // ripgrep core integration
+├── gitignore.rs          // .gitignore rule parsing and filtering
+├── watch.rs              // notify file watching (with debouncing + batch aggregation)
+├── lock.rs               // File locking (fd-lock)
+├── diff.rs               // similar wrapper, edit/patch generation
+└── symlink.rs            // Symbolic link handling + secure path resolution (escape prevention)
 ```
 
-**核心接口**
+**Core Interface**
 
 ```rust
-// glob.rs — 文件模式匹配
+// glob.rs -- File pattern matching
 use std::path::{Path, PathBuf};
 
 pub struct GlobResult {
@@ -1752,18 +1760,18 @@ pub struct GlobResult {
     pub truncated: bool,
 }
 
-/// 在目录中按 glob 模式搜索文件
+/// Search files in a directory by glob pattern
 pub fn find_files(
     root: &Path,
     pattern: &str,
     limit: usize,
 ) -> crab_common::Result<GlobResult> {
-    // 使用 ignore crate（自动尊重 .gitignore）
-    // 按修改时间排序
+    // Uses ignore crate (automatically respects .gitignore)
+    // Sorted by modification time
     // ...
 }
 
-// grep.rs — 内容搜索
+// grep.rs -- Content search
 pub struct GrepMatch {
     pub path: PathBuf,
     pub line_number: usize,
@@ -1779,57 +1787,57 @@ pub struct GrepOptions {
     pub context_lines: usize,
 }
 
-/// 在目录中按正则搜索内容
+/// Search content in a directory by regex
 pub fn search(opts: &GrepOptions) -> crab_common::Result<Vec<GrepMatch>> {
-    // 使用 grep-regex + grep-searcher
-    // 自动尊重 .gitignore
+    // Uses grep-regex + grep-searcher
+    // Automatically respects .gitignore
     // ...
 }
 
-// diff.rs — Diff 生成
+// diff.rs -- Diff generation
 pub struct EditResult {
     pub old_content: String,
     pub new_content: String,
     pub unified_diff: String,
 }
 
-/// 基于 old_string → new_string 的精确替换
+/// Exact replacement based on old_string -> new_string
 pub fn apply_edit(
     file_content: &str,
     old_string: &str,
     new_string: &str,
 ) -> crab_common::Result<EditResult> {
-    // 使用 similar 生成 unified diff
+    // Uses similar to generate unified diff
     // ...
 }
 ```
 
-**外部依赖**：`globset`, `grep-regex`, `grep-searcher`, `ignore`, `notify`, `similar`, `fd-lock`, `crab-common`
+**External Dependencies**: `globset`, `grep-regex`, `grep-searcher`, `ignore`, `notify`, `similar`, `fd-lock`, `crab-common`
 
-**Feature Flags**：无
+**Feature Flags**: None
 
 ---
 
-### 6.8 `crates/process/` — 子进程管理
+### 6.8 `crates/process/` -- Subprocess Management
 
-**职责**：子进程生命周期管理（对标 CC BashTool 底层执行逻辑）
+**Responsibility**: Subprocess lifecycle management (corresponds to the underlying execution logic of CC's BashTool)
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── spawn.rs              // 子进程启动、环境继承
-├── pty.rs                // 伪终端分配 (feature = "pty")
-├── tree.rs               // 进程树 kill (sysinfo)
-├── signal.rs             // 信号处理、优雅关闭
-└── sandbox.rs            // 沙箱策略 (feature = "sandbox")
+├── spawn.rs              // Subprocess launching, environment inheritance
+├── pty.rs                // Pseudo-terminal allocation (feature = "pty")
+├── tree.rs               // Process tree kill (sysinfo)
+├── signal.rs             // Signal handling, graceful shutdown
+└── sandbox.rs            // Sandbox policy (feature = "sandbox")
 ```
 
-**核心接口**
+**Core Interface**
 
 ```rust
-// spawn.rs — 子进程执行
+// spawn.rs -- Subprocess execution
 use std::path::Path;
 use std::time::Duration;
 
@@ -1849,17 +1857,17 @@ pub struct SpawnOutput {
     pub timed_out: bool,
 }
 
-/// 执行命令并等待结果
+/// Execute a command and wait for the result
 pub async fn run(opts: SpawnOptions) -> crab_common::Result<SpawnOutput> {
     use tokio::process::Command;
-    // 1. 构造 Command
-    // 2. 设置 working_dir, env
-    // 3. 如有 timeout 则 tokio::time::timeout 包裹
-    // 4. 收集 stdout/stderr
+    // 1. Build Command
+    // 2. Set working_dir, env
+    // 3. Wrap with tokio::time::timeout if timeout is set
+    // 4. Collect stdout/stderr
     // ...
 }
 
-/// 执行命令并流式返回输出
+/// Execute a command and stream output
 pub async fn run_streaming(
     opts: SpawnOptions,
     on_stdout: impl Fn(&str) + Send,
@@ -1868,18 +1876,18 @@ pub async fn run_streaming(
     // ...
 }
 
-// tree.rs — 进程树管理
-/// 杀死进程及其所有子进程
+// tree.rs -- Process tree management
+/// Kill a process and all its child processes
 pub fn kill_tree(pid: u32) -> crab_common::Result<()> {
     use sysinfo::{Pid, System};
     let mut sys = System::new();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    // 递归查找子进程并 kill
+    // Recursively find child processes and kill
     // ...
 }
 
-// signal.rs — 信号处理
-/// 注册 Ctrl+C / SIGTERM 处理
+// signal.rs -- Signal handling
+/// Register Ctrl+C / SIGTERM handler
 pub fn register_shutdown_handler(
     on_shutdown: impl Fn() + Send + 'static,
 ) {
@@ -1890,7 +1898,7 @@ pub fn register_shutdown_handler(
 }
 ```
 
-**外部依赖**：`tokio` (process, signal), `sysinfo`, `crab-common`
+**External Dependencies**: `tokio` (process, signal), `sysinfo`, `crab-common`
 
 **Feature Flags**
 
@@ -1903,52 +1911,52 @@ sandbox = []
 
 ---
 
-### 6.9 `crates/tools/` — 工具系统
+### 6.9 `crates/tools/` -- Tool System
 
-**职责**：工具注册、查找、执行，包含所有内置工具（对标 CC `src/tools/`）
+**Responsibility**: Tool registration, lookup, execution, including all built-in tools (corresponds to CC `src/tools/`)
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── registry.rs       // ToolRegistry: 注册、查找、schema 生成
-├── executor.rs       // 带权限检查的统一执行器
-├── permission.rs     // 工具权限检查逻辑
+├── registry.rs       // ToolRegistry: registration, lookup, schema generation
+├── executor.rs       // Unified executor with permission checking
+├── permission.rs     // Tool permission checking logic
 │
-├── builtin/          // 内置工具
+├── builtin/          // Built-in tools
 │   ├── mod.rs        // register_all_builtins()
-│   ├── bash.rs       // BashTool — shell 命令执行
-│   ├── read.rs       // ReadTool — 文件读取
-│   ├── edit.rs       // EditTool — diff-based 文件编辑
-│   ├── write.rs      // WriteTool — 文件创建/覆写
-│   ├── glob.rs       // GlobTool — 文件模式匹配
-│   ├── grep.rs       // GrepTool — 内容搜索
-│   ├── web_search.rs // WebSearchTool — 网络搜索
-│   ├── web_fetch.rs  // WebFetchTool — 网页抓取
-│   ├── agent.rs      // AgentTool — 子 Agent 启动
-│   ├── notebook.rs   // NotebookTool — Jupyter 支持
+│   ├── bash.rs       // BashTool -- shell command execution
+│   ├── read.rs       // ReadTool -- file reading
+│   ├── edit.rs       // EditTool -- diff-based file editing
+│   ├── write.rs      // WriteTool -- file creation/overwrite
+│   ├── glob.rs       // GlobTool -- file pattern matching
+│   ├── grep.rs       // GrepTool -- content search
+│   ├── web_search.rs // WebSearchTool -- web search
+│   ├── web_fetch.rs  // WebFetchTool -- web page fetching
+│   ├── agent.rs      // AgentTool -- sub-Agent launching
+│   ├── notebook.rs   // NotebookTool -- Jupyter support
 │   ├── task.rs       // TaskCreate/Get/List/Update/Stop/Output
-│   ├── mcp_tool.rs   // MCP 工具的 Tool trait 适配器
-│   ├── lsp.rs        // LSP 集成工具
-│   ├── worktree.rs   // Git Worktree 工具
-│   ├── ask_user.rs   // 用户交互工具
-│   ├── image_read.rs // 图片读取工具
-│   ├── read_enhanced.rs // 增强文件读取
-│   ├── bash_security.rs // Bash 安全检查
-│   ├── plan_mode.rs  // 计划模式工具
-│   ├── plan_file.rs  // 计划文件操作
-│   ├── plan_approval.rs // 计划审批工具
-│   ├── web_cache.rs  // 网页缓存
-│   └── web_formatter.rs // 网页格式化
+│   ├── mcp_tool.rs   // MCP tool Tool trait adapter
+│   ├── lsp.rs        // LSP integration tool
+│   ├── worktree.rs   // Git Worktree tool
+│   ├── ask_user.rs   // User interaction tool
+│   ├── image_read.rs // Image reading tool
+│   ├── read_enhanced.rs // Enhanced file reading
+│   ├── bash_security.rs // Bash security checks
+│   ├── plan_mode.rs  // Plan mode tool
+│   ├── plan_file.rs  // Plan file operations
+│   ├── plan_approval.rs // Plan approval tool
+│   ├── web_cache.rs  // Web page cache
+│   └── web_formatter.rs // Web page formatter
 │
-└── schema.rs         // 工具 schema → API tools 参数转换
+└── schema.rs         // Tool schema -> API tools parameter conversion
 ```
 
-**核心类型**
+**Core Types**
 
 ```rust
-// registry.rs — 工具注册表
+// registry.rs -- Tool registry
 use crab_core::tool::Tool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -1964,17 +1972,17 @@ impl ToolRegistry {
         }
     }
 
-    /// 注册工具
+    /// Register a tool
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.name().to_string(), tool);
     }
 
-    /// 按名称查找
+    /// Find by name
     pub fn get(&self, name: &str) -> Option<&Arc<dyn Tool>> {
         self.tools.get(name)
     }
 
-    /// 获取所有工具的 JSON Schema（用于 API 请求）
+    /// Get JSON Schema for all tools (for API requests)
     pub fn tool_schemas(&self) -> Vec<serde_json::Value> {
         self.tools
             .values()
@@ -1988,7 +1996,7 @@ impl ToolRegistry {
             .collect()
     }
 
-    /// 列出所有工具名
+    /// List all tool names
     pub fn tool_names(&self) -> Vec<&str> {
         self.tools.keys().map(|s| s.as_str()).collect()
     }
@@ -1996,7 +2004,7 @@ impl ToolRegistry {
 ```
 
 ```rust
-// executor.rs — 统一执行器
+// executor.rs -- Unified executor
 use crab_core::tool::{Tool, ToolContext, ToolOutput};
 use crate::registry::ToolRegistry;
 use std::sync::Arc;
@@ -2010,21 +2018,21 @@ impl ToolExecutor {
         Self { registry }
     }
 
-    /// 执行工具（含权限检查）
+    /// Execute a tool (with permission checking)
     ///
-    /// **权限决策矩阵** (mode x tool_type x path_scope):
+    /// **Permission decision matrix** (mode x tool_type x path_scope):
     ///
-    /// | PermissionMode | read_only | write(项目内) | write(项目外) | dangerous | mcp_external | agent_spawn | denied_list |
-    /// |----------------|-----------|--------------|--------------|-----------|-------------|-------------|-------------|
-    /// | Default        | Allow     | **Prompt**   | **Prompt**   | **Prompt**| **Prompt**  | **Prompt**  | **Deny**    |
-    /// | TrustProject   | Allow     | Allow        | **Prompt**   | **Prompt**| **Prompt**  | Allow       | **Deny**    |
-    /// | Dangerously    | Allow     | Allow        | Allow        | Allow     | Allow       | Allow       | **Deny**    |
+    /// | PermissionMode | read_only | write(in project) | write(outside project) | dangerous | mcp_external | agent_spawn | denied_list |
+    /// |----------------|-----------|-------------------|----------------------|-----------|-------------|-------------|-------------|
+    /// | Default        | Allow     | **Prompt**        | **Prompt**           | **Prompt**| **Prompt**  | **Prompt**  | **Deny**    |
+    /// | TrustProject   | Allow     | Allow             | **Prompt**           | **Prompt**| **Prompt**  | Allow       | **Deny**    |
+    /// | Dangerously    | Allow     | Allow             | Allow                | Allow     | Allow       | Allow       | **Deny**    |
     ///
-    /// - denied_list 任何模式下都拒绝（来自 settings.json `deniedTools`）
-    /// - allowed_list 匹配则跳过普通 Prompt（但不免除 dangerous 检测）
-    /// - dangerous = BashTool 含 `rm -rf`/`sudo`/`curl|sh`/`chmod`/`eval` 等高危模式
-    /// - mcp_external: 外部 MCP server 提供的工具，Default/TrustProject 都需 Prompt（不可信来源）
-    /// - agent_spawn: 子 Agent 创建，TrustProject 信任自动放行；子 Agent 继承父 Agent 的 permission_mode
+    /// - denied_list is denied in all modes (from settings.json `deniedTools`)
+    /// - allowed_list match skips normal Prompt (but does not exempt dangerous detection)
+    /// - dangerous = BashTool contains `rm -rf`/`sudo`/`curl|sh`/`chmod`/`eval` and other high-risk patterns
+    /// - mcp_external: tools provided by external MCP servers; Default/TrustProject both require Prompt (untrusted source)
+    /// - agent_spawn: sub-Agent creation; TrustProject auto-approves; sub-Agents inherit parent Agent's permission_mode
     pub async fn execute(
         &self,
         tool_name: &str,
@@ -2038,9 +2046,9 @@ impl ToolExecutor {
                 format!("tool not found: {tool_name}"),
             ))?;
 
-        // 1. 检查 denied list — 任何模式下都拒绝
-        //    denied_tools 支持 glob 匹配（如 "mcp__*"、"bash"）
-        //    使用 globset 进行模式匹配，支持 * / ? / [abc] 等 glob 语法
+        // 1. Check denied list -- denied in all modes
+        //    denied_tools supports glob matching (e.g., "mcp__*", "bash")
+        //    Uses globset for pattern matching, supporting * / ? / [abc] glob syntax
         if ctx.permission_policy.denied_tools.iter().any(|pattern| {
             globset::Glob::new(pattern)
                 .ok()
@@ -2050,31 +2058,31 @@ impl ToolExecutor {
             return Ok(ToolOutput::error(format!("tool '{tool_name}' is denied by policy")));
         }
 
-        // 2. Dangerously 模式短路 — 跳过所有权限检查（含 allowed_tools 和 dangerous 检测）
-        //    放在 denied_tools 之后：即使 Dangerously 模式，denied_tools 仍然生效
+        // 2. Dangerously mode short-circuit -- skip all permission checks (including allowed_tools and dangerous detection)
+        //    Placed after denied_tools: even in Dangerously mode, denied_tools still applies
         if ctx.permission_mode == PermissionMode::Dangerously {
             return tool.execute(input, ctx).await;
         }
 
-        // 3. 检查 allowed list — 显式允许跳过 prompt
+        // 3. Check allowed list -- explicitly allowed skips prompt
         let explicitly_allowed = ctx.permission_policy.allowed_tools.contains(&tool_name.to_string());
 
-        // 4. 按矩阵决策（综合 tool.source() + mode + path_scope）
-        // allowed_tools 只免除普通 Prompt，不免除 dangerous 检测
+        // 4. Decide by matrix (combining tool.source() + mode + path_scope)
+        // allowed_tools only exempts normal Prompt, not dangerous detection
         let needs_prompt = if explicitly_allowed {
-            self.is_dangerous_command(&input) // allowed_tools 只免除普通 Prompt，不免除 dangerous 检测
+            self.is_dangerous_command(&input) // allowed_tools only exempts normal Prompt, not dangerous detection
         } else {
             match tool.source() {
-                // MCP 外部工具：Default/TrustProject 都需 Prompt（不可信来源）
+                // MCP external tools: Default/TrustProject both require Prompt (untrusted source)
                 ToolSource::McpExternal { .. } => true,
-                // 子 Agent 创建：TrustProject 信任放行，Default 需 Prompt
+                // Sub-Agent creation: TrustProject auto-approves, Default requires Prompt
                 ToolSource::AgentSpawn => {
                     ctx.permission_mode == PermissionMode::Default
                 }
-                // 内置工具：按原有矩阵
+                // Built-in tools: follow the original matrix
                 ToolSource::BuiltIn => {
                     match ctx.permission_mode {
-                        PermissionMode::Dangerously => unreachable!(), // 已在上方短路
+                        PermissionMode::Dangerously => unreachable!(), // Already short-circuited above
                         PermissionMode::TrustProject => {
                             if tool.is_read_only() {
                                 false
@@ -2092,7 +2100,7 @@ impl ToolExecutor {
         };
 
         if needs_prompt {
-            // 通过 event channel 请求用户确认
+            // Request user confirmation via event channel
             let approved = self.request_permission(tool_name, &input, ctx).await?;
             if !approved {
                 return Ok(ToolOutput::error("user denied permission"));
@@ -2102,29 +2110,29 @@ impl ToolExecutor {
         tool.execute(input, ctx).await
     }
 
-    /// 检查工具操作路径是否在项目目录内
+    /// Check whether the tool operation path is within the project directory
     ///
-    /// **TOCTOU + symlink 防护**：
-    /// - 使用 `std::fs::canonicalize()` 解析符号链接后再比较，防止 symlink 绕过
-    /// - 文件操作应使用 `O_NOFOLLOW`（或 Rust 等价方式）防止 TOCTOU 竞态
-    /// - 注意：canonicalize 只能在路径存在时使用，不存在的路径需要 canonicalize 父目录
+    /// **TOCTOU + symlink protection**:
+    /// - Uses `std::fs::canonicalize()` to resolve symbolic links before comparison, preventing symlink bypass
+    /// - File operations should use `O_NOFOLLOW` (or Rust equivalent) to prevent TOCTOU race conditions
+    /// - Note: canonicalize only works on existing paths; non-existent paths need parent directory canonicalization
     fn is_path_in_project(&self, tool_name: &str, input: &serde_json::Value, project_dir: &std::path::Path) -> bool {
-        // BashTool 特殊处理：input 包含 "command" 而非 "file_path"
-        // 需要从命令字符串中解析出可能的路径引用
+        // BashTool special handling: input contains "command" not "file_path"
+        // Need to parse possible path references from the command string
         if tool_name == "bash" {
             return self.bash_paths_in_project(input, project_dir);
         }
 
-        // 其他工具：从 input 中提取 file_path/path 字段
+        // Other tools: extract file_path/path field from input
         input.get("file_path")
             .or_else(|| input.get("path"))
             .and_then(|v| v.as_str())
             .map(|p| {
                 let raw = std::path::Path::new(p);
-                // 先 canonicalize 解析 symlink，防止 symlink 绕过项目边界
-                // 路径不存在时 fallback: canonicalize 最近存在的祖先目录 + 剩余相对段
+                // Canonicalize first to resolve symlinks, preventing symlink bypass of project boundary
+                // Fallback for non-existent paths: canonicalize nearest existing ancestor directory + remaining relative segments
                 let resolved = std::fs::canonicalize(raw).unwrap_or_else(|_| {
-                    // 路径尚不存在（如即将创建的新文件），向上找到存在的祖先目录
+                    // Path does not exist yet (e.g., a new file about to be created), walk up to find existing ancestor
                     let mut ancestor = raw.to_path_buf();
                     let mut suffix = std::path::PathBuf::new();
                     while !ancestor.exists() {
@@ -2139,33 +2147,33 @@ impl ToolExecutor {
                 });
                 resolved.starts_with(project_dir)
             })
-            .unwrap_or(true) // 无路径参数的工具默认视为项目内
+            .unwrap_or(true) // Tools without path parameters default to being considered in-project
     }
 
-    /// BashTool 路径检测：从 command 字符串中提取绝对路径并检查
-    /// 在 TrustProject 模式下，引用项目外绝对路径的命令需要 Prompt
+    /// BashTool path detection: extract absolute paths from the command string and check them
+    /// In TrustProject mode, commands referencing absolute paths outside the project require Prompt
     ///
-    /// **重要：这是 best-effort 启发式检测**
-    /// shell 命令的路径提取无法做到 100% 准确（变量展开、子 shell、引号嵌套等）。
-    /// 保守策略：当路径分析不确定时，返回 Uncertain → 映射到 Prompt。
-    /// 具体场景：
-    /// - 无法提取任何路径 token → Uncertain（可能有变量/子 shell 引用路径）
-    /// - 包含 shell 元字符（$, `, $(...)）→ Uncertain（路径可能被动态构造）
+    /// **Important: This is best-effort heuristic detection**
+    /// Path extraction from shell commands cannot be 100% accurate (variable expansion, subshells, nested quotes, etc.).
+    /// Conservative strategy: when path analysis is uncertain, return Uncertain -> maps to Prompt.
+    /// Specific scenarios:
+    /// - Cannot extract any path tokens -> Uncertain (variables/subshells may reference paths)
+    /// - Contains shell metacharacters ($, `, $(...)) -> Uncertain (paths may be dynamically constructed)
     ///
-    /// **核心原则：无法可靠解析时默认需要 Prompt，宁可多问不可漏放。**
+    /// **Core principle: when reliable parsing is impossible, default to requiring Prompt -- better to ask too much than miss.**
     fn bash_paths_in_project(&self, input: &serde_json::Value, project_dir: &std::path::Path) -> bool {
         let cmd = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
 
-        // 保守策略：包含 shell 元字符时无法可靠提取路径，返回 false（需 Prompt）
+        // Conservative strategy: cannot reliably extract paths with shell metacharacters, return false (require Prompt)
         let shell_metacharacters = ['$', '`'];
         if cmd.chars().any(|c| shell_metacharacters.contains(&c)) || cmd.contains("$(") {
-            return false; // Uncertain → 映射到 Prompt
+            return false; // Uncertain -> maps to Prompt
         }
 
-        // cd 到绝对路径会改变后续命令的工作目录，视同路径引用
-        // 例如 `cd /etc && cat passwd` 实际操作项目外文件
+        // cd to absolute path changes the working directory for subsequent commands, treated as path reference
+        // e.g., `cd /etc && cat passwd` actually operates on files outside the project
         if cmd.starts_with("cd ") || cmd.contains("&& cd ") || cmd.contains("; cd ") || cmd.contains("|| cd ") {
-            // 提取 cd 目标路径，检查是否在项目内
+            // Extract cd target path and check if it's within the project
             for segment in cmd.split("&&").chain(cmd.split(";")).chain(cmd.split("||")) {
                 let trimmed = segment.trim();
                 if trimmed.starts_with("cd ") {
@@ -2177,26 +2185,26 @@ impl ToolExecutor {
                             std::path::PathBuf::from(target)
                         };
                         if !expanded.starts_with(project_dir) {
-                            return false; // cd 到项目外 → Prompt
+                            return false; // cd to outside project -> Prompt
                         }
                     }
                 }
             }
         }
 
-        // 提取命令中所有绝对路径 token
+        // Extract all absolute path tokens from the command
         let abs_paths: Vec<&str> = cmd.split_whitespace()
             .filter(|token| token.starts_with('/') || token.starts_with("~/"))
             .collect();
 
-        // 保守策略：无法提取路径时返回 false（Uncertain → Prompt）
-        // 注：纯相对路径命令（如 `cargo build`）不含 / 前缀，会走到这里
-        // 但这些命令通常是安全的项目内操作，所以仍返回 true
+        // Conservative strategy: return false when no paths can be extracted (Uncertain -> Prompt)
+        // Note: pure relative path commands (e.g., `cargo build`) don't have / prefix, will reach here
+        // But these commands are usually safe in-project operations, so still return true
         if abs_paths.is_empty() {
             return true;
         }
 
-        // 任一绝对路径在项目外 → 返回 false（需要 Prompt）
+        // Any absolute path outside the project -> return false (require Prompt)
         abs_paths.iter().all(|p| {
             let expanded = if p.starts_with("~/") {
                 crab_common::path::home_dir().join(&p[2..])
@@ -2207,58 +2215,58 @@ impl ToolExecutor {
         })
     }
 
-    /// 检测高危命令模式
-    /// 覆盖：破坏性操作、提权、远程代码执行、文件覆写、链式危险命令
+    /// Detect dangerous command patterns
+    /// Covers: destructive operations, privilege escalation, remote code execution, file overwrite, chained dangerous commands
     ///
-    /// **重要：所有模式匹配必须使用 shell tokenizer 排除引号内容**
-    /// 下方所有 `cmd.contains(pattern)` 在实际实现时应替换为 tokenize-then-match：
-    /// 1. 使用 `shell-words` crate（或等价 tokenizer）将 cmd 拆分为 token
-    /// 2. 仅在非引号 token 中匹配危险模式
-    /// 3. 示例：`echo "rm -rf /" > log.txt` 不应触发 `rm -rf` 检测（在引号内）
-    ///    但 `> log.txt` 重定向在引号外，应正常检测
-    /// 4. tokenizer 失败（如引号未闭合）时保守处理 → 视为 dangerous
+    /// **Important: all pattern matching must use a shell tokenizer to exclude quoted content**
+    /// All `cmd.contains(pattern)` below should be replaced with tokenize-then-match in actual implementation:
+    /// 1. Use `shell-words` crate (or equivalent tokenizer) to split cmd into tokens
+    /// 2. Only match dangerous patterns in non-quoted tokens
+    /// 3. Example: `echo "rm -rf /" > log.txt` should NOT trigger `rm -rf` detection (inside quotes)
+    ///    but `> log.txt` redirect is outside quotes and should be detected normally
+    /// 4. When tokenizer fails (e.g., unclosed quotes), handle conservatively -> treat as dangerous
     fn is_dangerous_command(&self, input: &serde_json::Value) -> bool {
         let cmd = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
 
-        // 1. 直接高危模式
-        // 二级策略：Level 1 精确匹配（下方列表）+ Level 2 启发式检测（解释器 + -c/-e 组合）
+        // 1. Direct dangerous patterns
+        // Two-tier strategy: Level 1 exact match (list below) + Level 2 heuristic detection (interpreter + -c/-e combos)
         let dangerous_patterns = [
-            // ── 破坏性文件操作 ──
+            // -- Destructive file operations --
             "rm -rf", "rm -fr",
-            // ── 提权 ──
+            // -- Privilege escalation --
             "sudo ",
-            // ── 磁盘/设备操作 ──
+            // -- Disk/device operations --
             "mkfs", "dd if=", "> /dev/",
-            // ── 远程代码执行 (pipe to shell) ──
+            // -- Remote code execution (pipe to shell) --
             "curl|sh", "curl|bash", "wget|sh", "wget|bash",
             "curl | sh", "curl | bash", "wget | sh", "wget | bash",
-            // ── 权限修改 ──
+            // -- Permission modification --
             "chmod ", "chown ",
-            // ── 动态执行（可绕过静态检测）──
+            // -- Dynamic execution (can bypass static detection) --
             "eval ", "exec ", "source ",
-            // ── 解释器内联执行（Level 1: 精确匹配 interpreter + -c/-e）──
+            // -- Interpreter inline execution (Level 1: exact match interpreter + -c/-e) --
             "python -c", "python3 -c", "perl -e", "node -e", "ruby -e",
-            // ── 危险批量操作 ──
-            "xargs ",      // xargs + 危险目标（如 xargs rm）
-            "crontab",     // 定时任务修改
-            "nohup ",      // 后台持久化执行
-            // ── 文件覆写重定向 ──
-            // （引号排除逻辑由函数级 tokenizer 统一处理，见函数头部注释）
-            "> ",   // 覆写重定向
-            ">> ",  // 追加重定向（写入敏感文件如 .bashrc）
+            // -- Dangerous batch operations --
+            "xargs ",      // xargs + dangerous target (e.g., xargs rm)
+            "crontab",     // Cron job modification
+            "nohup ",      // Background persistent execution
+            // -- File overwrite redirect --
+            // (Quote exclusion logic handled by function-level tokenizer, see function header comment)
+            "> ",   // Overwrite redirect
+            ">> ",  // Append redirect (writing to sensitive files like .bashrc)
         ];
 
-        // Level 2 启发式：`find` + `-exec` 组合检测
+        // Level 2 heuristic: `find` + `-exec` combo detection
         if cmd.contains("find ") && (cmd.contains("-exec") || cmd.contains("-execdir")) {
             return true;
         }
 
-        // 2. 检查直接模式
+        // 2. Check direct patterns
         if dangerous_patterns.iter().any(|p| cmd.contains(p)) {
             return true;
         }
 
-        // 3. 检查 pipe 到危险命令（如 `cat file | sudo tee`, `echo x | sh`）
+        // 3. Check pipe to dangerous commands (e.g., `cat file | sudo tee`, `echo x | sh`)
         let pipe_dangerous_targets = ["sh", "bash", "sudo", "tee", "eval", "exec"];
         if cmd.contains('|') {
             let segments: Vec<&str> = cmd.split('|').collect();
@@ -2270,7 +2278,7 @@ impl ToolExecutor {
             }
         }
 
-        // 4. 检查 && / || 链中包含危险命令
+        // 4. Check for dangerous commands in && / || chains
         let chain_ops = ["&&", "||", ";"];
         for op in &chain_ops {
             if cmd.contains(op) {
@@ -2288,9 +2296,9 @@ impl ToolExecutor {
 }
 ```
 
-**CC 工具对照表（CC 有 52 工具，以下为核心映射）**
+**CC Tool Mapping Table (CC has 52 tools; below are the core mappings)**
 
-| CC 工具 | Crab 工具 | 文件 |
+| CC Tool | Crab Tool | File |
 |---------|----------|------|
 | BashTool | BashTool | `bash.rs` |
 | FileReadTool | ReadTool | `read.rs` |
@@ -2305,47 +2313,47 @@ impl ToolExecutor {
 | TaskCreateTool | TaskCreateTool | `task.rs` |
 | MCPTool | McpToolAdapter | `mcp_tool.rs` |
 
-**外部依赖**：`crab-core`, `crab-fs`, `crab-process`, `crab-mcp`, `crab-config`, `crab-common`
+**External Dependencies**: `crab-core`, `crab-fs`, `crab-process`, `crab-mcp`, `crab-config`, `crab-common`
 
-**Feature Flags**：无
+**Feature Flags**: None
 
 ---
 
-### 6.10 `crates/session/` — 会话管理
+### 6.10 `crates/session/` -- Session Management
 
-**职责**：多轮对话的状态管理（对标 CC `src/services/compact/` + `src/services/SessionMemory/` + `src/services/sessionTranscript/`）
+**Responsibility**: State management for multi-turn conversations (corresponds to CC `src/services/compact/` + `src/services/SessionMemory/` + `src/services/sessionTranscript/`)
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── conversation.rs   // 对话状态机，多轮管理
-├── context.rs        // 上下文窗口管理、自动压缩触发
-├── compaction.rs     // 消息压缩策略（5 级：Snip/Microcompact/Summarize/Hybrid/Truncate）
-├── history.rs        // 会话持久化、恢复、搜索、导出、统计
-├── memory.rs         // 记忆系统（文件持久化）
-├── cost.rs           // token 计数、费用追踪
-└── template.rs       // 会话模板 + 快速恢复
+├── conversation.rs   // Conversation state machine, multi-turn management
+├── context.rs        // Context window management, auto-compaction trigger
+├── compaction.rs     // Message compaction strategies (5 levels: Snip/Microcompact/Summarize/Hybrid/Truncate)
+├── history.rs        // Session persistence, recovery, search, export, statistics
+├── memory.rs         // Memory system (file persistence)
+├── cost.rs           // Token counting, cost tracking
+└── template.rs       // Session template + quick recovery
 ```
 
-**核心类型**
+**Core Types**
 
 ```rust
-// conversation.rs — 对话状态机
+// conversation.rs -- Conversation state machine
 use crab_core::message::Message;
 use crab_core::model::TokenUsage;
 
 pub struct Conversation {
-    /// 会话 ID
+    /// Session ID
     pub id: String,
-    /// 系统提示
+    /// System prompt
     pub system_prompt: String,
-    /// 消息历史
+    /// Message history
     pub messages: Vec<Message>,
-    /// 累计 token 使用量
+    /// Cumulative token usage
     pub total_usage: TokenUsage,
-    /// 上下文窗口上限
+    /// Context window limit
     pub context_window: u64,
 }
 
@@ -2360,18 +2368,18 @@ impl Conversation {
         }
     }
 
-    /// 追加消息
+    /// Append a message
     pub fn push(&mut self, msg: Message) {
         self.messages.push(msg);
     }
 
-    /// 估算当前 token 数
+    /// Estimate current token count
     ///
-    /// **当前**: text_len/4 粗略估算（误差 ±30%），适合 MVP 阶段快速实现
-    /// **后续**: 接入 tiktoken-rs 精确计数（Claude tokenizer 兼容 cl100k_base）
+    /// **Current**: Rough estimate of text_len/4 (error margin +/-30%), suitable for MVP phase
+    /// **Future**: Integrate tiktoken-rs for precise counting (Claude tokenizer is compatible with cl100k_base)
     ///
     /// ```rust
-    /// // TODO(M2+): 替换为精确计数
+    /// // TODO(M2+): Replace with precise counting
     /// // use tiktoken_rs::cl100k_base;
     /// // let bpe = cl100k_base().unwrap();
     /// // bpe.encode_with_special_tokens(text).len() as u64
@@ -2380,39 +2388,39 @@ impl Conversation {
         let text_len: usize = self.messages.iter().map(|m| {
             m.content.iter().map(|c| match c {
                 crab_core::message::ContentBlock::Text { text } => text.len(),
-                _ => 100, // 工具调用按固定估算
+                _ => 100, // Fixed estimate for tool calls
             }).sum::<usize>()
         }).sum();
-        (text_len / 4) as u64 // 临时方案：±30% 误差
+        (text_len / 4) as u64 // Temporary: +/-30% error margin
     }
 
-    /// 是否需要压缩
+    /// Whether compaction is needed
     pub fn needs_compaction(&self) -> bool {
         self.estimated_tokens() > self.context_window * 80 / 100
     }
 }
 
-// compaction.rs — 5 层压缩策略（按 token 使用率递进触发）
+// compaction.rs -- 5-level compaction strategy (progressively triggered by token usage rate)
 pub enum CompactionStrategy {
-    /// Level 1 (70-80%): 裁剪旧工具调用的完整输出，仅保留摘要行
+    /// Level 1 (70-80%): Trim full output of old tool calls, keeping only summary lines
     Snip,
-    /// Level 2 (80-85%): 大结果（>500 token）替换为 AI 生成的单行摘要
+    /// Level 2 (80-85%): Replace large results (>500 tokens) with AI-generated single-line summary
     Microcompact,
-    /// Level 3 (85-90%): 用小模型总结旧消息
+    /// Level 3 (85-90%): Summarize old messages using a small model
     Summarize,
-    /// Level 4 (90-95%): 保留最近 N 轮 + 总结其余
+    /// Level 4 (90-95%): Keep recent N turns + summarize the rest
     Hybrid { keep_recent: usize },
-    /// Level 5 (>95%): 紧急截断，丢弃最早的消息
+    /// Level 5 (>95%): Emergency truncation, discard oldest messages
     Truncate,
 }
 
 use std::future::Future;
 use std::pin::Pin;
 
-/// 压缩客户端抽象 — 解耦 compaction 逻辑与具体 API 客户端
-/// 便于测试（mock）和替换不同 LLM provider
+/// Compaction client abstraction -- decouples compaction logic from specific API client
+/// Facilitates testing (mock) and swapping different LLM providers
 pub trait CompactionClient: Send + Sync {
-    /// 发送压缩/摘要请求，返回摘要文本
+    /// Send a compaction/summary request, return summary text
     fn summarize(
         &self,
         messages: &[crab_core::message::Message],
@@ -2420,7 +2428,7 @@ pub trait CompactionClient: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = crab_common::Result<String>> + Send + '_>>;
 }
 
-// LlmBackend 通过枚举派发适配为 CompactionClient（在 crab-api 中）
+// LlmBackend adapts to CompactionClient via enum dispatch (in crab-api)
 // impl CompactionClient for LlmBackend { ... }
 
 pub async fn compact(
@@ -2428,65 +2436,65 @@ pub async fn compact(
     strategy: CompactionStrategy,
     client: &impl CompactionClient,
 ) -> crab_common::Result<()> {
-    // 根据策略压缩消息，使用 client.summarize() 生成摘要
+    // Compact messages according to strategy, using client.summarize() to generate summaries
     // ...
 }
 
-// memory.rs — 记忆系统
+// memory.rs -- Memory system
 pub struct MemoryStore {
     pub path: std::path::PathBuf, // ~/.crab-code/memory/
 }
 
 impl MemoryStore {
-    /// 保存会话记忆
+    /// Save session memory
     pub fn save(&self, session_id: &str, content: &str) -> crab_common::Result<()> {
         // ...
     }
 
-    /// 加载会话记忆
+    /// Load session memory
     pub fn load(&self, session_id: &str) -> crab_common::Result<Option<String>> {
         // ...
     }
 }
 ```
 
-**外部依赖**：`crab-core`, `crab-api`, `crab-config`, `tokio`, `serde_json`, `crab-common`
+**External Dependencies**: `crab-core`, `crab-api`, `crab-config`, `tokio`, `serde_json`, `crab-common`
 
-**Feature Flags**：无
+**Feature Flags**: None
 
 ---
 
-### 6.11 `crates/agent/` — 多 Agent 系统
+### 6.11 `crates/agent/` -- Multi-Agent System
 
-**职责**：Agent 编排、任务分发、消息循环（对标 CC `src/query.ts` + `src/QueryEngine.ts` + `src/coordinator/` + `src/tasks/`）
+**Responsibility**: Agent orchestration, task dispatch, message loop (corresponds to CC `src/query.ts` + `src/QueryEngine.ts` + `src/coordinator/` + `src/tasks/`)
 
-这是整个系统的**核心引擎**，实现了最关键的 query loop。
+This is the **core engine** of the entire system, implementing the most critical query loop.
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── coordinator.rs        // Agent 编排、workers pool
-├── query_loop.rs         // 核心消息循环（最重要的文件）
-├── task.rs               // TaskList, TaskUpdate, 依赖图
-├── team.rs               // Team 创建、成员管理
-├── message_bus.rs        // Agent 间消息传递 (tokio::mpsc)
-├── message_router.rs     // Agent 间消息路由（按 name/broadcast）
-├── worker.rs             // 子 Agent worker 生命周期
-├── system_prompt.rs      // 系统提示构建 + CRAB.md 注入
-├── summarizer.rs         // 对话摘要生成
-├── rollback.rs           // 回滚机制（/undo）
-├── error_recovery.rs     // 错误恢复策略（自动重试/降级）
-├── retry.rs              // 自动重试机制（指数退避）
-└── repl_commands.rs      // REPL 命令（/undo /branch /fork /checkpoint）
+├── coordinator.rs        // Agent orchestration, workers pool
+├── query_loop.rs         // Core message loop (the most important file)
+├── task.rs               // TaskList, TaskUpdate, dependency graph
+├── team.rs               // Team creation, member management
+├── message_bus.rs        // Inter-Agent messaging (tokio::mpsc)
+├── message_router.rs     // Inter-Agent message routing (by name/broadcast)
+├── worker.rs             // Sub-Agent worker lifecycle
+├── system_prompt.rs      // System prompt building + CRAB.md injection
+├── summarizer.rs         // Conversation summary generation
+├── rollback.rs           // Rollback mechanism (/undo)
+├── error_recovery.rs     // Error recovery strategy (auto-retry/degradation)
+├── retry.rs              // Auto-retry mechanism (exponential backoff)
+└── repl_commands.rs      // REPL commands (/undo /branch /fork /checkpoint)
 ```
 
-**消息循环（核心）**
+**Message Loop (Core)**
 
 ```rust
-// query_loop.rs — 核心消息循环
-// 对标 CC src/query.ts 的 query() 函数
+// query_loop.rs -- Core message loop
+// Corresponds to CC src/query.ts query() function
 use crab_core::event::Event;
 use crab_core::message::{ContentBlock, Message};
 use crab_session::Conversation;
@@ -2494,7 +2502,7 @@ use crab_tools::executor::ToolExecutor;
 use crab_api::LlmBackend;
 use tokio::sync::mpsc;
 
-/// 消息循环：用户输入 → API → 工具执行 → 继续 → 直到无工具调用
+/// Message loop: user input -> API -> tool execution -> continue -> until no tool calls
 pub async fn query_loop(
     conversation: &mut Conversation,
     api: &LlmBackend,
@@ -2502,13 +2510,13 @@ pub async fn query_loop(
     event_tx: mpsc::Sender<Event>,
 ) -> crab_common::Result<()> {
     loop {
-        // 1. 检查上下文是否需要压缩
+        // 1. Check if context needs compaction
         if conversation.needs_compaction() {
-            // -> 见 [session#compaction]
+            // -> See [session#compaction]
             todo!("compact conversation");
         }
 
-        // 2. 构造 API 请求（借用 messages 避免 clone）
+        // 2. Build API request (borrow messages to avoid clone)
         let req = crab_api::MessageRequest {
             model: crab_core::model::ModelId("claude-sonnet-4-20250514".into()),
             messages: std::borrow::Cow::Borrowed(&conversation.messages),
@@ -2518,30 +2526,30 @@ pub async fn query_loop(
             temperature: None,
         };
 
-        // 3. 流式发送到 API
+        // 3. Stream to API
         let mut stream = api.stream_message(req);
 
-        // 4. 收集 assistant 响应
+        // 4. Collect assistant response
         let mut assistant_content: Vec<ContentBlock> = Vec::new();
         let mut has_tool_use = false;
 
-        // （此处省略流式处理细节，收集 ContentBlock）
+        // (streaming processing details omitted, collecting ContentBlocks)
         // ...
 
-        // 5. 将 assistant 消息加入对话
+        // 5. Add assistant message to conversation
         conversation.push(Message {
             role: crab_core::message::Role::Assistant,
             content: assistant_content.clone(),
         });
 
-        // 6. 如果没有工具调用，循环结束
+        // 6. If no tool calls, loop ends
         if !has_tool_use {
             break;
         }
 
-        // 7. 按读写分区并发执行工具调用
-        //    读工具（is_read_only=true）用 FuturesUnordered 并发（max 10）
-        //    写工具串行执行，保证顺序一致性
+        // 7. Partition tool calls by read/write and execute concurrently
+        //    Read tools (is_read_only=true) use FuturesUnordered concurrently (max 10)
+        //    Write tools execute serially to ensure ordering consistency
         let tool_calls: Vec<_> = assistant_content
             .iter()
             .filter_map(|b| match b {
@@ -2565,7 +2573,7 @@ pub async fn query_loop(
             },
         };
 
-        // 7a. 读工具并发执行（max 10 并发）
+        // 7a. Execute read tools concurrently (max 10 concurrent)
         let mut tool_results: Vec<ContentBlock> = Vec::new();
         {
             use futures::stream::{FuturesUnordered, StreamExt};
@@ -2601,7 +2609,7 @@ pub async fn query_loop(
             }
         }
 
-        // 7b. 写工具串行执行
+        // 7b. Execute write tools serially
         for (id, name, input) in &write_tools {
             event_tx.send(Event::ToolUseStart {
                 id: (*id).clone(), name: (*name).clone(),
@@ -2615,13 +2623,13 @@ pub async fn query_loop(
             });
         }
 
-        // 8. 将工具结果作为 user 消息加入对话
+        // 8. Add tool results as a user message to the conversation
         conversation.push(Message {
             role: crab_core::message::Role::User,
             content: tool_results,
         });
 
-        // 9. 回到步骤 1，继续循环
+        // 9. Return to step 1, continue loop
     }
 
     Ok(())
@@ -2629,7 +2637,7 @@ pub async fn query_loop(
 ```
 
 ```rust
-/// 按 is_read_only() 将工具调用分为读/写两组
+/// Partition tool calls into read/write groups by is_read_only()
 fn partition_tools<'a>(
     calls: &[(&'a String, &'a String, &'a serde_json::Value)],
     executor: &ToolExecutor,
@@ -2651,19 +2659,19 @@ fn partition_tools<'a>(
 ```
 
 ```rust
-// coordinator.rs — 多 Agent 编排
+// coordinator.rs -- Multi-Agent orchestration
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
-/// 运行中的 worker 句柄
+/// Running worker handle
 pub struct RunningWorker {
     pub worker_id: String,
     pub cancel: CancellationToken,
     pub handle: tokio::task::JoinHandle<WorkerResult>,
 }
 
-/// 多 sub-agent 编排器
+/// Multi sub-agent orchestrator
 pub struct AgentCoordinator {
     backend: Arc<LlmBackend>,
     executor: Arc<ToolExecutor>,
@@ -2671,32 +2679,32 @@ pub struct AgentCoordinator {
     loop_config: QueryLoopConfig,
     event_tx: mpsc::Sender<Event>,
     running: HashMap<String, RunningWorker>,
-    completed: Vec<WorkerResult>,           // 摘要（不含对话历史）
+    completed: Vec<WorkerResult>,           // Summary (without conversation history)
     cancel: CancellationToken,
 }
 
 impl AgentCoordinator {
-    /// 启动一个新的 sub-agent worker
+    /// Spawn a new sub-agent worker
     pub async fn spawn_worker(
         &mut self,
         config: WorkerConfig,
         task_prompt: String,
     ) -> crab_common::Result<String>;
 
-    /// 等待指定 worker 完成
+    /// Wait for a specific worker to complete
     pub async fn wait_for(&mut self, worker_id: &str) -> Option<WorkerResult>;
 
-    /// 等待所有 worker 完成
+    /// Wait for all workers to complete
     pub async fn wait_all(&mut self) -> Vec<WorkerResult>;
 
-    /// 取消指定 worker
+    /// Cancel a specific worker
     pub fn cancel_worker(&mut self, worker_id: &str) -> bool;
 
-    /// 取消所有 worker
+    /// Cancel all workers
     pub fn cancel_all(&mut self);
 }
 
-// worker.rs — Sub-agent worker 生命周期
+// worker.rs -- Sub-agent worker lifecycle
 pub struct WorkerConfig {
     pub worker_id: String,
     pub system_prompt: String,
@@ -2707,10 +2715,10 @@ pub struct WorkerConfig {
 
 pub struct WorkerResult {
     pub worker_id: String,
-    pub output: Option<String>,             // 最后一条 assistant 文本
+    pub output: Option<String>,             // Last assistant text message
     pub success: bool,
     pub usage: TokenUsage,
-    pub conversation: Conversation,         // 完整对话历史
+    pub conversation: Conversation,         // Full conversation history
 }
 
 pub struct AgentWorker {
@@ -2724,15 +2732,15 @@ pub struct AgentWorker {
 }
 
 impl AgentWorker {
-    /// 在 tokio 任务中运行独立 query loop
+    /// Run an independent query loop in a tokio task
     pub fn spawn(self, task_prompt: String) -> tokio::task::JoinHandle<WorkerResult>;
 }
 ```
 
-**Task 系统（已实现）**
+**Task System (Implemented)**
 
 ```rust
-// task.rs — TaskStore + TaskItem + 依赖图
+// task.rs -- TaskStore + TaskItem + dependency graph
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TaskStatus {
     Pending,
@@ -2750,11 +2758,11 @@ pub struct TaskItem {
     pub status: TaskStatus,
     pub owner: Option<String>,
     pub metadata: serde_json::Value,
-    pub blocks: Vec<String>,         // 此任务阻塞哪些任务
-    pub blocked_by: Vec<String>,     // 此任务被哪些任务阻塞
+    pub blocks: Vec<String>,         // Tasks blocked by this task
+    pub blocked_by: Vec<String>,     // Tasks that block this task
 }
 
-/// 线程安全的任务存储，支持依赖图
+/// Thread-safe task store with dependency graph support
 pub struct TaskStore {
     items: HashMap<String, TaskItem>,
     next_id: usize,
@@ -2769,27 +2777,27 @@ impl TaskStore {
 }
 ```
 
-**流式工具执行（StreamingToolExecutor）**
+**Streaming Tool Execution (StreamingToolExecutor)**
 
-CC 在 API 流式响应期间，一旦 `tool_use` 的 JSON 完整解析出来就立即启动执行，
-不等待 `message_stop` 事件。Crab Code 应实现同样的优化：
+CC starts tool execution immediately once the `tool_use` JSON is fully parsed during API streaming,
+without waiting for the `message_stop` event. Crab Code should implement the same optimization:
 
 ```
-API SSE 流:  [content_block_start: tool_use] → [input_json_delta...] → [content_block_stop]
-                                                                            │
-                                              JSON 完整 → 立即 spawn 执行 ──┘
-                                                         │
-后续 block 继续流入 ◄────── 与工具执行并行 ──────────────►│ 工具结果就绪
+API SSE stream:  [content_block_start: tool_use] -> [input_json_delta...] -> [content_block_stop]
+                                                                                  |
+                                                JSON complete -> spawn immediately -+
+                                                               |
+Subsequent blocks continue streaming <---- parallel with tool execution ------->| tool result ready
 ```
 
 ```rust
-/// 流式工具执行器 — 在 API 流式响应期间提前启动工具
+/// Streaming tool executor -- starts tools early during API streaming
 pub struct StreamingToolExecutor {
     pending: Vec<tokio::task::JoinHandle<(String, crab_common::Result<ToolOutput>)>>,
 }
 
 impl StreamingToolExecutor {
-    /// 当某个 tool_use block 的 JSON 完整解析后立即调用
+    /// Called immediately when a tool_use block's JSON is fully parsed
     pub fn spawn_early(&mut self, id: String, name: String, input: Value, ctx: ToolContext, executor: Arc<ToolExecutor>) {
         let handle = tokio::spawn(async move {
             let result = executor.execute(&name, input, &ctx).await;
@@ -2798,7 +2806,7 @@ impl StreamingToolExecutor {
         self.pending.push(handle);
     }
 
-    /// message_stop 后收割所有已完成/进行中的工具结果
+    /// After message_stop, collect all completed/in-progress tool results
     pub async fn collect_all(&mut self) -> Vec<(String, crab_common::Result<ToolOutput>)> {
         let mut results = Vec::new();
         for handle in self.pending.drain(..) {
@@ -2809,72 +2817,72 @@ impl StreamingToolExecutor {
 }
 ```
 
-**外部依赖**：`crab-core`, `crab-session`, `crab-tools`, `crab-api`, `tokio`, `tokio-util`, `futures`, `crab-common`
+**External Dependencies**: `crab-core`, `crab-session`, `crab-tools`, `crab-api`, `tokio`, `tokio-util`, `futures`, `crab-common`
 
-**Feature Flags**：无
+**Feature Flags**: None
 
 ---
 
-### 6.12 `crates/tui/` — 终端 UI
+### 6.12 `crates/tui/` -- Terminal UI
 
-**职责**：所有终端界面渲染（对标 CC `src/components/` + `src/screens/` + `src/ink/` + `src/vim/`）
+**Responsibility**: All terminal interface rendering (corresponds to CC `src/components/` + `src/screens/` + `src/ink/` + `src/vim/`)
 
-CC 使用 React/Ink 渲染终端 UI，Crab 使用 ratatui + crossterm 实现同等体验。
+CC uses React/Ink to render the terminal UI; Crab uses ratatui + crossterm to achieve equivalent experience.
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── app.rs                  // App 状态机，主循环
-├── event.rs                // crossterm Event → AppEvent 映射（KeyEvent/MouseEvent/Resize）
-├── layout.rs               // 布局计算（面板分配、响应式）
-├── runner.rs               // TUI 运行器（初始化/启动/停止终端）
-├── keybindings.rs          // 快捷键配置绑定（可用户自定义）
-├── ansi.rs                 // ANSI 转义 → ratatui Span 转换
+├── app.rs                  // App state machine, main loop
+├── event.rs                // crossterm Event -> AppEvent mapping (KeyEvent/MouseEvent/Resize)
+├── layout.rs               // Layout calculation (panel allocation, responsive)
+├── runner.rs               // TUI runner (initialize/start/stop terminal)
+├── keybindings.rs          // Keybinding configuration (user-customizable)
+├── ansi.rs                 // ANSI escape -> ratatui Span conversion
 │
-├── components/             // UI 组件（21 个）
+├── components/             // UI components (21)
 │   ├── mod.rs
-│   ├── input.rs            // 多行输入框 + Vim motion
-│   ├── markdown.rs         // Markdown 渲染 (pulldown-cmark → ratatui)
-│   ├── syntax.rs           // 代码高亮 (syntect → ratatui Style)
-│   ├── spinner.rs          // 加载指示器 (思考中/执行中)
-│   ├── diff.rs             // Diff 可视化 (unified 红绿对比)
-│   ├── select.rs           // 选择列表 (工具确认/slash 命令)
-│   ├── dialog.rs           // 确认/权限对话框
-│   ├── cost_bar.rs         // token/费用状态栏
-│   ├── task_list.rs        // 任务进度面板
-│   ├── autocomplete.rs     // 自动补全弹出框（输入时触发）
-│   ├── code_block.rs       // 代码块 + 一键复制按钮
-│   ├── command_palette.rs  // 命令面板（Ctrl+P，模糊搜索命令）
-│   ├── input_history.rs    // 输入历史（↑↓ 浏览历史输入）
-│   ├── loading.rs          // 加载动画组件（多种动画样式）
-│   ├── notification.rs     // Toast 通知系统（顶部弹出/自动消失）
-│   ├── progress_indicator.rs // 进度指示器（百分比 + 进度条）
-│   ├── search.rs           // 全局搜索面板（内容/文件名搜索）
-│   ├── shortcut_hint.rs    // 快捷键提示栏（底部常显）
-│   ├── status_bar.rs       // 增强状态栏（模式/provider/token/延迟）
-│   └── tool_output.rs      // 工具输出折叠显示（可展开/收起）
+│   ├── input.rs            // Multi-line input box + Vim motion
+│   ├── markdown.rs         // Markdown rendering (pulldown-cmark -> ratatui)
+│   ├── syntax.rs           // Code highlighting (syntect -> ratatui Style)
+│   ├── spinner.rs          // Loading indicator (thinking/executing)
+│   ├── diff.rs             // Diff visualization (unified red/green comparison)
+│   ├── select.rs           // Selection list (tool confirmation/slash commands)
+│   ├── dialog.rs           // Confirmation/permission dialog
+│   ├── cost_bar.rs         // Token/cost status bar
+│   ├── task_list.rs        // Task progress panel
+│   ├── autocomplete.rs     // Autocomplete popup (triggered on input)
+│   ├── code_block.rs       // Code block + one-click copy button
+│   ├── command_palette.rs  // Command palette (Ctrl+P, fuzzy search all commands)
+│   ├── input_history.rs    // Input history (up/down arrow key browsing)
+│   ├── loading.rs          // Loading animation component (multiple animation styles)
+│   ├── notification.rs     // Toast notification system (top popup/auto-dismiss)
+│   ├── progress_indicator.rs // Progress indicator (percentage + progress bar)
+│   ├── search.rs           // Global search panel (content/filename search)
+│   ├── shortcut_hint.rs    // Shortcut hint bar (always visible at bottom)
+│   ├── status_bar.rs       // Enhanced status bar (mode/provider/token/latency)
+│   └── tool_output.rs      // Collapsible tool output display (expandable/collapsible)
 │
-├── vim/                    // Vim 模式
+├── vim/                    // Vim mode
 │   ├── mod.rs
 │   ├── motion.rs           // hjkl, w/b/e, 0/$, gg/G
 │   ├── operator.rs         // d/c/y + motion
 │   └── mode.rs             // Normal/Insert/Visual
 │
-└── theme.rs                // 颜色主题（dark/light/solarized/可自定义）
+└── theme.rs                // Color theme (dark/light/solarized/customizable)
 ```
 
-**App 主循环**
+**App Main Loop**
 
 ```rust
-// app.rs — ratatui App
+// app.rs -- ratatui App
 use ratatui::prelude::*;
 use crossterm::event::{self, Event as TermEvent, KeyCode};
 use crab_core::event::Event;
 use tokio::sync::mpsc;
 
-/// App 级共享资源（初始化一次，避免每次渲染重建）
+/// App-level shared resources (initialized once, avoid rebuilding on each render)
 pub struct SharedResources {
     pub syntax_set: syntect::parsing::SyntaxSet,
     pub theme_set: syntect::highlighting::ThemeSet,
@@ -2890,41 +2898,41 @@ impl SharedResources {
 }
 
 pub struct App {
-    /// 输入缓冲区
+    /// Input buffer
     input: String,
-    /// 状态栏更新通道（watch channel — 只关心最新值，不堆积）
+    /// Status bar update channel (watch channel -- only cares about latest value, no backlog)
     status_watch_rx: tokio::sync::watch::Receiver<StatusBarData>,
-    /// 消息显示区
+    /// Message display area
     messages: Vec<DisplayMessage>,
-    /// 组合状态（替代单一 enum，支持叠加层）
+    /// Composite state (replaces single enum, supports overlay layers)
     state: UiState,
-    /// 来自 agent 的事件
+    /// Events from agent
     event_rx: mpsc::Receiver<Event>,
-    /// 共享资源（SyntaxSet/ThemeSet 等，初始化一次）
+    /// Shared resources (SyntaxSet/ThemeSet etc., initialized once)
     resources: SharedResources,
 }
 
-/// 组合状态模式 — 主状态 + 叠加层 + 通知 + 焦点 + 活跃工具进度
+/// Composite state pattern -- main state + overlay + notifications + focus + active tool progress
 pub struct UiState {
-    /// 主交互状态
+    /// Main interaction state
     pub main: MainState,
-    /// 模态叠加层（同一时刻只有一个模态覆盖：权限对话框 或 命令面板）
-    /// 使用 Option 而非 Vec：模态 UI 同时只展示一个，多个排队无意义
+    /// Modal overlay (only one modal at a time: permission dialog or command palette)
+    /// Uses Option instead of Vec: modal UI only shows one at a time; queuing multiples is meaningless
     pub overlay: Option<Overlay>,
-    /// 非模态通知队列（toast 样式，自动消失，不阻塞输入）
+    /// Non-modal notification queue (toast style, auto-dismiss, doesn't block input)
     pub notifications: std::collections::VecDeque<Toast>,
-    /// 当前焦点位置（决定键盘事件路由到哪个组件）
+    /// Current focus position (determines which component receives keyboard events)
     pub focus: FocusTarget,
-    /// 活跃工具执行进度（支持并发工具追踪）
+    /// Active tool execution progress (supports concurrent tool tracking)
     pub active_tools: Vec<ToolProgress>,
 }
 
-/// 非模态通知（类似 toast，显示后自动消失）
+/// Non-modal notification (toast-like, auto-dismisses after display)
 pub struct Toast {
     pub message: String,
     pub level: ToastLevel,
     pub created_at: std::time::Instant,
-    /// 显示持续时间（默认 3 秒）
+    /// Display duration (default 3 seconds)
     pub ttl: std::time::Duration,
 }
 
@@ -2934,45 +2942,45 @@ pub enum ToastLevel {
     Error,
 }
 
-/// 焦点目标 — 决定键盘事件路由
+/// Focus target -- determines keyboard event routing
 pub enum FocusTarget {
-    /// 输入框（默认焦点）— 接收文本输入和 Enter 提交
+    /// Input box (default focus) -- receives text input and Enter to submit
     InputBox,
-    /// 模态叠加层 — 接收 Esc 关闭、方向键选择、Enter 确认
+    /// Modal overlay -- receives Esc to close, arrow keys to select, Enter to confirm
     Overlay,
-    /// 消息滚动区 — 接收 j/k/PgUp/PgDn 滚动
+    /// Message scroll area -- receives j/k/PgUp/PgDn scrolling
     MessageScroll,
 }
 
-// 焦点路由逻辑：
-// - overlay.is_some() 时，焦点强制切到 FocusTarget::Overlay
-// - overlay 关闭后，焦点回到 FocusTarget::InputBox
-// - 用户按 Ctrl+Up/Down 可临时切到 MessageScroll 浏览历史
+// Focus routing logic:
+// - When overlay.is_some(), focus is forced to FocusTarget::Overlay
+// - When overlay closes, focus returns to FocusTarget::InputBox
+// - User can press Ctrl+Up/Down to temporarily switch to MessageScroll to browse history
 
 pub enum MainState {
-    /// 等待用户输入
+    /// Waiting for user input
     Idle,
-    /// API 调用中（显示 spinner）
+    /// API call in progress (show spinner)
     Thinking,
-    /// 流式响应接收中 — 支持增量渲染
+    /// Streaming response being received -- supports incremental rendering
     Streaming(StreamingMessage),
 }
 
-/// 流式消息状态 — 支持 delta 追加 + 增量解析
-/// 注意：这里的 "增量" 是指 **解析优化**（避免重复解析已处理的 Markdown），
-/// 而非跳过渲染 — 每帧仍然完整渲染所有已解析的 blocks。
+/// Streaming message state -- supports delta appending + incremental parsing
+/// Note: "incremental" here means **parsing optimization** (avoid re-parsing already processed Markdown),
+/// not skipping rendering -- each frame still fully renders all parsed blocks.
 pub struct StreamingMessage {
-    /// 已接收的完整文本
+    /// Complete text received so far
     pub buffer: String,
-    /// 已解析到的偏移量（只需解析 buffer[parsed_offset..] 中的新增部分）
+    /// Parsed offset (only need to parse buffer[parsed_offset..] for new content)
     pub parsed_offset: usize,
-    /// 已解析的渲染块列表（Markdown → 结构化块，增量追加）
+    /// List of parsed render blocks (Markdown -> structured blocks, incrementally appended)
     pub parsed_blocks: Vec<RenderedBlock>,
-    /// 是否完成
+    /// Whether complete
     pub complete: bool,
 }
 
-/// 已解析的渲染块（Markdown 解析结果的结构化表示）
+/// Parsed render block (structured representation of Markdown parse results)
 pub enum RenderedBlock {
     Paragraph(String),
     CodeBlock { language: String, code: String },
@@ -2982,7 +2990,7 @@ pub enum RenderedBlock {
     BlockQuote(String),
     HorizontalRule,
     Link { text: String, url: String },
-    Image { alt: String, url: String }, // placeholder — 终端无法渲染图片，显示 alt 文本
+    Image { alt: String, url: String }, // placeholder -- terminal cannot render images, shows alt text
 }
 
 impl StreamingMessage {
@@ -2995,25 +3003,25 @@ impl StreamingMessage {
         }
     }
 
-    /// 追加增量文本
+    /// Append incremental text
     pub fn append_delta(&mut self, delta: &str) {
         self.buffer.push_str(delta);
     }
 
-    /// 增量解析：只解析 buffer[parsed_offset..] 中的新内容，追加到 parsed_blocks
+    /// Incremental parse: only parse new content in buffer[parsed_offset..], append to parsed_blocks
     pub fn parse_pending(&mut self) {
         let new_content = &self.buffer[self.parsed_offset..];
-        // 使用 pulldown-cmark 解析新增内容，生成 RenderedBlock
-        // 注意：需要处理块边界（如未闭合的代码块跨 delta）
+        // Use pulldown-cmark to parse new content, generate RenderedBlock
+        // Note: need to handle block boundaries (e.g., unclosed code block spanning deltas)
         // ...
         self.parsed_offset = self.buffer.len();
     }
 }
 
 pub enum Overlay {
-    /// 权限确认对话框
+    /// Permission confirmation dialog
     PermissionDialog { tool_name: String, request_id: String },
-    /// 命令面板 (Ctrl+K)
+    /// Command palette (Ctrl+K)
     CommandPalette,
 }
 
@@ -3030,9 +3038,9 @@ pub struct DisplayMessage {
 }
 
 impl App {
-    /// 主渲染循环
-    /// 使用 crossterm::event::EventStream 替代 spawn_blocking+poll/read
-    /// 避免竞态条件：poll 和 read 在不同线程调用时可能丢失事件
+    /// Main render loop
+    /// Uses crossterm::event::EventStream instead of spawn_blocking+poll/read
+    /// Avoids race conditions: poll and read called from different threads may lose events
     pub async fn run(
         &mut self,
         terminal: &mut Terminal<impl Backend>,
@@ -3044,14 +3052,14 @@ impl App {
         let target_fps = 30;
         let frame_duration = std::time::Duration::from_millis(1000 / target_fps);
 
-        // 使用 tokio::time::interval 替代 sleep(saturating_sub)
-        // MissedTickBehavior::Skip 确保：如果某帧处理超时，跳过错过的 tick 而非连续补帧
+        // Use tokio::time::interval instead of sleep(saturating_sub)
+        // MissedTickBehavior::Skip ensures: if a frame processing overruns, skip missed ticks instead of burst-catching-up
         let mut frame_tick = tokio::time::interval(frame_duration);
         frame_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {
             tokio::select! {
-                // 终端输入（EventStream 是异步 Stream，无竞态）
+                // Terminal input (EventStream is an async Stream, no race conditions)
                 Some(Ok(term_event)) = term_events.next() => {
                     if let TermEvent::Key(key) = term_event {
                         match key.code {
@@ -3068,19 +3076,19 @@ impl App {
                         }
                     }
                 }
-                // Agent 事件
+                // Agent events
                 Some(event) = self.event_rx.recv() => {
                     self.handle_agent_event(event);
                 }
-                // 状态栏刷新 — watch channel 通知（费用更新、token 计数变化等）
-                // watch::Receiver 只保留最新值，多次写入只触发一次 changed()
-                // 比 mpsc 更适合 "最新状态" 场景（不堆积，不丢更新）
+                // Status bar refresh -- watch channel notification (cost updates, token count changes, etc.)
+                // watch::Receiver only keeps the latest value; multiple writes trigger changed() only once
+                // More suitable than mpsc for "latest state" scenarios (no backlog, no missed updates)
                 Ok(()) = self.status_watch_rx.changed() => {
                     let status = self.status_watch_rx.borrow().clone();
                     self.update_status_bar(status);
                 }
-                // 帧率定时器 — interval + Skip 比 sleep(saturating_sub) 更精确
-                // 不会因为计算 saturating_sub 时的时间差导致帧率漂移
+                // Frame rate timer -- interval + Skip is more precise than sleep(saturating_sub)
+                // Avoids frame rate drift caused by time differences when computing saturating_sub
                 _ = frame_tick.tick() => {
                     terminal.draw(|frame| self.render(frame))?;
                 }
@@ -3089,42 +3097,42 @@ impl App {
     }
 
     fn render(&self, frame: &mut Frame) {
-        // 使用 ratatui Layout 分区
-        // 上: 消息历史 (Markdown 渲染)
-        // 中: 工具输出 / spinner
-        // 下: 输入框 + 状态栏
+        // Use ratatui Layout for partitioning
+        // Top: message history (Markdown rendering)
+        // Middle: tool output / spinner
+        // Bottom: input box + status bar
         // ...
     }
 }
 ```
 
-**外部依赖**：`ratatui`, `crossterm`, `syntect`, `pulldown-cmark`, `crab-core`, `crab-session`, `crab-config`, `crab-common`
+**External Dependencies**: `ratatui`, `crossterm`, `syntect`, `pulldown-cmark`, `crab-core`, `crab-session`, `crab-config`, `crab-common`
 
-> tui 不直接依赖 tools，通过 `crab_core::Event` 枚举接收工具执行状态，由 crates/cli 负责组装 agent+tui。
+> tui does not directly depend on tools; it receives tool execution state via the `crab_core::Event` enum, with crates/cli responsible for assembling agent+tui.
 
-**Feature Flags**：无（tui 本身是 cli 的可选依赖）
+**Feature Flags**: None (tui itself is an optional dependency of cli)
 
 ---
 
-### 6.13 `crates/plugin/` — 插件系统
+### 6.13 `crates/plugin/` -- Plugin System
 
-**职责**：技能/插件的发现、加载、执行（对标 CC `src/skills/` + `src/services/plugins/`）
+**Responsibility**: Skill/plugin discovery, loading, execution (corresponds to CC `src/skills/` + `src/services/plugins/`)
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── skill.rs          // Skill 发现、加载、执行
-├── wasm_runtime.rs   // WASM 插件沙箱 (wasmtime, feature = "wasm")
-├── manifest.rs       // 插件清单解析 (skill.json)
-└── hook.rs           // 生命周期钩子
+├── skill.rs          // Skill discovery, loading, execution
+├── wasm_runtime.rs   // WASM plugin sandbox (wasmtime, feature = "wasm")
+├── manifest.rs       // Plugin manifest parsing (skill.json)
+└── hook.rs           // Lifecycle hooks
 ```
 
-**核心类型**
+**Core Types**
 
 ```rust
-// skill.rs — 技能系统
+// skill.rs -- Skill system
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3139,23 +3147,23 @@ pub struct SkillManifest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SkillTrigger {
-    /// 用户输入 /command 触发
+    /// Triggered by user input /command
     Command { name: String },
-    /// 正则匹配用户输入
+    /// Regex match on user input
     Pattern { regex: String },
-    /// 手动调用
+    /// Manual invocation
     Manual,
 }
 
-/// Skill 触发器（已实现，#[derive(Default)] 默认为 Manual）
+/// Skill trigger (implemented, #[derive(Default)] defaults to Manual)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(tag = "type")]
 pub enum SkillTrigger {
-    /// 用户输入 /command 触发
+    /// Triggered by user input /command
     Command { name: String },
-    /// 正则匹配用户输入
+    /// Regex match on user input
     Pattern { regex: String },
-    /// 手动调用（默认）
+    /// Manual invocation (default)
     #[default]
     Manual,
 }
@@ -3165,21 +3173,21 @@ pub struct SkillRegistry {
 }
 
 impl SkillRegistry {
-    /// 从 ~/.crab/skills/ 和项目 .crab/skills/ 发现技能（已实现）
+    /// Discover skills from ~/.crab/skills/ and project .crab/skills/ (implemented)
     pub fn discover(paths: &[std::path::PathBuf]) -> crab_common::Result<Self>;
 
-    /// 按名称查找
+    /// Find by name
     pub fn find(&self, name: &str) -> Option<&SkillManifest>;
 
-    /// 按 /command 名匹配
+    /// Match by /command name
     pub fn find_by_command(&self, command: &str) -> Option<&SkillManifest>;
 
-    /// 所有技能列表
+    /// All skills list
     pub fn all(&self) -> &[SkillManifest];
 }
 ```
 
-**外部依赖**：`crab-core`, `crab-common`, `wasmtime` (optional)
+**External Dependencies**: `crab-core`, `crab-common`, `wasmtime` (optional)
 
 **Feature Flags**
 
@@ -3191,28 +3199,28 @@ wasm = ["wasmtime"]
 
 ---
 
-### 6.14 `crates/telemetry/` — 可观测性
+### 6.14 `crates/telemetry/` -- Observability
 
-**职责**：分布式追踪和指标收集（对标 CC `src/services/analytics/` + `src/services/diagnosticTracking.ts`）
+**Responsibility**: Distributed tracing and metrics collection (corresponds to CC `src/services/analytics/` + `src/services/diagnosticTracking.ts`)
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── tracer.rs         // OpenTelemetry tracer 初始化
-├── metrics.rs        // 自定义 metrics（API 延迟、工具执行时间等）
-├── cost.rs           // 费用追踪
-└── export.rs         // OTLP 导出
+├── tracer.rs         // OpenTelemetry tracer initialization
+├── metrics.rs        // Custom metrics (API latency, tool execution time, etc.)
+├── cost.rs           // Cost tracking
+└── export.rs         // OTLP export
 ```
 
-**核心接口**
+**Core Interface**
 
 ```rust
 // tracer.rs
 use tracing_subscriber::prelude::*;
 
-/// 初始化追踪系统
+/// Initialize the tracing system
 pub fn init(service_name: &str, endpoint: Option<&str>) -> crab_common::Result<()> {
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(false)
@@ -3230,26 +3238,26 @@ pub fn init(service_name: &str, endpoint: Option<&str>) -> crab_common::Result<(
                     .with_endpoint(endpoint),
             )
             .install_batch(opentelemetry_sdk::runtime::Tokio)?;
-        // 添加 OpenTelemetry layer 到 registry
+        // Add OpenTelemetry layer to registry
     }
 
     #[cfg(not(feature = "otlp"))]
-    let _ = (service_name, endpoint); // 抑制未使用警告
+    let _ = (service_name, endpoint); // Suppress unused warnings
 
     registry.init();
     Ok(())
 }
 ```
 
-**外部依赖**：`tracing`, `tracing-subscriber`, `crab-common`；OTLP 相关为可选依赖
+**External Dependencies**: `tracing`, `tracing-subscriber`, `crab-common`; OTLP-related are optional dependencies
 
 **Feature Flags**
 
 ```toml
 [features]
 default = ["fmt"]
-fmt = ["tracing-subscriber/fmt"]                               # 本地日志格式化（默认）
-otlp = [                                                       # OpenTelemetry OTLP 导出
+fmt = ["tracing-subscriber/fmt"]                               # Local log formatting (default)
+otlp = [                                                       # OpenTelemetry OTLP export
     "opentelemetry",
     "opentelemetry-otlp",
     "opentelemetry-sdk",
@@ -3257,55 +3265,55 @@ otlp = [                                                       # OpenTelemetry O
 ]
 ```
 
-> 默认只启用 `fmt`（本地 tracing-subscriber），不引入 opentelemetry 全家桶。
-> 生产部署需要 OTLP 导出时通过 `cargo build -F otlp` 开启。
+> By default, only `fmt` is enabled (local tracing-subscriber), without pulling in the full opentelemetry stack.
+> Production deployments needing OTLP export can enable it with `cargo build -F otlp`.
 
 ---
 
-### 6.15 `crates/cli/` — 终端入口
+### 6.15 `crates/cli/` -- Terminal Entry Point
 
-**职责**：极薄的二进制入口，只做组装不含业务逻辑（对标 CC `src/entrypoints/cli.tsx`）
+**Responsibility**: An extremely thin binary entry point that only does assembly with no business logic (corresponds to CC `src/entrypoints/cli.tsx`)
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
-├── main.rs           // #[tokio::main] 入口
-├── commands/         // clap 子命令定义
+├── main.rs           // #[tokio::main] entry point
+├── commands/         // clap subcommand definitions
 │   ├── mod.rs
-│   ├── chat.rs       // 默认交互模式 (crab chat)
-│   ├── run.rs        // 非交互单次执行 (crab run -p "...")
+│   ├── chat.rs       // Default interactive mode (crab chat)
+│   ├── run.rs        // Non-interactive single execution (crab run -p "...")
 │   ├── session.rs    // ps, logs, attach, kill
-│   ├── config.rs     // 配置管理 (crab config set/get)
-│   ├── mcp.rs        // MCP server 模式 (crab mcp serve)
-│   └── serve.rs      // 服务模式
-└── setup.rs          // 初始化、信号注册、版本检查、panic hook
+│   ├── config.rs     // Configuration management (crab config set/get)
+│   ├── mcp.rs        // MCP server mode (crab mcp serve)
+│   └── serve.rs      // Serve mode
+└── setup.rs          // Initialization, signal registration, version check, panic hook
 ```
 
-**Panic Hook 设计**
+**Panic Hook Design**
 
 ```rust
-// setup.rs — 终端状态恢复 panic hook
-// 必须在 terminal.init() 之后、进入主循环之前注册
+// setup.rs -- Terminal state recovery panic hook
+// Must be registered after terminal.init() and before entering the main loop
 pub fn install_panic_hook() {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
-        // 1. 恢复终端状态（最重要 — 否则终端不可用）
+        // 1. Restore terminal state (most important -- otherwise terminal becomes unusable)
         let _ = crossterm::terminal::disable_raw_mode();
         let _ = crossterm::execute!(
             std::io::stdout(),
             crossterm::terminal::LeaveAlternateScreen,
             crossterm::cursor::Show
         );
-        // 2. 调用原始 hook（打印 panic 信息）
+        // 2. Call original hook (print panic info)
         original_hook(panic_info);
-        // 推荐替代方案：使用 color-eyre::install() 自动处理，
-        // 提供美化的 panic 报告 + backtrace
+        // Recommended alternative: use color-eyre::install() for automatic handling,
+        // providing beautified panic reports + backtrace
     }));
 }
 ```
 
-**入口代码**
+**Entry Point Code**
 
 ```rust
 // main.rs
@@ -3317,39 +3325,39 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// 直接传入 prompt（等同于 crab run -p）
+    /// Pass prompt directly (equivalent to crab run -p)
     #[arg(short, long)]
     prompt: Option<String>,
 
-    /// 权限模式
+    /// Permission mode
     #[arg(long, default_value = "default")]
     permission_mode: String,
 
-    /// 指定模型
+    /// Specify model
     #[arg(long)]
     model: Option<String>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// 交互模式（默认）
+    /// Interactive mode (default)
     Chat,
-    /// 单次执行
+    /// Single execution
     Run {
         #[arg(short, long)]
         prompt: String,
     },
-    /// 会话管理
+    /// Session management
     Session {
         #[command(subcommand)]
         action: SessionAction,
     },
-    /// 配置管理
+    /// Configuration management
     Config {
         #[command(subcommand)]
         action: ConfigAction,
     },
-    /// MCP 模式
+    /// MCP mode
     Mcp {
         #[command(subcommand)]
         action: McpAction,
@@ -3360,24 +3368,24 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // 1. 初始化 telemetry
+    // 1. Initialize telemetry
     crab_telemetry::init("crab-code", None)?;
 
-    // 2. 加载配置
+    // 2. Load configuration
     let config = crab_config::load_merged_settings(None)?;
 
-    // 3. 初始化认证
+    // 3. Initialize authentication
     let auth = crab_auth::resolve_api_key()
         .ok_or_else(|| anyhow::anyhow!("no API key found"))?;
 
-    // 4. 分发命令
+    // 4. Dispatch commands
     match cli.command.unwrap_or(Commands::Chat) {
         Commands::Chat => {
-            // 启动交互模式
+            // Start interactive mode
             // ...
         }
         Commands::Run { prompt } => {
-            // 单次执行
+            // Single execution
             // ...
         }
         _ => { /* ... */ }
@@ -3387,7 +3395,7 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-**外部依赖**：所有 crate, `clap`, `tokio`, `anyhow`
+**External Dependencies**: All crates, `clap`, `tokio`, `anyhow`
 
 **Feature Flags**
 
@@ -3400,72 +3408,72 @@ full = ["tui", "crab-plugin/wasm", "crab-api/bedrock", "crab-api/vertex"]
 
 ---
 
-### 6.16 `crates/daemon/` — 后台守护进程
+### 6.16 `crates/daemon/` -- Background Daemon
 
-**职责**：后台持久运行的守护进程，管理多个会话（对标 CC `src/daemon/`）
+**Responsibility**: A persistently running background daemon that manages multiple sessions (corresponds to CC `src/daemon/`)
 
-**目录结构**
+**Directory Structure**
 
 ```
 src/
 └── main.rs
 ```
 
-**IPC 通信设计**
+**IPC Communication Design**
 
 ```
-CLI ◄─── Unix socket (Linux/macOS) / Named pipe (Windows) ───► Daemon
-         协议: 长度前缀帧 + JSON 消息
-         格式: [4 bytes: payload_len_le32][payload_json]
+CLI <--- Unix socket (Linux/macOS) / Named pipe (Windows) ---> Daemon
+         Protocol: length-prefixed frames + JSON messages
+         Format: [4 bytes: payload_len_le32][payload_json]
 ```
 
-**IPC 消息协议**
+**IPC Message Protocol**
 
 ```rust
-/// CLI → Daemon 请求
+/// CLI -> Daemon request
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DaemonRequest {
-    /// 创建新 session 或 attach 到已有 session
+    /// Create new session or attach to existing session
     Attach { session_id: Option<String>, working_dir: PathBuf },
-    /// 断开连接但保持 session 运行
+    /// Disconnect but keep session running
     Detach { session_id: String },
-    /// 列出活跃 session
+    /// List active sessions
     ListSessions,
-    /// 终止 session
+    /// Terminate session
     KillSession { session_id: String },
-    /// 发送用户输入
+    /// Send user input
     UserInput { session_id: String, content: String },
-    /// 健康检查
+    /// Health check
     Ping,
 }
 
-/// Daemon → CLI 响应/事件推送
+/// Daemon -> CLI response/event push
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DaemonResponse {
-    /// attach 成功
+    /// Attach successful
     Attached { session_id: String },
-    /// session 列表
+    /// Session list
     Sessions { list: Vec<SessionInfo> },
-    /// 转发 agent Event（流式推送）
+    /// Forward agent Event (streaming push)
     Event(crab_core::event::Event),
-    /// 错误
+    /// Error
     Error { message: String },
     /// Pong
     Pong,
 }
 ```
 
-**Session Pool 管理**
+**Session Pool Management**
 
 ```rust
 pub struct SessionPool {
-    /// 活跃 session（最多 N 个，默认 8）
+    /// Active sessions (max N, default 8)
     sessions: HashMap<String, SessionHandle>,
-    /// 共享 API 连接池（所有 session 复用）
+    /// Shared API connection pool (reused across all sessions)
     api_client: Arc<LlmBackend>,
-    /// 空闲超时自动清理（默认 30 分钟）
+    /// Idle timeout auto-cleanup (default 30 minutes)
     idle_timeout: Duration,
 }
 
@@ -3474,33 +3482,33 @@ pub struct SessionHandle {
     pub working_dir: PathBuf,
     pub created_at: Instant,
     pub last_active: Instant,
-    /// 当前是否有 CLI 连接
+    /// Whether a CLI is currently connected
     pub attached: bool,
-    /// session 控制 channel
+    /// Session control channel
     pub tx: mpsc::Sender<DaemonRequest>,
 }
 ```
 
-**CLI attach/detach 流程**
+**CLI Attach/Detach Flow**
 
 ```
-1. CLI 启动 → 连接 daemon socket
-2. 发送 Attach { session_id: None } → daemon 创建新 session
-3. daemon 回复 Attached { session_id: "xxx" }
-4. CLI 发送 UserInput → daemon 转发给 query_loop
-5. daemon 流式推送 Event → CLI 渲染
-6. CLI 退出 → 发送 Detach → session 保持后台运行
-7. CLI 重新 Attach { session_id: "xxx" } → 恢复对话
+1. CLI starts -> connects to daemon socket
+2. Sends Attach { session_id: None } -> daemon creates new session
+3. Daemon replies Attached { session_id: "xxx" }
+4. CLI sends UserInput -> daemon forwards to query_loop
+5. Daemon streams Event -> CLI renders
+6. CLI exits -> sends Detach -> session continues running in background
+7. CLI re-attaches Attach { session_id: "xxx" } -> resumes conversation
 ```
 
-**核心逻辑**
+**Core Logic**
 
 ```rust
 // main.rs
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 0. 日志初始化 — 使用 tracing-appender 日志轮转
-    //    daemon 是长驻进程，必须有日志轮转防止磁盘写满
+    // 0. Log initialization -- use tracing-appender for log rotation
+    //    daemon is a long-running process, must have log rotation to prevent disk from filling up
     let log_dir = directories::ProjectDirs::from("", "", "crab-code")
         .expect("failed to resolve project dirs")
         .data_dir()
@@ -3509,130 +3517,130 @@ async fn main() -> anyhow::Result<()> {
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     tracing_subscriber::fmt()
         .with_writer(non_blocking)
-        .with_ansi(false) // 文件日志不需要 ANSI 颜色
+        .with_ansi(false) // File logs don't need ANSI colors
         .init();
 
-    // 1. PID 文件 + 单实例检查（fd-lock）
-    // 2. 初始化共享 API 连接池
-    // 3. 创建 SessionPool
-    // 4. 监听 IPC socket
-    // 5. accept loop: 每个 CLI 连接 spawn 独立 handler
-    // 6. 定期清理空闲 session
+    // 1. PID file + single instance check (fd-lock)
+    // 2. Initialize shared API connection pool
+    // 3. Create SessionPool
+    // 4. Listen on IPC socket
+    // 5. Accept loop: spawn independent handler for each CLI connection
+    // 6. Periodically clean up idle sessions
     // ...
 }
 ```
 
-**外部依赖**：`crab-core`, `crab-session`, `crab-api`, `crab-tools`, `crab-config`, `crab-agent`, `crab-common`, `tokio`, `fd-lock`, `tracing-appender`
+**External Dependencies**: `crab-core`, `crab-session`, `crab-api`, `crab-tools`, `crab-config`, `crab-agent`, `crab-common`, `tokio`, `fd-lock`, `tracing-appender`
 
 ---
 
-### 6.17 全局状态拆分：AppConfig / AppRuntime
+### 6.17 Global State Split: AppConfig / AppRuntime
 
-CLI 和 Daemon 共享的全局状态拆分为 **不可变配置** 和 **可变运行时** 两部分，
-避免单一 `Arc<RwLock<AppState>>` 导致读路径被写锁阻塞。
+Global state shared by CLI and Daemon is split into **immutable configuration** and **mutable runtime** halves,
+avoiding a single `Arc<RwLock<AppState>>` where read paths get blocked by write locks.
 
 ```rust
-/// 不可变配置 — 启动时初始化，运行期间不变
-/// Arc<AppConfig> 零锁共享，任意线程/task 可直接读取
+/// Immutable configuration -- initialized at startup, unchanged during runtime
+/// Arc<AppConfig> shared with zero locks, readable by any thread/task
 pub struct AppConfig {
-    /// 合并后的 settings.json
+    /// Merged settings.json
     pub settings: crab_config::Settings,
-    /// CRAB.md 内容（全局 + 用户 + 项目）
+    /// CRAB.md content (global + user + project)
     pub crab_md: Vec<crab_config::CrabMd>,
-    /// 权限策略
+    /// Permission policy
     pub permission_policy: crab_core::permission::PermissionPolicy,
-    /// 模型配置
+    /// Model configuration
     pub model_id: crab_core::model::ModelId,
-    /// 项目根目录
+    /// Project root directory
     pub project_dir: std::path::PathBuf,
 }
 
-/// 可变运行时状态 — 运行期间频繁变化
-/// Arc<RwLock<AppRuntime>> 读多写少，RwLock 读锁不互斥
+/// Mutable runtime state -- changes frequently during runtime
+/// Arc<RwLock<AppRuntime>> read-heavy/write-light, RwLock read locks are non-exclusive
 pub struct AppRuntime {
-    /// 费用追踪（每次 API 调用后写入）
+    /// Cost tracker (written after each API call)
     pub cost_tracker: crab_core::model::CostTracker,
-    /// 活跃会话列表（daemon 模式下多个）
+    /// Active session list (multiple in daemon mode)
     pub active_sessions: Vec<String>,
-    /// MCP 连接池（动态连接/断开）
+    /// MCP connection pool (dynamic connect/disconnect)
     pub mcp_connections: std::collections::HashMap<String, crab_mcp::McpClient>,
 }
 
-// 使用方式：
-// let config = Arc::new(AppConfig { ... });     // 启动时构建，之后只读
-// let runtime = Arc::new(RwLock::new(AppRuntime { ... })); // 运行时读写
+// Usage:
+// let config = Arc::new(AppConfig { ... });     // Built at startup, read-only afterward
+// let runtime = Arc::new(RwLock::new(AppRuntime { ... })); // Read/write at runtime
 //
-// // 热路径：零锁读取配置
+// // Hot path: zero-lock config reads
 // let model = &config.model_id;
 //
-// // 写路径：更新费用（短暂写锁）
+// // Write path: update cost (brief write lock)
 // runtime.write().await.cost_tracker.record(&usage, cost);
 ```
 
 ---
 
-## 七、设计原则
+## 7. Design Principles
 
-| # | 原则 | 说明 | 理由 |
-|---|------|------|------|
-| 1 | **core 零 I/O** | 纯数据结构和 trait，不含文件/网络/进程操作 | 可被 CLI/GUI/WASM 任意前端复用，单元测试无需 mock |
-| 2 | **tools 独立 crate** | 21+ 工具编译量大，独立后增量编译只触发改动的工具 | 改一个工具不用重编全部 |
-| 3 | **fs 和 process 分开** | 职责正交：fs 处理文件内容，process 处理执行 | GlobTool 不需要 sysinfo，BashTool 不需要 globset |
-| 4 | **tui 可选** | cli bin 通过 feature flag 决定是否编译 tui | 未来 Tauri GUI 引 core+session+tools 但不引 tui |
-| 5 | **api 与 session 分层** | api 只管 HTTP 通信，session 管业务状态 | 替换 API provider 不影响会话逻辑 |
-| 6 | **feature flag 控可选依赖** | 不用 Bedrock 不编译 AWS SDK，不用 WASM 不编译 wasmtime | 减少编译时间和二进制体积 |
-| 7 | **workspace.dependencies 统一版本** | 所有 crate 共享同一版本的三方库 | 避免依赖冲突和重复编译 |
-| 8 | **binary crate 只做组装** | cli/daemon 只做组装，所有逻辑在 library crate 中 | 方便未来新增入口（desktop/wasm/mobile） |
+| # | Principle | Description | Rationale |
+|---|-----------|-------------|-----------|
+| 1 | **core has zero I/O** | Pure data structures and traits, no file/network/process operations | Reusable by CLI/GUI/WASM frontends; unit tests need no mocking |
+| 2 | **tools as independent crate** | 21+ tools have significant compile cost; keeping them separate means incremental compilation only triggers on changed tools | Changing one tool doesn't recompile everything |
+| 3 | **fs and process are separate** | Orthogonal responsibilities: fs handles file content, process handles execution | GlobTool doesn't need sysinfo, BashTool doesn't need globset |
+| 4 | **tui is optional** | cli bin uses feature flags to decide whether to compile tui | Future Tauri GUI imports core+session+tools but not tui |
+| 5 | **api and session are layered** | api only handles HTTP communication, session manages business state | Replacing an API provider doesn't affect session logic |
+| 6 | **Feature flags control optional dependencies** | No Bedrock? Don't compile AWS SDK. No WASM? Don't compile wasmtime. | Reduces compile time and binary size |
+| 7 | **workspace.dependencies unifies versions** | All crates share the same version of third-party libraries | Avoids dependency conflicts and duplicate compilation |
+| 8 | **Binary crates only do assembly** | cli/daemon only do assembly; all logic lives in library crates | Makes it easy to add new entry points in the future (desktop/wasm/mobile) |
 
 ---
 
-## 八、Feature Flag 策略
+## 8. Feature Flag Strategy
 
-### 8.1 各 Crate Feature 配置
+### 8.1 Per-Crate Feature Configuration
 
 ```toml
-# ─── crates/api/Cargo.toml ───
+# --- crates/api/Cargo.toml ---
 [features]
 default = []
 bedrock = ["aws-sdk-bedrockruntime", "aws-config"]  # AWS Bedrock provider
 vertex = ["gcp-auth"]                                 # Google Vertex provider
-proxy = ["reqwest/socks"]                             # SOCKS5 代理支持
+proxy = ["reqwest/socks"]                             # SOCKS5 proxy support
 
-# ─── crates/auth/Cargo.toml ───
+# --- crates/auth/Cargo.toml ---
 [features]
 default = []
-bedrock = ["aws-sdk-bedrockruntime", "aws-config"]   # AWS SigV4 签名
+bedrock = ["aws-sdk-bedrockruntime", "aws-config"]   # AWS SigV4 signing
 
-# ─── crates/mcp/Cargo.toml ───
+# --- crates/mcp/Cargo.toml ---
 [features]
 default = []
-ws = ["tokio-tungstenite"]                            # WebSocket 传输
+ws = ["tokio-tungstenite"]                            # WebSocket transport
 
-# ─── crates/plugin/Cargo.toml ───
+# --- crates/plugin/Cargo.toml ---
 [features]
 default = []
-wasm = ["wasmtime"]                                   # WASM 插件沙箱
+wasm = ["wasmtime"]                                   # WASM plugin sandbox
 
-# ─── crates/process/Cargo.toml ───
+# --- crates/process/Cargo.toml ---
 [features]
 default = []
-pty = ["portable-pty"]                                # 伪终端分配
-sandbox = []                                          # 进程沙箱
+pty = ["portable-pty"]                                # Pseudo-terminal allocation
+sandbox = []                                          # Process sandbox
 
-# ─── crates/telemetry/Cargo.toml ───
+# --- crates/telemetry/Cargo.toml ---
 [features]
 default = ["fmt"]
-fmt = ["tracing-subscriber/fmt"]                             # 本地日志（默认）
-otlp = [                                                     # OTLP 导出
+fmt = ["tracing-subscriber/fmt"]                             # Local logging (default)
+otlp = [                                                     # OTLP export
     "opentelemetry", "opentelemetry-otlp",
     "opentelemetry-sdk", "tracing-opentelemetry",
 ]
 
-# ─── crates/cli/Cargo.toml ───
+# --- crates/cli/Cargo.toml ---
 [features]
 default = ["tui"]
-tui = ["crab-tui"]                                    # 终端 UI（默认开启）
-full = [                                              # 全功能构建
+tui = ["crab-tui"]                                    # Terminal UI (enabled by default)
+full = [                                              # Full-feature build
     "tui",
     "crab-plugin/wasm",
     "crab-api/bedrock",
@@ -3640,31 +3648,31 @@ full = [                                              # 全功能构建
     "crab-process/pty",
     "crab-telemetry/otlp",
 ]
-minimal = []                                          # 最小构建（无 TUI）
+minimal = []                                          # Minimal build (no TUI)
 ```
 
-### 8.2 构建组合
+### 8.2 Build Combinations
 
-| 场景 | 命令 | 编译内容 |
-|------|------|---------|
-| 日常开发 | `cargo build` | cli + tui（默认） |
-| 最小构建 | `cargo build --no-default-features -F minimal` | cli only, 无 tui |
-| 全功能 | `cargo build -F full` | 所有 provider + WASM + PTY |
-| 仅 library | `cargo build -p crab-core` | 单 crate 编译 |
-| WASM 目标 | `cargo build -p crab-core --target wasm32-unknown-unknown` | core 层 WASM |
+| Scenario | Command | What Gets Compiled |
+|----------|---------|-------------------|
+| Daily development | `cargo build` | cli + tui (default) |
+| Minimal build | `cargo build --no-default-features -F minimal` | cli only, no tui |
+| Full feature | `cargo build -F full` | All providers + WASM + PTY |
+| Library only | `cargo build -p crab-core` | Single crate compilation |
+| WASM target | `cargo build -p crab-core --target wasm32-unknown-unknown` | core layer WASM |
 
-### 8.3 对标 CC Feature Flags
+### 8.3 Mapping to CC Feature Flags
 
-CC 源码中通过 `featureFlags.ts` 管理约 31 个运行时 flag，Crab Code 将其拆分为：
+CC source code manages about 31 runtime flags through `featureFlags.ts`; Crab Code splits them into:
 
-- **编译时 feature**：provider 选择、WASM 插件、PTY 等（Cargo features）
-- **运行时 flag**：通过 `config/feature_flag.rs` 管理，支持远程下发
+- **Compile-time features**: Provider selection, WASM plugins, PTY, etc. (Cargo features)
+- **Runtime flags**: Managed via `config/feature_flag.rs`, with support for remote delivery
 
 ---
 
-## 九、Workspace 配置
+## 9. Workspace Configuration
 
-### 9.1 根 Cargo.toml
+### 9.1 Root Cargo.toml
 
 ```toml
 [workspace]
@@ -3680,9 +3688,9 @@ repository = "https://github.com/user/crab-code"
 description = "AI coding assistant in Rust"
 
 [workspace.dependencies]
-# 完整依赖列表见根 Cargo.toml
-# 主要分类：异步运行时(tokio)、序列化(serde)、CLI(clap)、HTTP(reqwest)、
-# TUI(ratatui)、错误处理(thiserror/anyhow)、文件系统(globset/ignore)等
+# See root Cargo.toml for complete dependency list
+# Main categories: async runtime (tokio), serialization (serde), CLI (clap), HTTP (reqwest),
+# TUI (ratatui), error handling (thiserror/anyhow), file system (globset/ignore), etc.
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -3707,7 +3715,7 @@ opt-level = 3
 
 ```toml
 [toolchain]
-channel = "1.85.0"    # edition 2024 + async fn in trait 最低版本
+channel = "1.85.0"    # Minimum version for edition 2024 + async fn in trait
 components = ["rustfmt", "clippy", "rust-analyzer"]
 ```
 
@@ -3722,202 +3730,211 @@ use_field_init_shorthand = true
 
 ---
 
-## 十、数据流设计
+## 10. Data Flow Design
 
-### 10.1 主数据流：Query Loop
+### 10.1 Primary Data Flow: Query Loop
 
 ```
-用户输入
-  │
-  ▼
+User input
+  |
+  v
 ┌──────────┐    prompt     ┌──────────┐   HTTP POST    ┌──────────────┐
-│crates/cli│──────────────►│  agent   │───────────────►│  Anthropic   │
+│crates/cli│──────────────>│  agent   │───────────────>│  Anthropic   │
 │ (TUI)    │               │query_loop│   /v1/messages │  API Server  │
-└──────────┘               └────┬─────┘◄───────────────┘──────────────┘
-      ▲                         │          SSE stream
-      │                         │
-      │ Event::ContentDelta     │ 解析 assistant 响应
-      │                         │
-      │                    ┌────▼─────┐
-      │                    │ 有工具   │──── 否 ──► 循环结束，显示结果
-      │                    │ 调用？   │
-      │                    └────┬─────┘
-      │                         │ 是
-      │                         ▼
-      │                    ┌──────────┐   delegate    ┌────────────┐
-      │                    │  tools   │──────────────►│  fs / mcp  │
-      │                    │ executor │               │  process   │
-      │                    └────┬─────┘◄──────────────┘────────────┘
-      │                         │         ToolOutput
-      │ Event::ToolResult       │
+└──────────┘               └────┬─────┘<───────────────┘──────────────┘
+      ^                         │          SSE stream
+      |                         |
+      | Event::ContentDelta     | Parse assistant response
+      |                         |
+      |                    ┌────v─────┐
+      |                    │ Has tool │──── No ──> Loop ends, display result
+      |                    │ calls?   │
+      |                    └────┬─────┘
+      |                         | Yes
+      |                         v
+      |                    ┌──────────┐   delegate    ┌────────────┐
+      |                    │  tools   │──────────────>│  fs / mcp  │
+      |                    │ executor │               │  process   │
+      |                    └────┬─────┘<──────────────┘────────────┘
+      |                         |         ToolOutput
+      | Event::ToolResult       |
       └─────────────────────────┘
-            工具结果追加到 messages，回到 query_loop 顶部
+            Tool results appended to messages, return to top of query_loop
 ```
 
-### 10.2 MCP 工具调用
+### 10.2 MCP Tool Call
 
 ```
-┌──────────┐  call_tool   ┌──────────┐  Crab façade  ┌──────────────┐
-│  tools   │─────────────►│   mcp    │──────────────►│  MCP Server  │
-│ executor │              │  client  │               │  (外部进程)   │
+┌──────────┐  call_tool   ┌──────────┐  Crab facade   ┌──────────────┐
+│  tools   │─────────────>│   mcp    │───────────────>│  MCP Server  │
+│ executor │              │  client  │               │  (external    │
+│          │              │          │               │   process)    │
 └──────────┘              └────┬─────┘               └──────┬───────┘
                                │                             │
                                │     rmcp transport/client   │
-                          ┌────▼─────────────────────────┐   │
+                          ┌────v─────────────────────────┐   │
                           │  stdio child process / HTTP  │   │
                           │  handshake / tools/list      │   │
                           │  tools/call / resources      │   │
                           └──────────────────────────────┘   │
                                                              │
-                               ◄─────────────────────────────┘
+                               <─────────────────────────────┘
                                      tool / resource result
 ```
 
-### 10.3 上下文压缩决策流
+### 10.3 Context Compaction Decision Flow
 
 ```
 ┌──────────────┐
 │ query_loop   │
-│ 每轮开始     │
+│ start of     │
+│ each turn    │
 └──────┬───────┘
        │
-       ▼
+       v
 ┌──────────────┐     estimated_tokens()
-│ 估算当前     │──────────────────────────┐
-│ token 数     │                          │
-└──────────────┘                          ▼
-                                   ┌──────────────┐
-                                   │ > 70% 窗口？ │
+│ Estimate     │──────────────────────────┐
+│ current      │                          │
+│ token count  │                          v
+└──────────────┘                   ┌──────────────┐
+                                   │ > 70% of     │
+                                   │ window?      │
                                    └──────┬───────┘
                                           │
-                               ┌─── 否 ───┼─── 是 ───┐
+                               ┌─── No ───┼─── Yes ──┐
                                │          │           │
-                               ▼          │           ▼
-                          正常继续         │    ┌──────────────┐
-                                          │    │ 选择压缩策略 │
+                               v          │           v
+                          Continue         │    ┌──────────────┐
+                          normally         │    │ Select       │
+                                          │    │ compaction   │
+                                          │    │ strategy     │
                                           │    └──────┬───────┘
                                           │           │
-                                          │    ┌──────▼───────┐
-                                          │    │  Snip        │ ← 70-80%
-                                          │    │  Microcompact│ ← 80-85%
-                                          │    │  Summarize   │ ← 85-90%
-                                          │    │  Hybrid      │ ← 90-95%
-                                          │    │  Truncate    │ ← > 95%
+                                          │    ┌──────v───────┐
+                                          │    │  Snip        │ <- 70-80%
+                                          │    │  Microcompact│ <- 80-85%
+                                          │    │  Summarize   │ <- 85-90%
+                                          │    │  Hybrid      │ <- 90-95%
+                                          │    │  Truncate    │ <- > 95%
                                           │    └──────┬───────┘
                                           │           │
-                                          │           ▼
+                                          │           v
                                           │    ┌──────────────┐
-                                          │    │ 调用小模型   │
-                                          │    │ 生成摘要     │
+                                          │    │ Call small   │
+                                          │    │ model to     │
+                                          │    │ generate     │
+                                          │    │ summary      │
                                           │    └──────┬───────┘
                                           │           │
-                                          │           ▼
+                                          │           v
                                           │    ┌──────────────┐
-                                          │    │ 重建消息列表 │
+                                          │    │ Rebuild      │
+                                          │    │ message list │
                                           │    │ [summary] +  │
-                                          │    │ 最近 N 轮    │
+                                          │    │ recent N     │
+                                          │    │ turns        │
                                           │    └──────┬───────┘
                                           │           │
                                           └───────────┘
                                                       │
-                                                      ▼
-                                                继续 query_loop
+                                                      v
+                                                Continue query_loop
 ```
 
 ---
 
-## 十一、扩展系统设计
+## 11. Extension System Design
 
-### 11.1 多模型支持架构（crab-api）
+### 11.1 Multi-Model Support Architecture (crab-api)
 
-`crab-api` 的多模型回退与错误分类层，在 `LlmBackend` 枚举之上叠加：
+`crab-api`'s multi-model fallback and error classification layer, stacked on top of the `LlmBackend` enum:
 
 ```
-用户请求
-    │
-    ▼
+User request
+    |
+    v
 ┌─────────────────┐
-│    fallback.rs   │  — 多模型回退链（主→备1→备2）
+│    fallback.rs   │  -- Multi-model fallback chain (primary -> backup1 -> backup2)
 └────────┬────────┘
          │
-    ┌────▼────────────────┐
-    │  retry_strategy.rs  │  — 增强重试（退避 + jitter）
+    ┌────v────────────────┐
+    │  retry_strategy.rs  │  -- Enhanced retry (backoff + jitter)
     └────┬────────────────┘
          │
-    ┌────▼────────────────┐
-    │ error_classifier.rs │  — 错误分类（可重试/不可重试）
+    ┌────v────────────────┐
+    │ error_classifier.rs │  -- Error classification (retryable/non-retryable)
     └─────────────────────┘
 ```
 
-**模块清单**：
-- `fallback.rs` — 多模型回退链（主模型失败自动切换备用模型）
-- `capabilities.rs` — 模型能力协商与发现
-- `context_optimizer.rs` — 上下文窗口优化 + 智能截断
-- `streaming.rs` — 流式工具调用解析
-- `retry_strategy.rs` / `error_classifier.rs` — 增强重试与错误分类
+**Module List**:
+- `fallback.rs` -- Multi-model fallback chain (auto-switch to backup on primary failure)
+- `capabilities.rs` -- Model capability negotiation and discovery
+- `context_optimizer.rs` -- Context window optimization + smart truncation
+- `streaming.rs` -- Streaming tool call parsing
+- `retry_strategy.rs` / `error_classifier.rs` -- Enhanced retry and error classification
 
 
-### 11.2 MCP 协议栈（crab-mcp）
+### 11.2 MCP Protocol Stack (crab-mcp)
 
-MCP 协议扩展模块：
+MCP protocol extension modules:
 
-- `crab-mcp` 是 Crab 的 MCP façade，不直接把底层 SDK 暴露给上层 crate
-- client 侧 stdio / HTTP 连接由官方 SDK 承接，Crab 负责配置发现、命名、权限接入与工具桥接
-- 配置主路径只保留 `stdio` / `http` / `ws`
-- server / prompt / resource / tool registry 仍保留 Crab 自己的抽象层
+- `crab-mcp` is Crab's MCP facade; it does not directly expose the underlying SDK to upper-layer crates
+- Client-side stdio / HTTP connections are handled by the official SDK; Crab handles config discovery, naming, permission integration, and tool bridging
+- The config primary path only retains `stdio` / `http` / `ws`
+- Server / prompt / resource / tool registry still retain Crab's own abstraction layer
 
-| 模块 | 功能 |
-|------|------|
-| `handshake.rs` + `negotiation.rs` | initialize/initialized 握手，能力集协商 |
-| `sampling.rs` | 服务端请求 LLM 推理（server → client sampling） |
-| `roots.rs` | 工作区根目录声明（client 告知 server 可访问路径）|
-| `logging.rs` | 结构化日志消息协议 |
-| `sse_server.rs` | crab 作为 MCP server 提供 SSE 传输 |
-| `capability.rs` | 能力声明类型 |
-| `notification.rs` | 服务端通知推送 |
-| `progress.rs` | 进度报告（长时间工具执行）|
-| `cancellation.rs` | 请求取消（`$/cancelRequest` JSON-RPC 通知）|
-| `health.rs` | 健康检查 + 心跳 |
+| Module | Function |
+|--------|----------|
+| `handshake.rs` + `negotiation.rs` | initialize/initialized handshake, capability set negotiation |
+| `sampling.rs` | Server requests LLM inference (server -> client sampling) |
+| `roots.rs` | Workspace root directory declaration (client tells server accessible paths) |
+| `logging.rs` | Structured log message protocol |
+| `sse_server.rs` | Crab as MCP server providing SSE transport |
+| `capability.rs` | Capability declaration types |
+| `notification.rs` | Server notification push |
+| `progress.rs` | Progress reporting (long-running tool execution) |
+| `cancellation.rs` | Request cancellation (`$/cancelRequest` JSON-RPC notification) |
+| `health.rs` | Health check + heartbeat |
 
 
-### 11.3 Agent 可靠性（crab-agent）
+### 11.3 Agent Reliability (crab-agent)
 
-**可靠性子系统**：
+**Reliability Subsystem**:
 ```
-error_recovery → retry → rollback
-summarizer（对话摘要生成）
-repl_commands（/undo /branch /fork）
+error_recovery -> retry -> rollback
+summarizer (conversation summary generation)
+repl_commands (/undo /branch /fork)
 ```
 
 
-### 11.4 TUI 组件库（crab-tui，21 组件）
+### 11.4 TUI Component Library (crab-tui, 21 Components)
 
-**交互组件**（用户操作）：
-- `command_palette` — Ctrl+P 命令面板，模糊搜索所有命令
-- `autocomplete` — 输入时弹出补全建议
-- `search` — 全局搜索（文件名 + 内容）
-- `input_history` — ↑↓ 浏览历史输入
+**Interactive Components** (user-operated):
+- `command_palette` -- Ctrl+P command palette, fuzzy search all commands
+- `autocomplete` -- Popup completion suggestions while typing
+- `search` -- Global search (filename + content)
+- `input_history` -- Up/down arrow to browse input history
 
-**内容展示组件**：
-- `code_block` — 代码块 + 复制按钮（syntect 高亮）
-- `tool_output` — 工具输出折叠显示（可展开/收起）
+**Content Display Components**:
+- `code_block` -- Code block + copy button (syntect highlighting)
+- `tool_output` -- Collapsible tool output display (expandable/collapsible)
 
-**状态反馈组件**：
-- `notification` — Toast 通知（顶部弹出，3s 自动消失）
-- `progress_indicator` — 百分比进度条
-- `loading` — 多样式加载动画（spin/dot/bar）
-- `status_bar` — 增强状态栏（模式/provider/token 计数/响应延迟）
-- `shortcut_hint` — 底部常显快捷键提示
+**Status Feedback Components**:
+- `notification` -- Toast notification (top popup, 3s auto-dismiss)
+- `progress_indicator` -- Percentage progress bar
+- `loading` -- Multi-style loading animation (spin/dot/bar)
+- `status_bar` -- Enhanced status bar (mode/provider/token count/response latency)
+- `shortcut_hint` -- Always-visible shortcut hint bar at bottom
 
 
-### 11.5 Auth 云平台认证（crab-auth）
+### 11.5 Auth Cloud Platform Authentication (crab-auth)
 
 ```
-AWS 场景:
-  aws_iam.rs → 支持 IRSA（Pod 级别 IAM 角色）+ 标准 IAM 凭证链
-  credential_chain.rs → env → keychain → file → IRSA → instance metadata
+AWS Scenario:
+  aws_iam.rs -> Supports IRSA (pod-level IAM roles) + standard IAM credential chain
+  credential_chain.rs -> env -> keychain -> file -> IRSA -> instance metadata
 
-GCP 场景:
-  gcp_identity.rs → Workload Identity Federation
-  vertex_auth.rs → GCP Vertex AI 专用认证
+GCP Scenario:
+  gcp_identity.rs -> Workload Identity Federation
+  vertex_auth.rs -> GCP Vertex AI dedicated authentication
 ```
