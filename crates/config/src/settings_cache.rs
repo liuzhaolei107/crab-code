@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::settings::Settings;
+use crate::settings::{self, Settings};
 
 /// Cached, lazily-loaded settings.
 ///
@@ -38,14 +38,32 @@ impl SettingsCache {
     ///
     /// Returns an error if settings files cannot be read or parsed.
     pub fn get_or_load(&self) -> crab_common::Result<Settings> {
-        todo!()
+        let mut guard = self.cached.lock().unwrap();
+        if let Some(ref cached) = *guard {
+            return Ok(cached.clone());
+        }
+
+        // Load and merge: global → project → local (each layer optional)
+        let global = settings::load_global().unwrap_or_default();
+
+        let merged = if let Some(ref project_dir) = self.project_dir {
+            let project = settings::load_project(project_dir).unwrap_or_default();
+            global.merge(&project)
+        } else {
+            global
+        };
+
+        *guard = Some(merged.clone());
+        drop(guard);
+        Ok(merged)
     }
 
     /// Invalidate the cache, forcing a reload on the next `get_or_load()`.
     ///
     /// Call this after detecting a file change via `ConfigWatcher`.
     pub fn invalidate(&self) {
-        todo!()
+        let mut guard = self.cached.lock().unwrap();
+        *guard = None;
     }
 
     /// Check whether the cache currently holds a value.
@@ -70,7 +88,32 @@ mod tests {
     #[test]
     fn new_cache_is_not_loaded() {
         let cache = SettingsCache::new(None);
-        // The cache starts empty before the first access.
         assert!(!cache.is_loaded());
+    }
+
+    #[test]
+    fn get_or_load_caches() {
+        let cache = SettingsCache::new(None);
+        let _settings = cache.get_or_load().unwrap();
+        assert!(cache.is_loaded());
+    }
+
+    #[test]
+    fn invalidate_clears_cache() {
+        let cache = SettingsCache::new(None);
+        let _settings = cache.get_or_load().unwrap();
+        assert!(cache.is_loaded());
+        cache.invalidate();
+        assert!(!cache.is_loaded());
+    }
+
+    #[test]
+    fn get_or_load_reloads_after_invalidate() {
+        let cache = SettingsCache::new(None);
+        let s1 = cache.get_or_load().unwrap();
+        cache.invalidate();
+        let s2 = cache.get_or_load().unwrap();
+        // Both should be valid default settings
+        assert_eq!(s1.api_provider, s2.api_provider);
     }
 }

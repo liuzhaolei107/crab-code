@@ -8,6 +8,9 @@
 //! and compared against the last-known state.
 
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::path::Path;
 
 // ── Change event ──────────────────────────────────────────────────────
 
@@ -24,19 +27,6 @@ pub struct SettingsChange {
 
 /// Detects changes in individual settings layers by comparing content
 /// fingerprints between successive checks.
-///
-/// # Usage
-///
-/// ```rust,no_run
-/// use crab_config::change_detector::ChangeDetector;
-///
-/// let mut detector = ChangeDetector::new();
-/// let changes = detector.check_for_changes();
-/// for change in &changes {
-///     println!("source {} changed keys: {:?}", change.source, change.changed_keys);
-/// }
-/// ```
-#[allow(dead_code)]
 pub struct ChangeDetector {
     /// Last-known fingerprint per source name.
     known_hashes: HashMap<String, u64>,
@@ -53,23 +43,80 @@ impl ChangeDetector {
 
     /// Check all settings sources and return a list of changes since the
     /// last call. Sources that have not changed are omitted.
+    ///
+    /// Reads known config paths and computes a hash fingerprint for each.
+    /// On first call, all readable sources are reported as changed (to
+    /// trigger initial loading).
     pub fn check_for_changes(&mut self) -> Vec<SettingsChange> {
-        todo!("check_for_changes: fingerprint each source and compare with known_hashes")
+        let mut changes = Vec::new();
+
+        // Check each known source path
+        let sources = [
+            (
+                "global",
+                crate::settings::global_config_dir().join("settings.json"),
+            ),
+            // Project source is checked if we have a project dir
+            // (callers can use check_source() for project-specific paths)
+        ];
+
+        for (name, path) in &sources {
+            if let Some(change) = self.check_source(name, path) {
+                changes.push(change);
+            }
+        }
+
+        changes
+    }
+
+    /// Check a single source file for changes.
+    ///
+    /// Returns `Some(SettingsChange)` if the file's fingerprint differs
+    /// from the last known state.
+    pub fn check_source(&mut self, source: &str, path: &Path) -> Option<SettingsChange> {
+        let current_hash = fingerprint_file(path);
+        let prev = self.known_hashes.get(source).copied();
+
+        if prev == Some(current_hash) {
+            return None;
+        }
+
+        self.known_hashes.insert(source.to_string(), current_hash);
+
+        Some(SettingsChange {
+            source: source.to_string(),
+            changed_keys: Vec::new(), // Key-level diff is expensive; report source-level changes
+        })
     }
 
     /// Mark a source as known at its current state, suppressing change
     /// notifications until it actually changes again.
-    pub fn mark_known(&mut self, source: &str) {
-        todo!(
-            "mark_known: record current fingerprint for source '{}'",
-            source
-        )
+    pub fn mark_known(&mut self, source: &str, path: &Path) {
+        let hash = fingerprint_file(path);
+        self.known_hashes.insert(source.to_string(), hash);
+    }
+
+    /// Mark a source with an explicit hash value (for non-file sources).
+    pub fn mark_known_hash(&mut self, source: &str, hash: u64) {
+        self.known_hashes.insert(source.to_string(), hash);
     }
 }
 
 impl Default for ChangeDetector {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Compute a fingerprint for a file's contents. Returns 0 if unreadable.
+fn fingerprint_file(path: &Path) -> u64 {
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            let mut hasher = DefaultHasher::new();
+            bytes.hash(&mut hasher);
+            hasher.finish()
+        }
+        Err(_) => 0, // File doesn't exist or can't be read
     }
 }
 
@@ -99,5 +146,33 @@ mod tests {
         };
         assert_eq!(change.source, "global");
         assert_eq!(change.changed_keys.len(), 2);
+    }
+
+    #[test]
+    fn check_source_nonexistent_file() {
+        let mut detector = ChangeDetector::new();
+        // First check should report change (new source)
+        let change = detector.check_source("test", Path::new("/nonexistent/path.json"));
+        assert!(change.is_some());
+
+        // Second check with same (non-existent) path should not report change
+        let change = detector.check_source("test", Path::new("/nonexistent/path.json"));
+        assert!(change.is_none());
+    }
+
+    #[test]
+    fn mark_known_suppresses_change() {
+        let mut detector = ChangeDetector::new();
+        let path = Path::new("/nonexistent/path.json");
+        detector.mark_known("test", path);
+
+        // Should not report change since we just marked it
+        let change = detector.check_source("test", path);
+        assert!(change.is_none());
+    }
+
+    #[test]
+    fn fingerprint_nonexistent_returns_zero() {
+        assert_eq!(fingerprint_file(Path::new("/no/such/file")), 0);
     }
 }

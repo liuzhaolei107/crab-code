@@ -19,9 +19,7 @@ use serde::{Deserialize, Serialize};
 /// Error returned when parsing a keystroke string fails.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
-    /// The input string that failed to parse.
     pub input: String,
-    /// Human-readable explanation.
     pub reason: String,
 }
 
@@ -38,46 +36,25 @@ impl std::error::Error for ParseError {}
 // ---------------------------------------------------------------------------
 
 /// Contexts where keybindings apply.
-///
-/// The active context determines which bindings are checked when a key event
-/// arrives. Contexts form a simple priority: the most specific context wins.
-/// When no match is found in a specific context, `Global` is consulted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KeybindingContext {
-    /// Always-active bindings (e.g., quit, interrupt).
     Global,
-    /// Main chat input area.
     Chat,
-    /// Autocomplete popup is visible.
     Autocomplete,
-    /// A confirmation dialog is focused.
     Confirmation,
-    /// Help overlay is showing.
     Help,
-    /// Scrollable transcript view.
     Transcript,
-    /// Permission prompt is active.
     Permission,
-    /// Search mode.
     Search,
-    /// File picker / selector.
     FilePicker,
-    /// Session sidebar.
     SessionList,
-    /// Command palette.
     CommandPalette,
-    /// Diff viewer.
     DiffView,
-    /// Code block focus mode.
     CodeBlock,
-    /// Settings editor.
     SettingsEditor,
-    /// Model selector.
     ModelSelector,
-    /// Compact mode.
     CompactView,
-    /// Image preview.
     ImagePreview,
 }
 
@@ -86,71 +63,38 @@ pub enum KeybindingContext {
 // ---------------------------------------------------------------------------
 
 /// An action that can be triggered by a keybinding.
-///
-/// These are logical actions, decoupled from UI implementation. The TUI layer
-/// maps each action to concrete behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KeybindingAction {
-    /// Send interrupt signal (like Ctrl+C).
     AppInterrupt,
-    /// Submit the current chat input.
     ChatSubmit,
-    /// Insert a newline in the chat input.
     ChatNewline,
-    /// Scroll content up.
     ScrollUp,
-    /// Scroll content down.
     ScrollDown,
-    /// Scroll to the top.
     ScrollToTop,
-    /// Scroll to the bottom.
     ScrollToBottom,
-    /// Page up.
     PageUp,
-    /// Page down.
     PageDown,
-    /// Cancel the current operation.
     Cancel,
-    /// Accept a permission request.
     PermissionAccept,
-    /// Deny a permission request.
     PermissionDeny,
-    /// Create a new session.
     NewSession,
-    /// Switch to the next session.
     NextSession,
-    /// Switch to the previous session.
     PrevSession,
-    /// Toggle the session sidebar.
     ToggleSidebar,
-    /// Toggle fold/unfold of selected tool output.
     ToggleFold,
-    /// Copy focused code block to clipboard.
     CopyCodeBlock,
-    /// Activate search mode.
     Search,
-    /// Move to the next search match.
     SearchNext,
-    /// Move to the previous search match.
     SearchPrev,
-    /// Trigger tab completion.
     TabComplete,
-    /// Next completion candidate.
     TabCompleteNext,
-    /// Previous completion candidate.
     TabCompletePrev,
-    /// Quit the application.
     Quit,
-    /// Open command palette.
     CommandPalette,
-    /// Toggle compact mode.
     ToggleCompact,
-    /// Retry the last request.
     Retry,
-    /// Open model selector.
     SelectModel,
-    /// Toggle fast mode.
     ToggleFastMode,
 }
 
@@ -168,7 +112,6 @@ pub struct Modifiers {
 }
 
 impl Modifiers {
-    /// No modifiers.
     pub const NONE: Self = Self {
         ctrl: false,
         alt: false,
@@ -207,14 +150,10 @@ pub struct Keystroke {
 }
 
 /// A chord is a sequence of keystrokes, e.g. "ctrl+k ctrl+c".
-///
-/// Most bindings are single-keystroke chords. Multi-keystroke chords require
-/// the resolver to track partial matches.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Chord(pub Vec<Keystroke>);
 
 impl Chord {
-    /// Create a single-keystroke chord.
     pub fn single(keystroke: Keystroke) -> Self {
         Self(vec![keystroke])
     }
@@ -228,22 +167,87 @@ impl Chord {
 ///
 /// Format: `[modifier+]*key` where modifiers are `ctrl`, `alt`, `shift`, `meta`
 /// and key is a named key or a single character.
-///
-/// # Errors
-///
-/// Returns `ParseError` if the input is empty, contains unknown modifiers,
-/// or has no recognizable key component.
-pub fn parse_keystroke(_input: &str) -> Result<Keystroke, ParseError> {
-    todo!()
+pub fn parse_keystroke(input: &str) -> Result<Keystroke, ParseError> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err(ParseError {
+            input: input.to_string(),
+            reason: "empty keystroke".to_string(),
+        });
+    }
+
+    let parts: Vec<&str> = input.split('+').collect();
+    let mut modifiers = Modifiers::NONE;
+
+    // All parts except the last are modifiers; the last is the key
+    for &part in &parts[..parts.len() - 1] {
+        match part.to_lowercase().as_str() {
+            "ctrl" | "control" => modifiers.ctrl = true,
+            "alt" | "opt" | "option" => modifiers.alt = true,
+            "shift" => modifiers.shift = true,
+            "meta" | "cmd" | "command" | "super" | "win" => modifiers.meta = true,
+            other => {
+                return Err(ParseError {
+                    input: input.to_string(),
+                    reason: format!("unknown modifier '{other}'"),
+                });
+            }
+        }
+    }
+
+    let key_str = parts.last().unwrap().to_lowercase();
+    let key = parse_key_name(&key_str).ok_or_else(|| ParseError {
+        input: input.to_string(),
+        reason: format!("unknown key '{key_str}'"),
+    })?;
+
+    Ok(Keystroke { modifiers, key })
+}
+
+/// Parse a key name string to a Key enum value.
+fn parse_key_name(name: &str) -> Option<Key> {
+    match name {
+        "enter" | "return" => Some(Key::Enter),
+        "tab" => Some(Key::Tab),
+        "backspace" | "bs" => Some(Key::Backspace),
+        "delete" | "del" => Some(Key::Delete),
+        "escape" | "esc" => Some(Key::Escape),
+        "up" | "↑" => Some(Key::Up),
+        "down" | "↓" => Some(Key::Down),
+        "left" | "←" => Some(Key::Left),
+        "right" | "→" => Some(Key::Right),
+        "home" => Some(Key::Home),
+        "end" => Some(Key::End),
+        "pageup" | "pgup" => Some(Key::PageUp),
+        "pagedown" | "pgdn" => Some(Key::PageDown),
+        "space" => Some(Key::Space),
+        s if s.len() == 1 => Some(Key::Char(s.chars().next().unwrap())),
+        s if s.starts_with('f') => {
+            let num: u8 = s[1..].parse().ok()?;
+            if (1..=24).contains(&num) {
+                Some(Key::F(num))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
 }
 
 /// Parse a chord string like "ctrl+k ctrl+c" (space-separated keystrokes).
-///
-/// # Errors
-///
-/// Returns `ParseError` if any keystroke in the sequence is invalid.
-pub fn parse_chord(_input: &str) -> Result<Chord, ParseError> {
-    todo!()
+pub fn parse_chord(input: &str) -> Result<Chord, ParseError> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err(ParseError {
+            input: input.to_string(),
+            reason: "empty chord".to_string(),
+        });
+    }
+
+    let keystrokes: Result<Vec<Keystroke>, ParseError> =
+        input.split_whitespace().map(parse_keystroke).collect();
+
+    Ok(Chord(keystrokes?))
 }
 
 // ---------------------------------------------------------------------------
@@ -268,63 +272,189 @@ pub struct KeybindingResolver {
 impl KeybindingResolver {
     /// Create a resolver loaded with sensible defaults for all contexts.
     pub fn with_defaults() -> Self {
-        todo!()
+        let mut resolver = Self {
+            bindings: HashMap::new(),
+        };
+
+        // Global defaults
+        resolver.set_binding(
+            KeybindingContext::Global,
+            Chord::single(Keystroke {
+                modifiers: Modifiers {
+                    ctrl: true,
+                    ..Modifiers::NONE
+                },
+                key: Key::Char('c'),
+            }),
+            KeybindingAction::AppInterrupt,
+        );
+        resolver.set_binding(
+            KeybindingContext::Global,
+            Chord::single(Keystroke {
+                modifiers: Modifiers::NONE,
+                key: Key::Escape,
+            }),
+            KeybindingAction::Cancel,
+        );
+
+        // Chat defaults
+        resolver.set_binding(
+            KeybindingContext::Chat,
+            Chord::single(Keystroke {
+                modifiers: Modifiers::NONE,
+                key: Key::Enter,
+            }),
+            KeybindingAction::ChatSubmit,
+        );
+        resolver.set_binding(
+            KeybindingContext::Chat,
+            Chord::single(Keystroke {
+                modifiers: Modifiers {
+                    shift: true,
+                    ..Modifiers::NONE
+                },
+                key: Key::Enter,
+            }),
+            KeybindingAction::ChatNewline,
+        );
+        resolver.set_binding(
+            KeybindingContext::Chat,
+            Chord::single(Keystroke {
+                modifiers: Modifiers::NONE,
+                key: Key::Tab,
+            }),
+            KeybindingAction::TabComplete,
+        );
+
+        // Permission defaults
+        resolver.set_binding(
+            KeybindingContext::Permission,
+            Chord::single(Keystroke {
+                modifiers: Modifiers::NONE,
+                key: Key::Char('y'),
+            }),
+            KeybindingAction::PermissionAccept,
+        );
+        resolver.set_binding(
+            KeybindingContext::Permission,
+            Chord::single(Keystroke {
+                modifiers: Modifiers::NONE,
+                key: Key::Char('n'),
+            }),
+            KeybindingAction::PermissionDeny,
+        );
+
+        // Transcript scrolling
+        resolver.set_binding(
+            KeybindingContext::Transcript,
+            Chord::single(Keystroke {
+                modifiers: Modifiers::NONE,
+                key: Key::Up,
+            }),
+            KeybindingAction::ScrollUp,
+        );
+        resolver.set_binding(
+            KeybindingContext::Transcript,
+            Chord::single(Keystroke {
+                modifiers: Modifiers::NONE,
+                key: Key::Down,
+            }),
+            KeybindingAction::ScrollDown,
+        );
+
+        resolver
     }
 
     /// Load user-defined keybinding overrides from a JSON file.
     ///
-    /// The file format is an array of objects:
-    /// ```json
-    /// [
-    ///   {
-    ///     "context": "global",
-    ///     "chord": "ctrl+c",
-    ///     "action": "app_interrupt"
-    ///   }
-    /// ]
-    /// ```
-    ///
     /// User bindings are merged on top of defaults — any matching
     /// `(context, chord)` pair replaces the default action.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the file cannot be read or contains invalid JSON.
-    pub fn load_user_bindings(_path: &Path) -> Result<Self, crab_common::Error> {
-        todo!()
+    pub fn load_user_bindings(path: &Path) -> Result<Self, crab_common::Error> {
+        let mut resolver = Self::with_defaults();
+
+        let content = std::fs::read_to_string(path)?;
+        let entries: Vec<KeybindingConfigEntry> = serde_json::from_str(&content)
+            .map_err(|e| crab_common::Error::Config(format!("invalid keybindings JSON: {e}")))?;
+
+        for entry in entries {
+            if let Ok(chord) = parse_chord(&entry.chord) {
+                resolver.set_binding(entry.context, chord, entry.action);
+            }
+        }
+
+        Ok(resolver)
     }
 
     /// Resolve a single keystroke in the given context.
     ///
     /// Checks context-specific bindings first, then falls back to `Global`.
-    /// Only matches single-keystroke chords; use `resolve_chord` for
-    /// multi-keystroke sequences.
-    pub fn resolve(&self, _ctx: KeybindingContext, _key: &Keystroke) -> Option<KeybindingAction> {
-        todo!()
+    /// Only matches single-keystroke chords.
+    pub fn resolve(&self, ctx: KeybindingContext, key: &Keystroke) -> Option<KeybindingAction> {
+        let single = Chord::single(key.clone());
+
+        // Check context-specific bindings first (last-wins)
+        if let Some(bindings) = self.bindings.get(&ctx)
+            && let Some(binding) = bindings.iter().rev().find(|b| b.chord == single)
+        {
+            return Some(binding.action);
+        }
+
+        // Fall back to Global
+        if ctx != KeybindingContext::Global
+            && let Some(bindings) = self.bindings.get(&KeybindingContext::Global)
+            && let Some(binding) = bindings.iter().rev().find(|b| b.chord == single)
+        {
+            return Some(binding.action);
+        }
+
+        None
     }
 
     /// Resolve a full chord in the given context.
-    pub fn resolve_chord(
-        &self,
-        _ctx: KeybindingContext,
-        _chord: &Chord,
-    ) -> Option<KeybindingAction> {
-        todo!()
+    pub fn resolve_chord(&self, ctx: KeybindingContext, chord: &Chord) -> Option<KeybindingAction> {
+        // Check context-specific (last-wins)
+        if let Some(bindings) = self.bindings.get(&ctx)
+            && let Some(binding) = bindings.iter().rev().find(|b| &b.chord == chord)
+        {
+            return Some(binding.action);
+        }
+
+        // Fall back to Global
+        if ctx != KeybindingContext::Global
+            && let Some(bindings) = self.bindings.get(&KeybindingContext::Global)
+            && let Some(binding) = bindings.iter().rev().find(|b| &b.chord == chord)
+        {
+            return Some(binding.action);
+        }
+
+        None
     }
 
     /// Return all bindings for a given context (including global fallbacks).
-    pub fn bindings_for_context(&self, _ctx: KeybindingContext) -> Vec<&Binding> {
-        todo!()
+    pub fn bindings_for_context(&self, ctx: KeybindingContext) -> Vec<&Binding> {
+        let mut result: Vec<&Binding> = Vec::new();
+
+        // Add global bindings first
+        if let Some(global) = self.bindings.get(&KeybindingContext::Global) {
+            result.extend(global.iter());
+        }
+
+        // Add context-specific (may override global via last-wins)
+        if ctx != KeybindingContext::Global
+            && let Some(specific) = self.bindings.get(&ctx)
+        {
+            result.extend(specific.iter());
+        }
+
+        result
     }
 
     /// Register or override a binding.
-    pub fn set_binding(
-        &mut self,
-        _ctx: KeybindingContext,
-        _chord: Chord,
-        _action: KeybindingAction,
-    ) {
-        todo!()
+    pub fn set_binding(&mut self, ctx: KeybindingContext, chord: Chord, action: KeybindingAction) {
+        self.bindings
+            .entry(ctx)
+            .or_default()
+            .push(Binding { chord, action });
     }
 }
 
@@ -349,12 +479,9 @@ impl fmt::Debug for KeybindingResolver {
 /// JSON-serializable keybinding entry used in config files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeybindingConfigEntry {
-    /// Context scope (defaults to `Global` if omitted).
     #[serde(default = "default_context")]
     pub context: KeybindingContext,
-    /// Chord string, e.g. "ctrl+c" or "ctrl+k ctrl+c".
     pub chord: String,
-    /// The action to trigger.
     pub action: KeybindingAction,
 }
 
@@ -363,14 +490,9 @@ fn default_context() -> KeybindingContext {
 }
 
 /// Validate a keybinding config entry.
-///
-/// Checks that the chord string is parseable and the action is known.
-///
-/// # Errors
-///
-/// Returns `ParseError` if the chord is invalid.
-pub fn validate_config_entry(_entry: &KeybindingConfigEntry) -> Result<(), ParseError> {
-    todo!()
+pub fn validate_config_entry(entry: &KeybindingConfigEntry) -> Result<(), ParseError> {
+    parse_chord(&entry.chord)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -429,5 +551,178 @@ mod tests {
         assert_eq!(entry.context, KeybindingContext::Global);
         assert_eq!(entry.chord, "ctrl+c");
         assert_eq!(entry.action, KeybindingAction::AppInterrupt);
+    }
+
+    // ── Keystroke parsing ─────────────────────────────────────────────
+
+    #[test]
+    fn parse_single_char() {
+        let ks = parse_keystroke("a").unwrap();
+        assert_eq!(ks.key, Key::Char('a'));
+        assert_eq!(ks.modifiers, Modifiers::NONE);
+    }
+
+    #[test]
+    fn parse_ctrl_c() {
+        let ks = parse_keystroke("ctrl+c").unwrap();
+        assert!(ks.modifiers.ctrl);
+        assert_eq!(ks.key, Key::Char('c'));
+    }
+
+    #[test]
+    fn parse_ctrl_shift_a() {
+        let ks = parse_keystroke("ctrl+shift+a").unwrap();
+        assert!(ks.modifiers.ctrl);
+        assert!(ks.modifiers.shift);
+        assert_eq!(ks.key, Key::Char('a'));
+    }
+
+    #[test]
+    fn parse_enter() {
+        let ks = parse_keystroke("enter").unwrap();
+        assert_eq!(ks.key, Key::Enter);
+    }
+
+    #[test]
+    fn parse_escape() {
+        let ks = parse_keystroke("esc").unwrap();
+        assert_eq!(ks.key, Key::Escape);
+    }
+
+    #[test]
+    fn parse_f_key() {
+        let ks = parse_keystroke("f12").unwrap();
+        assert_eq!(ks.key, Key::F(12));
+    }
+
+    #[test]
+    fn parse_alt_tab() {
+        let ks = parse_keystroke("alt+tab").unwrap();
+        assert!(ks.modifiers.alt);
+        assert_eq!(ks.key, Key::Tab);
+    }
+
+    #[test]
+    fn parse_meta_modifier() {
+        let ks = parse_keystroke("cmd+k").unwrap();
+        assert!(ks.modifiers.meta);
+        assert_eq!(ks.key, Key::Char('k'));
+    }
+
+    #[test]
+    fn parse_empty_fails() {
+        assert!(parse_keystroke("").is_err());
+    }
+
+    #[test]
+    fn parse_unknown_modifier_fails() {
+        assert!(parse_keystroke("hyper+a").is_err());
+    }
+
+    #[test]
+    fn parse_unknown_key_fails() {
+        assert!(parse_keystroke("ctrl+???").is_err());
+    }
+
+    // ── Chord parsing ─────────────────────────────────────────────────
+
+    #[test]
+    fn parse_chord_single() {
+        let chord = parse_chord("ctrl+c").unwrap();
+        assert_eq!(chord.0.len(), 1);
+    }
+
+    #[test]
+    fn parse_chord_multi() {
+        let chord = parse_chord("ctrl+k ctrl+c").unwrap();
+        assert_eq!(chord.0.len(), 2);
+        assert!(chord.0[0].modifiers.ctrl);
+        assert_eq!(chord.0[0].key, Key::Char('k'));
+        assert!(chord.0[1].modifiers.ctrl);
+        assert_eq!(chord.0[1].key, Key::Char('c'));
+    }
+
+    #[test]
+    fn parse_chord_empty_fails() {
+        assert!(parse_chord("").is_err());
+    }
+
+    // ── Resolver ──────────────────────────────────────────────────────
+
+    #[test]
+    fn resolver_defaults_have_ctrl_c() {
+        let resolver = KeybindingResolver::with_defaults();
+        let ks = Keystroke {
+            modifiers: Modifiers {
+                ctrl: true,
+                ..Modifiers::NONE
+            },
+            key: Key::Char('c'),
+        };
+        let action = resolver.resolve(KeybindingContext::Chat, &ks);
+        assert_eq!(action, Some(KeybindingAction::AppInterrupt));
+    }
+
+    #[test]
+    fn resolver_context_specific() {
+        let resolver = KeybindingResolver::with_defaults();
+        let enter = Keystroke {
+            modifiers: Modifiers::NONE,
+            key: Key::Enter,
+        };
+        // Enter in Chat → ChatSubmit
+        assert_eq!(
+            resolver.resolve(KeybindingContext::Chat, &enter),
+            Some(KeybindingAction::ChatSubmit)
+        );
+        // Enter in Help → None (no default)
+        assert_eq!(resolver.resolve(KeybindingContext::Help, &enter), None);
+    }
+
+    #[test]
+    fn resolver_set_override() {
+        let mut resolver = KeybindingResolver::with_defaults();
+        let enter = Keystroke {
+            modifiers: Modifiers::NONE,
+            key: Key::Enter,
+        };
+        // Override Enter in Chat to be Cancel
+        resolver.set_binding(
+            KeybindingContext::Chat,
+            Chord::single(enter.clone()),
+            KeybindingAction::Cancel,
+        );
+        // Last-wins: should now be Cancel
+        assert_eq!(
+            resolver.resolve(KeybindingContext::Chat, &enter),
+            Some(KeybindingAction::Cancel)
+        );
+    }
+
+    #[test]
+    fn resolver_bindings_for_context() {
+        let resolver = KeybindingResolver::with_defaults();
+        let bindings = resolver.bindings_for_context(KeybindingContext::Chat);
+        assert!(!bindings.is_empty());
+    }
+
+    #[test]
+    fn validate_config_entry_valid() {
+        let entry = KeybindingConfigEntry {
+            context: KeybindingContext::Global,
+            chord: "ctrl+c".into(),
+            action: KeybindingAction::AppInterrupt,
+        };
+        assert!(validate_config_entry(&entry).is_ok());
+    }
+
+    #[test]
+    fn validate_config_entry_invalid_chord() {
+        let entry = KeybindingConfigEntry {
+            context: KeybindingContext::Global,
+            chord: "hyper+???".into(),
+            action: KeybindingAction::Quit,
+        };
+        assert!(validate_config_entry(&entry).is_err());
     }
 }

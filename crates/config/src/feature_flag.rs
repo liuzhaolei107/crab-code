@@ -33,8 +33,18 @@ impl FeatureFlags {
     ///
     /// Expects the `"featureFlags"` key to be an object of `{ "flag_name": bool }`.
     /// Unknown flags are preserved. Missing flags retain their defaults.
-    pub fn load_from_settings(_settings: &serde_json::Value) -> Self {
-        todo!()
+    pub fn load_from_settings(settings: &serde_json::Value) -> Self {
+        let mut flags = HashMap::new();
+
+        if let Some(obj) = settings.get("featureFlags").and_then(|v| v.as_object()) {
+            for (key, value) in obj {
+                if let Some(b) = value.as_bool() {
+                    flags.insert(key.clone(), b);
+                }
+            }
+        }
+
+        Self { flags }
     }
 
     /// Check whether a flag is enabled.
@@ -55,8 +65,10 @@ impl FeatureFlags {
     }
 
     /// Merge another set of flags on top, overriding existing values.
-    pub fn merge(&mut self, _other: &Self) {
-        todo!()
+    pub fn merge(&mut self, other: &Self) {
+        for (key, &value) in &other.flags {
+            self.flags.insert(key.clone(), value);
+        }
     }
 }
 
@@ -67,27 +79,14 @@ impl Default for FeatureFlags {
 }
 
 /// Well-known feature flag constants.
-///
-/// Use these constants when checking flags to avoid typo-related bugs:
-/// ```rust,ignore
-/// if flags.is_enabled(flags::WASM_PLUGINS) { /* ... */ }
-/// ```
 pub mod flags {
-    /// Enable WASM plugin support.
     pub const WASM_PLUGINS: &str = "wasm_plugins";
-    /// Enable MCP server authentication (`OAuth2` / API keys).
     pub const MCP_AUTH: &str = "mcp_auth";
-    /// Enable shared team memory.
     pub const TEAM_MEMORY: &str = "team_memory";
-    /// Enable automatic conversation compaction.
     pub const AUTO_COMPACT: &str = "auto_compact";
-    /// Enable prompt suggestions in the chat input.
     pub const PROMPT_SUGGESTIONS: &str = "prompt_suggestions";
-    /// Enable extended thinking display.
     pub const EXTENDED_THINKING: &str = "extended_thinking";
-    /// Enable multi-turn tool use.
     pub const MULTI_TURN_TOOL_USE: &str = "multi_turn_tool_use";
-    /// Enable streaming markdown rendering.
     pub const STREAMING_MARKDOWN: &str = "streaming_markdown";
 }
 
@@ -97,10 +96,7 @@ mod tests {
 
     #[test]
     fn unknown_flag_returns_false() {
-        let ff = FeatureFlags {
-            flags: HashMap::new(),
-        };
-        // Unknown flags should not panic, just return false.
+        let ff = FeatureFlags::default_flags();
         assert!(!ff.is_enabled("nonexistent_flag"));
     }
 
@@ -119,5 +115,54 @@ mod tests {
         assert!(!flags::TEAM_MEMORY.is_empty());
         assert!(!flags::AUTO_COMPACT.is_empty());
         assert!(!flags::PROMPT_SUGGESTIONS.is_empty());
+    }
+
+    #[test]
+    fn load_from_settings_parses_flags() {
+        let settings = serde_json::json!({
+            "featureFlags": {
+                "wasm_plugins": true,
+                "mcp_auth": false
+            }
+        });
+        let ff = FeatureFlags::load_from_settings(&settings);
+        assert!(ff.is_enabled(flags::WASM_PLUGINS));
+        assert!(!ff.is_enabled(flags::MCP_AUTH));
+    }
+
+    #[test]
+    fn load_from_settings_no_flags_key() {
+        let settings = serde_json::json!({"model": "claude"});
+        let ff = FeatureFlags::load_from_settings(&settings);
+        assert!(!ff.is_enabled(flags::WASM_PLUGINS));
+    }
+
+    #[test]
+    fn load_from_settings_ignores_non_bool() {
+        let settings = serde_json::json!({
+            "featureFlags": {
+                "valid": true,
+                "invalid": "yes"
+            }
+        });
+        let ff = FeatureFlags::load_from_settings(&settings);
+        assert!(ff.is_enabled("valid"));
+        assert!(!ff.is_enabled("invalid"));
+    }
+
+    #[test]
+    fn merge_overrides() {
+        let mut base = FeatureFlags::default_flags();
+        base.set("a", true);
+        base.set("b", false);
+
+        let mut overlay = FeatureFlags::default_flags();
+        overlay.set("b", true);
+        overlay.set("c", true);
+
+        base.merge(&overlay);
+        assert!(base.is_enabled("a"));
+        assert!(base.is_enabled("b")); // overridden
+        assert!(base.is_enabled("c")); // new
     }
 }
