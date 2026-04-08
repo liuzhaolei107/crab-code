@@ -8,7 +8,10 @@
 //! Maps to CCB `memdir/extractMemories.ts`.
 
 use super::memory_types::MemoryType;
-use crab_core::message::Message;
+use crab_core::message::{Message, Role};
+
+/// Minimum new messages before triggering extraction.
+const EXTRACTION_INTERVAL: usize = 10;
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -36,37 +39,147 @@ pub struct ExtractedMemory {
 ///
 /// Scans messages for patterns like user corrections ("actually, I prefer X"),
 /// reference links, project configuration hints, and tool usage patterns.
+/// This is a heuristic, keyword-based extraction pass — not LLM-based.
 ///
-/// # Arguments
-///
-/// * `messages` — The conversation messages to analyze.
-///
-/// # Returns
-///
-/// An [`ExtractionResult`] containing zero or more extracted memories.
-pub fn extract_memories_from_conversation(_messages: &[Message]) -> ExtractionResult {
-    todo!("extract_memories_from_conversation: scan messages for extractable knowledge")
+/// In CCB, this is done via a forked agent with full LLM capability. Our
+/// implementation uses pattern matching as a lightweight local fallback.
+pub fn extract_memories_from_conversation(messages: &[Message]) -> ExtractionResult {
+    let mut memories = Vec::new();
+
+    for msg in messages {
+        if msg.role != Role::User {
+            continue;
+        }
+
+        let text = msg.text();
+        if text.is_empty() {
+            continue;
+        }
+
+        // Feedback patterns: corrections and preferences
+        if let Some(mem) = extract_feedback(&text) {
+            memories.push(mem);
+        }
+
+        // Reference patterns: URLs and external system pointers
+        if let Some(mem) = extract_reference(&text) {
+            memories.push(mem);
+        }
+
+        // Project patterns: deadlines, decisions, context
+        if let Some(mem) = extract_project_fact(&text) {
+            memories.push(mem);
+        }
+    }
+
+    ExtractionResult { memories }
 }
 
 /// Determine whether extraction should be attempted based on message count
 /// and how recently the last extraction was run.
 ///
-/// # Arguments
-///
-/// * `message_count` — Total number of messages in the conversation.
-/// * `last_extraction_turn` — The message index at which extraction was
-///   last performed (0 if never).
-///
-/// # Returns
-///
-/// `true` if enough new messages have accumulated to justify a scan.
+/// Returns `true` if enough new messages have accumulated to justify a scan.
 #[must_use]
 pub fn should_extract(message_count: usize, last_extraction_turn: usize) -> bool {
-    todo!(
-        "should_extract: check if {} - {} exceeds extraction interval",
-        message_count,
-        last_extraction_turn
-    )
+    message_count > last_extraction_turn
+        && (message_count - last_extraction_turn) >= EXTRACTION_INTERVAL
+}
+
+// ── Pattern matchers ──────────────────────────────────────────────────
+
+/// Detect user corrections and preferences.
+fn extract_feedback(text: &str) -> Option<ExtractedMemory> {
+    let lower = text.to_lowercase();
+
+    // Look for correction patterns
+    let correction_markers = [
+        "don't ",
+        "do not ",
+        "stop ",
+        "never ",
+        "always ",
+        "prefer ",
+        "i prefer ",
+        "actually, ",
+        "no, ",
+        "please don't",
+        "instead of ",
+    ];
+
+    for marker in correction_markers {
+        if lower.contains(marker) && text.len() < 500 {
+            let slug = slugify_first_words(text, 4);
+            return Some(ExtractedMemory {
+                memory_type: MemoryType::Feedback,
+                name: format!("feedback_{slug}"),
+                content: text.to_string(),
+            });
+        }
+    }
+
+    None
+}
+
+/// Detect external system references (URLs, links).
+fn extract_reference(text: &str) -> Option<ExtractedMemory> {
+    // Look for URL patterns
+    if (text.contains("http://") || text.contains("https://"))
+        && text.len() < 500
+        && (text.contains("check ") || text.contains("look at ") || text.contains("see "))
+    {
+        let slug = slugify_first_words(text, 4);
+        return Some(ExtractedMemory {
+            memory_type: MemoryType::Reference,
+            name: format!("reference_{slug}"),
+            content: text.to_string(),
+        });
+    }
+
+    None
+}
+
+/// Detect project facts (deadlines, decisions, context).
+fn extract_project_fact(text: &str) -> Option<ExtractedMemory> {
+    let lower = text.to_lowercase();
+
+    let project_markers = [
+        "deadline",
+        "freeze",
+        "release",
+        "merge ",
+        "the reason ",
+        "because ",
+        "we decided ",
+        "we're ",
+        "we are ",
+    ];
+
+    for marker in project_markers {
+        if lower.contains(marker) && text.len() < 500 && text.len() > 20 {
+            let slug = slugify_first_words(text, 4);
+            return Some(ExtractedMemory {
+                memory_type: MemoryType::Project,
+                name: format!("project_{slug}"),
+                content: text.to_string(),
+            });
+        }
+    }
+
+    None
+}
+
+/// Create a slug from the first N words of text.
+fn slugify_first_words(text: &str, n: usize) -> String {
+    text.split_whitespace()
+        .take(n)
+        .map(|w| {
+            w.chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+                .to_lowercase()
+        })
+        .collect::<Vec<_>>()
+        .join("_")
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────
@@ -97,5 +210,77 @@ mod tests {
         };
         let debug = format!("{mem:?}");
         assert!(debug.contains("test"));
+    }
+
+    #[test]
+    fn should_extract_enough_messages() {
+        assert!(should_extract(15, 0));
+        assert!(should_extract(20, 10));
+    }
+
+    #[test]
+    fn should_not_extract_too_few_messages() {
+        assert!(!should_extract(5, 0));
+        assert!(!should_extract(12, 5));
+    }
+
+    #[test]
+    fn should_not_extract_already_extracted() {
+        assert!(!should_extract(10, 10));
+    }
+
+    #[test]
+    fn extract_feedback_correction() {
+        let text = "don't use semicolons in JavaScript";
+        let mem = extract_feedback(text).unwrap();
+        assert_eq!(mem.memory_type, MemoryType::Feedback);
+        assert!(mem.name.starts_with("feedback_"));
+    }
+
+    #[test]
+    fn extract_feedback_preference() {
+        let text = "I prefer using async/await over callbacks";
+        let mem = extract_feedback(text).unwrap();
+        assert_eq!(mem.memory_type, MemoryType::Feedback);
+    }
+
+    #[test]
+    fn extract_feedback_no_match() {
+        let text = "How does the authentication work?";
+        assert!(extract_feedback(text).is_none());
+    }
+
+    #[test]
+    fn extract_reference_with_url() {
+        let text = "check https://grafana.internal/dashboard for the metrics";
+        let mem = extract_reference(text).unwrap();
+        assert_eq!(mem.memory_type, MemoryType::Reference);
+    }
+
+    #[test]
+    fn extract_reference_no_url() {
+        let text = "the dashboard is useful";
+        assert!(extract_reference(text).is_none());
+    }
+
+    #[test]
+    fn extract_project_deadline() {
+        let text = "the deadline for the release is next Friday";
+        let mem = extract_project_fact(text).unwrap();
+        assert_eq!(mem.memory_type, MemoryType::Project);
+    }
+
+    #[test]
+    fn slugify_creates_slug() {
+        assert_eq!(
+            slugify_first_words("Hello World! 123", 3),
+            "hello_world_123"
+        );
+    }
+
+    #[test]
+    fn extract_from_empty_conversation() {
+        let result = extract_memories_from_conversation(&[]);
+        assert!(result.memories.is_empty());
     }
 }

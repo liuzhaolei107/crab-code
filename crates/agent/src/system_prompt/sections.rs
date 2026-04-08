@@ -78,8 +78,29 @@ impl SectionRegistry {
     }
 
     /// Create a registry with all default section builders.
+    ///
+    /// Registers sections in order:
+    /// 1. `env` (Static) — environment info (OS, cwd, date, model)
+    /// 2. `tools` (Static) — available tool descriptions
+    /// 3. `crab_md` (Static) — CRAB.md project instructions
+    /// 4. `memory` (Static) — auto-memory content
+    /// 5. `git` (Dynamic) — current git status
+    /// 6. `skills` (Static) — available skill descriptions (placeholder)
+    /// 7. `tips` (Static) — contextual tips (placeholder)
+    /// 8. `custom` (Dynamic) — user custom instructions
     pub fn default_sections() -> Self {
-        todo!("Register: env, tools, memory, git, crab_md, skills, tips, custom")
+        let mut registry = Self::new();
+
+        registry.register(Box::new(EnvSection));
+        registry.register(Box::new(ToolsSection));
+        registry.register(Box::new(CrabMdSection));
+        registry.register(Box::new(MemorySection));
+        registry.register(Box::new(GitSection));
+        registry.register(Box::new(SkillsSection));
+        registry.register(Box::new(TipsSection));
+        registry.register(Box::new(CustomSection));
+
+        registry
     }
 
     /// Build all sections and assemble them, inserting the dynamic boundary marker.
@@ -130,6 +151,160 @@ impl Default for SectionRegistry {
         Self::new()
     }
 }
+
+// ─── Default section builders ─────────────────────────────────────────
+
+/// Environment section: OS, working directory, date, model info.
+struct EnvSection;
+
+impl SectionBuilder for EnvSection {
+    fn name(&self) -> &'static str {
+        "env"
+    }
+
+    fn cache_scope(&self) -> CacheScope {
+        CacheScope::Static
+    }
+
+    fn build(&self, ctx: &SectionContext) -> Option<String> {
+        let mut s = String::with_capacity(256);
+        s.push_str("# Environment\n");
+        let _ = writeln!(s, "- Working directory: {}", ctx.project_dir.display());
+        let _ = writeln!(s, "- Platform: {}", std::env::consts::OS);
+        let _ = writeln!(s, "- Architecture: {}", std::env::consts::ARCH);
+        Some(s)
+    }
+}
+
+/// Tools section: available tool descriptions.
+struct ToolsSection;
+
+impl SectionBuilder for ToolsSection {
+    fn name(&self) -> &'static str {
+        "tools"
+    }
+
+    fn cache_scope(&self) -> CacheScope {
+        CacheScope::Static
+    }
+
+    fn build(&self, ctx: &SectionContext) -> Option<String> {
+        if ctx.tool_descriptions.is_empty() {
+            return None;
+        }
+        Some(format!("# Available Tools\n{}", ctx.tool_descriptions))
+    }
+}
+
+/// CRAB.md section: project-level instructions.
+struct CrabMdSection;
+
+impl SectionBuilder for CrabMdSection {
+    fn name(&self) -> &'static str {
+        "crab_md"
+    }
+
+    fn cache_scope(&self) -> CacheScope {
+        CacheScope::Static
+    }
+
+    fn build(&self, ctx: &SectionContext) -> Option<String> {
+        ctx.crab_md_content
+            .map(|content| format!("# Project Instructions (CRAB.md)\n{content}"))
+    }
+}
+
+/// Memory section: auto-memory content from MEMORY.md and topic files.
+struct MemorySection;
+
+impl SectionBuilder for MemorySection {
+    fn name(&self) -> &'static str {
+        "memory"
+    }
+
+    fn cache_scope(&self) -> CacheScope {
+        CacheScope::Static
+    }
+
+    fn build(&self, ctx: &SectionContext) -> Option<String> {
+        ctx.memory_content
+            .map(|content| format!("# Memory\n{content}"))
+    }
+}
+
+/// Git section: current git status (dynamic — changes per turn).
+struct GitSection;
+
+impl SectionBuilder for GitSection {
+    fn name(&self) -> &'static str {
+        "git"
+    }
+
+    fn cache_scope(&self) -> CacheScope {
+        CacheScope::Dynamic
+    }
+
+    fn build(&self, ctx: &SectionContext) -> Option<String> {
+        ctx.git_status
+            .map(|status| format!("# Git Status\n{status}"))
+    }
+}
+
+/// Skills section: available skills (placeholder until skill system is built).
+struct SkillsSection;
+
+impl SectionBuilder for SkillsSection {
+    fn name(&self) -> &'static str {
+        "skills"
+    }
+
+    fn cache_scope(&self) -> CacheScope {
+        CacheScope::Static
+    }
+
+    fn build(&self, _ctx: &SectionContext) -> Option<String> {
+        // Skills will be populated when the skill system (Phase 8) is built
+        None
+    }
+}
+
+/// Tips section: contextual tips (placeholder until tips system is built).
+struct TipsSection;
+
+impl SectionBuilder for TipsSection {
+    fn name(&self) -> &'static str {
+        "tips"
+    }
+
+    fn cache_scope(&self) -> CacheScope {
+        CacheScope::Static
+    }
+
+    fn build(&self, _ctx: &SectionContext) -> Option<String> {
+        // Tips will be populated when the tips system (Phase 11) is built
+        None
+    }
+}
+
+/// Custom section: user-provided custom instructions (dynamic).
+struct CustomSection;
+
+impl SectionBuilder for CustomSection {
+    fn name(&self) -> &'static str {
+        "custom"
+    }
+
+    fn cache_scope(&self) -> CacheScope {
+        CacheScope::Dynamic
+    }
+
+    fn build(&self, ctx: &SectionContext) -> Option<String> {
+        ctx.custom_instructions
+            .map(|inst| format!("# Custom Instructions\n{inst}"))
+    }
+}
+
+// ─── Tests ─────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -229,5 +404,90 @@ mod tests {
     fn cache_scope_equality() {
         assert_eq!(CacheScope::Static, CacheScope::Static);
         assert_ne!(CacheScope::Static, CacheScope::Dynamic);
+    }
+
+    #[test]
+    fn default_sections_creates_all_builders() {
+        let registry = SectionRegistry::default_sections();
+        assert_eq!(registry.builders.len(), 8);
+    }
+
+    #[test]
+    fn default_sections_env_present() {
+        let registry = SectionRegistry::default_sections();
+        let ctx = make_ctx();
+        let result = registry.assemble(&ctx);
+        assert!(result.contains("Environment"));
+        assert!(result.contains("Working directory"));
+    }
+
+    #[test]
+    fn default_sections_with_git() {
+        let registry = SectionRegistry::default_sections();
+        let ctx = SectionContext {
+            git_status: Some("On branch main, clean"),
+            ..make_ctx()
+        };
+        let result = registry.assemble(&ctx);
+        assert!(result.contains("Git Status"));
+        assert!(result.contains("On branch main"));
+        // Git is dynamic, so boundary marker should be present
+        assert!(result.contains(DYNAMIC_BOUNDARY_MARKER));
+    }
+
+    #[test]
+    fn default_sections_with_crab_md() {
+        let registry = SectionRegistry::default_sections();
+        let ctx = SectionContext {
+            crab_md_content: Some("Build with cargo build"),
+            ..make_ctx()
+        };
+        let result = registry.assemble(&ctx);
+        assert!(result.contains("CRAB.md"));
+        assert!(result.contains("cargo build"));
+    }
+
+    #[test]
+    fn default_sections_with_memory() {
+        let registry = SectionRegistry::default_sections();
+        let ctx = SectionContext {
+            memory_content: Some("User prefers Rust"),
+            ..make_ctx()
+        };
+        let result = registry.assemble(&ctx);
+        assert!(result.contains("Memory"));
+        assert!(result.contains("User prefers Rust"));
+    }
+
+    #[test]
+    fn default_sections_with_custom() {
+        let registry = SectionRegistry::default_sections();
+        let ctx = SectionContext {
+            custom_instructions: Some("Always respond in Chinese"),
+            ..make_ctx()
+        };
+        let result = registry.assemble(&ctx);
+        assert!(result.contains("Custom Instructions"));
+        assert!(result.contains("Always respond in Chinese"));
+    }
+
+    #[test]
+    fn default_sections_skips_empty_tools() {
+        let registry = SectionRegistry::default_sections();
+        let ctx = make_ctx(); // tool_descriptions = ""
+        let result = registry.assemble(&ctx);
+        assert!(!result.contains("Available Tools"));
+    }
+
+    #[test]
+    fn default_sections_with_tools() {
+        let registry = SectionRegistry::default_sections();
+        let ctx = SectionContext {
+            tool_descriptions: "- Read: reads files\n- Write: writes files",
+            ..make_ctx()
+        };
+        let result = registry.assemble(&ctx);
+        assert!(result.contains("Available Tools"));
+        assert!(result.contains("Read: reads files"));
     }
 }
