@@ -75,7 +75,7 @@ impl ReplBridge {
             ));
         }
 
-        let id = ConnectionId::new(crab_common::id::new_ulid());
+        let id = ConnectionId::new(crab_common::utils::id::new_ulid());
         self.clients.push(ClientHandle {
             id: id.clone(),
             info,

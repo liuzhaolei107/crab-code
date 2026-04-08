@@ -120,7 +120,7 @@ pub fn policy_file_paths() -> Vec<PathBuf> {
         #[cfg(unix)]
         PathBuf::from("/etc/crab-code/policy.json"),
         // 2. Global user
-        crab_common::path::home_dir()
+        crab_common::utils::path::home_dir()
             .join(".crab")
             .join("policy.json"),
     ];

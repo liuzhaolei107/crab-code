@@ -49,7 +49,7 @@ pub struct ProviderProfile {
 /// `~/.config/crab-code/config.toml` (XDG-style).
 #[must_use]
 pub fn config_toml_path() -> PathBuf {
-    crab_common::path::home_dir()
+    crab_common::utils::path::home_dir()
         .join(".config")
         .join("crab-code")
         .join("config.toml")

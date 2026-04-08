@@ -137,7 +137,7 @@ impl CostTracker {
     /// Default cost store path: `~/.crab/telemetry/costs.json`.
     #[must_use]
     pub fn default_path() -> PathBuf {
-        crab_common::path::home_dir()
+        crab_common::utils::path::home_dir()
             .join(".crab")
             .join("telemetry")
             .join("costs.json")

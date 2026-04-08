@@ -110,7 +110,7 @@ impl TokenStore {
 /// Return the default token file path: `~/.crab/auth/tokens.json`.
 #[must_use]
 pub fn default_token_path() -> PathBuf {
-    crab_common::path::home_dir()
+    crab_common::utils::path::home_dir()
         .join(".crab")
         .join(TOKEN_DIR)
         .join(TOKEN_FILE)

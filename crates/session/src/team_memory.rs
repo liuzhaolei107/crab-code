@@ -19,7 +19,7 @@ use super::memory_types::{MemoryMetadata, parse_memory_frontmatter};
 /// exist yet; callers should create it on first write.
 #[must_use]
 pub fn team_memory_dir(team_name: &str) -> PathBuf {
-    crab_common::path::home_dir()
+    crab_common::utils::path::home_dir()
         .join(".crab")
         .join("teams")
         .join(team_name)

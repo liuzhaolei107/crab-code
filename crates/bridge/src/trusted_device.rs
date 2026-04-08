@@ -37,7 +37,7 @@ impl TrustedDeviceRegistry {
 
     /// Load the registry from the config directory.
     pub fn load() -> crab_common::Result<Self> {
-        let path = crab_common::path::home_dir()
+        let path = crab_common::utils::path::home_dir()
             .join(".crab")
             .join("trusted_devices.json");
         if !path.exists() {
@@ -52,7 +52,7 @@ impl TrustedDeviceRegistry {
 
     /// Save the registry to the config directory.
     pub fn save(&self) -> crab_common::Result<()> {
-        let path = crab_common::path::home_dir()
+        let path = crab_common::utils::path::home_dir()
             .join(".crab")
             .join("trusted_devices.json");
         if let Some(parent) = path.parent() {

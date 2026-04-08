@@ -87,7 +87,7 @@ impl Settings {
 /// Return the global config directory: `~/.crab/`.
 #[must_use]
 pub fn global_config_dir() -> PathBuf {
-    crab_common::path::home_dir().join(CONFIG_DIR)
+    crab_common::utils::path::home_dir().join(CONFIG_DIR)
 }
 
 /// Return the project config directory: `<project_dir>/.crab/`.
