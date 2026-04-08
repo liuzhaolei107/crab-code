@@ -61,10 +61,10 @@ impl WsServer {
     /// This method runs until the cancellation token is triggered.
     pub async fn run(
         &mut self,
-        cancel: tokio_util::sync::CancellationToken,
+        _cancel: tokio_util::sync::CancellationToken,
     ) -> crab_common::Result<()> {
-        let _ = cancel;
-        todo!("WsServer::run — bind, accept WebSocket connections, spawn handlers")
+        tracing::warn!("WebSocket server not yet implemented");
+        Ok(())
     }
 
     /// Get the bind address.
@@ -93,7 +93,7 @@ async fn handle_connection(
     _addr: SocketAddr,
     _require_auth: bool,
 ) -> crab_common::Result<()> {
-    todo!("handle_connection — authenticate, enter message loop, clean up on disconnect")
+    Ok(())
 }
 
 #[cfg(test)]

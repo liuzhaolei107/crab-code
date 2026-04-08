@@ -54,21 +54,26 @@ impl RemoteBridge {
 
     /// Connect to the remote daemon session.
     pub async fn connect(&mut self) -> crab_common::Result<()> {
-        todo!("RemoteBridge::connect — establish WebSocket connection and authenticate")
+        Err(crab_common::Error::Config(
+            "remote bridge not yet implemented".into(),
+        ))
     }
 
     /// Disconnect from the remote session.
     pub async fn disconnect(&mut self) -> crab_common::Result<()> {
-        todo!("RemoteBridge::disconnect — gracefully close WebSocket connection")
+        self.state = ConnectionState::Disconnected;
+        self.connection_id = None;
+        Ok(())
     }
 
     /// Send a request to the remote session.
     pub async fn send_request(
         &self,
-        request: BridgeRequest,
+        _request: BridgeRequest,
     ) -> crab_common::Result<BridgeResponse> {
-        let _ = request;
-        todo!("RemoteBridge::send_request — send via WebSocket and await response")
+        Err(crab_common::Error::Config(
+            "remote bridge not connected".into(),
+        ))
     }
 
     /// Current connection state.

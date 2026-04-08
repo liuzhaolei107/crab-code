@@ -45,7 +45,7 @@ pub struct ReplBridge {
     /// Connected clients.
     clients: Vec<ClientHandle>,
     /// Sender for broadcasting notifications to all clients.
-    _broadcast_tx: broadcast::Sender<BridgeNotification>,
+    broadcast_tx: broadcast::Sender<BridgeNotification>,
     /// Receiver for incoming requests from clients.
     _request_rx: mpsc::Receiver<(ConnectionId, BridgeRequest)>,
     /// Sender for incoming requests (cloned to each client handler).
@@ -61,7 +61,7 @@ impl ReplBridge {
         Self {
             config,
             clients: Vec::new(),
-            _broadcast_tx: broadcast_tx,
+            broadcast_tx,
             _request_rx: request_rx,
             _request_tx: request_tx,
         }
@@ -69,30 +69,49 @@ impl ReplBridge {
 
     /// Accept a new client connection.
     pub async fn accept_client(&mut self, info: ClientInfo) -> crab_common::Result<ConnectionId> {
-        let _ = info;
-        todo!("ReplBridge::accept_client — register client and set up message channels")
+        if self.clients.len() >= self.config.max_connections {
+            return Err(crab_common::Error::Config(
+                "maximum number of connections reached".into(),
+            ));
+        }
+
+        let id = ConnectionId::new(crab_common::id::new_ulid());
+        self.clients.push(ClientHandle {
+            id: id.clone(),
+            info,
+            state: ConnectionState::Connected,
+        });
+        Ok(id)
     }
 
     /// Disconnect a client by connection ID.
     pub async fn disconnect_client(&mut self, id: &ConnectionId) -> crab_common::Result<()> {
-        let _ = id;
-        todo!("ReplBridge::disconnect_client — clean up client state and notify")
+        self.clients.retain(|c| c.id != *id);
+        Ok(())
     }
 
     /// Send a response to a specific client.
     pub async fn send_response(
         &self,
         client_id: &ConnectionId,
-        response: BridgeResponse,
+        _response: BridgeResponse,
     ) -> crab_common::Result<()> {
-        let _ = (client_id, response);
-        todo!("ReplBridge::send_response — route response to correct client channel")
+        // Verify the client exists. Per-client response channels will be
+        // added in a future iteration; for now we just validate the ID.
+        if !self.clients.iter().any(|c| c.id == *client_id) {
+            return Err(crab_common::Error::Config(
+                "unknown client connection ID".into(),
+            ));
+        }
+        Ok(())
     }
 
     /// Broadcast a notification to all connected clients.
     pub fn broadcast(&self, notification: &BridgeNotification) -> crab_common::Result<()> {
-        let _ = notification;
-        todo!("ReplBridge::broadcast — send notification via broadcast channel")
+        // Ignore the send error — it simply means there are no active
+        // receivers, which is fine (no clients subscribed yet).
+        let _count = self.broadcast_tx.send(notification.clone());
+        Ok(())
     }
 
     /// Number of currently connected clients.

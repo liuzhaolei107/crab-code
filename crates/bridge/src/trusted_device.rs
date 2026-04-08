@@ -37,12 +37,32 @@ impl TrustedDeviceRegistry {
 
     /// Load the registry from the config directory.
     pub fn load() -> crab_common::Result<Self> {
-        todo!("TrustedDeviceRegistry::load — read from ~/.crab/trusted_devices.json")
+        let path = crab_common::path::home_dir()
+            .join(".crab")
+            .join("trusted_devices.json");
+        if !path.exists() {
+            return Ok(Self::new());
+        }
+        let data = std::fs::read_to_string(&path)?;
+        let devices: Vec<TrustedDevice> = serde_json::from_str(&data).map_err(|e| {
+            crab_common::Error::Config(format!("failed to parse trusted_devices.json: {e}"))
+        })?;
+        Ok(Self { devices })
     }
 
     /// Save the registry to the config directory.
     pub fn save(&self) -> crab_common::Result<()> {
-        todo!("TrustedDeviceRegistry::save — write to ~/.crab/trusted_devices.json")
+        let path = crab_common::path::home_dir()
+            .join(".crab")
+            .join("trusted_devices.json");
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let data = serde_json::to_string_pretty(&self.devices).map_err(|e| {
+            crab_common::Error::Config(format!("failed to serialize trusted devices: {e}"))
+        })?;
+        std::fs::write(&path, data)?;
+        Ok(())
     }
 
     /// Register a new trusted device.

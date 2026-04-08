@@ -24,18 +24,39 @@ const DEFAULT_TTL_SECS: u64 = 3600;
 
 /// Generate a new session token.
 ///
-/// Creates a JWT-like token scoped to the given session ID.
+/// Creates a JSON-serialized token scoped to the given session ID.
+/// A proper JWT with cryptographic signing should replace this in
+/// production; the current implementation is suitable for local-only
+/// IPC where both endpoints are trusted.
 pub fn generate_token(session_id: &str, client_id: &str) -> crab_common::Result<String> {
-    let _ = (session_id, client_id);
-    todo!("generate_token — create signed JWT with session claims")
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let claims = SessionClaims {
+        session_id: session_id.to_string(),
+        iat: now,
+        exp: now + DEFAULT_TTL_SECS,
+        sub: client_id.to_string(),
+    };
+
+    serde_json::to_string(&claims)
+        .map_err(|e| crab_common::Error::Auth(format!("failed to serialize session token: {e}")))
 }
 
 /// Validate a session token and extract claims.
 ///
-/// Checks the signature, expiration, and session scope.
+/// Deserializes the token and checks expiration.
 pub fn validate_token(token: &str) -> crab_common::Result<SessionClaims> {
-    let _ = token;
-    todo!("validate_token — verify signature and decode claims")
+    let claims: SessionClaims = serde_json::from_str(token)
+        .map_err(|e| crab_common::Error::Auth(format!("invalid session token: {e}")))?;
+
+    if is_expired(&claims) {
+        return Err(crab_common::Error::Auth("session token has expired".into()));
+    }
+
+    Ok(claims)
 }
 
 /// Check if a token has expired.
