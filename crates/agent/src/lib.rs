@@ -5,15 +5,19 @@ pub mod git_context;
 pub mod message_bus;
 pub mod message_router;
 pub mod pr_context;
+pub mod prompt_suggestion;
 pub mod query_loop;
 pub mod repl_commands;
 pub mod retry;
 pub mod rollback;
 pub mod slash_commands;
+pub mod stop_hooks;
 pub mod summarizer;
 pub mod system_prompt;
 pub mod task;
 pub mod team;
+pub mod tips;
+pub mod token_budget;
 pub mod worker;
 
 pub use coordinator::{AgentCoordinator, AgentHandle, AgentSession, SessionConfig};
@@ -31,10 +35,12 @@ pub use rollback::{ActionType, RollbackEntry, RollbackManager, UndoStack};
 pub use slash_commands::{
     SlashAction, SlashCommandContext, SlashCommandRegistry, SlashCommandResult,
 };
+pub use stop_hooks::{StopConditions, StopReason};
 pub use summarizer::{
     ConversationSummary, SummarizerConfig, SummaryItem, SummaryItemKind, summarize_conversation,
 };
 pub use system_prompt::{build_system_prompt, build_system_prompt_with_memories};
 pub use task::{SharedTaskList, Task, TaskList, TaskStatus, shared_task_list};
 pub use team::{Capability, Team, TeamMember, TeamMode};
+pub use token_budget::{BudgetDecision, TokenBudget};
 pub use worker::{AgentWorker, Worker, WorkerConfig, WorkerResult};
