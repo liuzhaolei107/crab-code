@@ -1053,6 +1053,16 @@ fn render_input_with_prompt(
         width: area.width.saturating_sub(prefix_width + 2),
         height: area.height,
     };
+
+    // Show placeholder only when input is completely empty
+    if input.is_empty() {
+        let placeholder = Line::from(Span::styled(
+            "Type a message...",
+            Style::default().fg(Color::DarkGray),
+        ));
+        Widget::render(placeholder, input_area, buf);
+    }
+    // Always render input on top (when non-empty, overwrites placeholder)
     Widget::render(input, input_area, buf);
 }
 

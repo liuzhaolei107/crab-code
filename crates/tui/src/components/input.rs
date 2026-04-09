@@ -3,8 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
 use ratatui::widgets::Widget;
 
 /// Multi-line text input box with cursor and history support.
@@ -319,14 +318,7 @@ impl Widget for &InputBox {
             .enumerate()
         {
             let y = area.y + i as u16;
-            let display = if line.is_empty() && i == 0 && scroll_offset == 0 && self.is_empty() {
-                Line::from(Span::styled(
-                    "Type a message...",
-                    Style::default().fg(Color::DarkGray),
-                ))
-            } else {
-                Line::from(line.as_str())
-            };
+            let display = Line::from(line.as_str());
             let line_area = Rect {
                 x: area.x,
                 y,
@@ -538,7 +530,8 @@ mod tests {
     }
 
     #[test]
-    fn renders_placeholder_when_empty() {
+    fn renders_empty_when_no_text() {
+        // Placeholder moved to app.rs render_input_with_prompt()
         let input = InputBox::new();
         let area = Rect::new(0, 0, 30, 1);
         let mut buf = Buffer::empty(area);
@@ -547,7 +540,8 @@ mod tests {
         let content: String = (0..area.width)
             .map(|x| buf.cell((x, 0)).unwrap().symbol().to_string())
             .collect();
-        assert!(content.contains("Type a message"));
+        // InputBox itself no longer renders placeholder
+        assert!(!content.contains("Type a message"));
     }
 
     #[test]
