@@ -175,8 +175,7 @@ impl App {
             state: AppState::Idle,
             input: InputBox::new(),
             spinner: Spinner::new(),
-            content_buffer: "Welcome! Type a message to start, or /help for commands.\n\n"
-                .to_string(),
+            content_buffer: String::new(),
             model_name: model_name.into(),
             permission_dialog: None,
             should_quit: false,
@@ -584,6 +583,10 @@ impl App {
         use crab_core::event::Event;
         match event {
             Event::ContentDelta { delta, .. } => {
+                // Add ● marker at the start of assistant response (CC style)
+                if self.state == AppState::Processing && !self.content_buffer.ends_with("● ") {
+                    self.content_buffer.push_str("● ");
+                }
                 // Track unseen content when the user is scrolled up
                 if self.scroll_anchor.is_some() {
                     // Count newlines in the delta as new "messages"
@@ -796,7 +799,13 @@ impl App {
         }
 
         // Bottom bar
-        render_bottom_bar(self.state, self.search.is_active(), layout.bottom_bar, buf);
+        render_bottom_bar(
+            self.state,
+            self.search.is_active(),
+            self.permission_mode,
+            layout.bottom_bar,
+            buf,
+        );
 
         // Autocomplete popup (renders above input)
         if self.autocomplete.is_active() {
@@ -1308,7 +1317,13 @@ fn format_token_count(tokens: u64) -> String {
     }
 }
 
-fn render_bottom_bar(state: AppState, search_active: bool, area: Rect, buf: &mut Buffer) {
+fn render_bottom_bar(
+    state: AppState,
+    search_active: bool,
+    perm_mode: crab_core::permission::PermissionMode,
+    area: Rect,
+    buf: &mut Buffer,
+) {
     let line = if search_active {
         Line::from(Span::styled(
             "Enter: next match | Esc: close | type to search",
@@ -1320,10 +1335,35 @@ fn render_bottom_bar(state: AppState, search_active: bool, area: Rect, buf: &mut
                 "y: allow | n: deny | a: always | Esc: deny",
                 Style::default().fg(Color::DarkGray),
             )),
-            _ => Line::from(Span::styled(
-                "? for shortcuts",
-                Style::default().fg(Color::DarkGray),
-            )),
+            AppState::Processing => {
+                // CC shows: "▶▶ accept edits on (shift+tab to cycle) · esc to interrupt"
+                Line::from(vec![
+                    Span::styled("  ▶▶ ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(perm_mode.to_string(), Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        " (shift+tab to cycle) · esc to interrupt",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ])
+            }
+            _ => {
+                // CC shows: "▶▶ accept edits on (shift+tab to cycle)" or "? for shortcuts"
+                if perm_mode == crab_core::permission::PermissionMode::Default {
+                    Line::from(Span::styled(
+                        "  ? for shortcuts",
+                        Style::default().fg(Color::DarkGray),
+                    ))
+                } else {
+                    Line::from(vec![
+                        Span::styled("  ▶▶ ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(perm_mode.to_string(), Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            " (shift+tab to cycle)",
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    ])
+                }
+            }
         }
     };
     Widget::render(line, area, buf);
@@ -1348,7 +1388,7 @@ mod tests {
         assert_eq!(app.state, AppState::Idle);
         assert!(app.input.is_empty());
         assert!(!app.spinner.is_active());
-        assert!(app.content_buffer.contains("Welcome"));
+        assert!(app.content_buffer.is_empty());
         assert_eq!(app.model_name, "gpt-4o");
         assert!(!app.should_quit);
         assert!(!app.sidebar_visible);

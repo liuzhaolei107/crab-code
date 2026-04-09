@@ -13,7 +13,8 @@ use ratatui::widgets::Widget;
 // ── Spinner animation frames ──────────────────────────────────────────
 
 /// Braille-based spinner frames for smooth animation.
-const FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+/// CC uses `*` as spinner character (not braille). Matches the screenshot.
+const FRAMES: &[&str] = &["*"];
 
 // ── CCB SPINNER_VERBS (188 verbs from constants/spinnerVerbs.ts) ──────
 
@@ -525,7 +526,10 @@ mod tests {
         spinner.start_with_random_verb();
         assert_eq!(spinner.frame, 0);
         spinner.tick();
-        assert_eq!(spinner.frame, 1);
+        // With single-frame spinner (*), frame wraps back to 0
+        assert_eq!(spinner.frame, 0);
+        // But tick counter still advances
+        assert_eq!(spinner.tick, 1);
     }
 
     #[test]
