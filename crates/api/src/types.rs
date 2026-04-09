@@ -50,6 +50,10 @@ pub enum StreamEvent {
     ContentBlockStart {
         index: usize,
         content_type: String,
+        /// Tool call ID (set on first `tool_calls` chunk for `OpenAI`-compatible APIs).
+        tool_id: Option<String>,
+        /// Tool function name (set on first `tool_calls` chunk for `OpenAI`-compatible APIs).
+        tool_name: Option<String>,
     },
     ContentDelta {
         index: usize,

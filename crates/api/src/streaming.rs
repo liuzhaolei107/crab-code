@@ -108,23 +108,19 @@ impl StreamingToolParser {
             StreamEvent::ContentBlockStart {
                 index,
                 content_type,
+                tool_id,
+                tool_name,
             } => {
-                // Ensure block_types vec is large enough
                 while self.block_types.len() <= *index {
                     self.block_types.push(BlockType::Unknown);
                 }
 
                 if content_type == "tool_use" {
                     self.block_types[*index] = BlockType::ToolUse;
-                    // The tool ID and name come encoded in the content_type or
-                    // via a separate metadata field. For Anthropic's API, the
-                    // `ContentBlockStart` for tool_use includes id and name in
-                    // the event data. We'll extract them from the delta flow.
-                    // For now, create a placeholder that will be populated.
                     self.active.push(ToolUseAccumulator::new(
                         *index,
-                        String::new(),
-                        String::new(),
+                        tool_id.clone().unwrap_or_default(),
+                        tool_name.clone().unwrap_or_default(),
                     ));
                 } else {
                     self.block_types[*index] = BlockType::Text;
@@ -358,6 +354,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 0,
             content_type: "text".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.process(&StreamEvent::ContentDelta {
             index: 0,
@@ -382,6 +380,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 0,
             content_type: "text".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.process(&StreamEvent::ContentDelta {
             index: 0,
@@ -393,6 +393,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 1,
             content_type: "tool_use".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.set_tool_metadata(1, "toolu_01".into(), "read_file".into());
         parser.process(&StreamEvent::ContentDelta {
@@ -433,6 +435,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 0,
             content_type: "tool_use".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.set_tool_metadata(0, "tc_1".into(), "read_file".into());
         parser.process(&StreamEvent::ContentDelta {
@@ -445,6 +449,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 1,
             content_type: "tool_use".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.set_tool_metadata(1, "tc_2".into(), "read_file".into());
         parser.process(&StreamEvent::ContentDelta {
@@ -463,6 +469,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 0,
             content_type: "tool_use".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.set_tool_metadata(0, "tc_1".into(), "bash".into());
         parser.process(&StreamEvent::ContentDelta {
@@ -482,6 +490,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 0,
             content_type: "text".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.process(&StreamEvent::ContentDelta {
             index: 0,
@@ -518,6 +528,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 0,
             content_type: "text".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.process(&StreamEvent::ContentDelta {
             index: 0,
@@ -529,6 +541,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 1,
             content_type: "tool_use".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.set_tool_metadata(1, "tc_1".into(), "bash".into());
         parser.process(&StreamEvent::ContentDelta {
@@ -648,6 +662,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 0,
             content_type: "tool_use".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.set_tool_metadata(0, "tc_1".into(), "read_file".into());
         parser.process(&StreamEvent::ContentDelta {
@@ -659,6 +675,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 1,
             content_type: "tool_use".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.set_tool_metadata(1, "tc_2".into(), "read_file".into());
         parser.process(&StreamEvent::ContentDelta {
@@ -685,6 +703,8 @@ mod tests {
         parser.process(&StreamEvent::ContentBlockStart {
             index: 0,
             content_type: "tool_use".into(),
+            tool_id: None,
+            tool_name: None,
         });
         parser.set_tool_metadata(0, "tc_1".into(), "write_file".into());
 

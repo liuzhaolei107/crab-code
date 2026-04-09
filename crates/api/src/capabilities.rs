@@ -470,6 +470,8 @@ mod tests {
         assert!(!su.update(&StreamEvent::ContentBlockStart {
             index: 0,
             content_type: "text".into(),
+            tool_id: None,
+            tool_name: None
         }));
         assert!(!su.update(&StreamEvent::ContentBlockStop { index: 0 }));
         assert!(!su.update(&StreamEvent::MessageStop));

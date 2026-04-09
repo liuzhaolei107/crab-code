@@ -191,6 +191,8 @@ pub fn sse_event_to_stream_event(event: AnthropicSseEvent) -> Option<StreamEvent
         } => Some(StreamEvent::ContentBlockStart {
             index,
             content_type: content_block.block_type,
+            tool_id: None,
+            tool_name: None,
         }),
         AnthropicSseEvent::ContentBlockDelta { index, delta } => match delta {
             AnthropicDelta::TextDelta { text } => {

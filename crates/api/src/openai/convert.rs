@@ -259,16 +259,34 @@ pub fn chunk_to_stream_event(chunk: &ChatCompletionChunk) -> Vec<StreamEvent> {
 
         if let Some(tool_calls) = &choice.delta.tool_calls {
             for tc in tool_calls {
+                // Use index offset 1000+ to avoid colliding with text content block indices
+                let tool_index = 1000 + tc.index;
+
+                // First chunk for a tool call: has id + function.name
+                if tc.id.is_some() {
+                    events.push(StreamEvent::ContentBlockStart {
+                        index: tool_index,
+                        content_type: "tool_use".to_string(),
+                        tool_id: tc.id.clone(),
+                        tool_name: tc.function.as_ref().and_then(|f| f.name.clone()),
+                    });
+                }
+
+                // Function arguments arrive incrementally
                 if let Some(func) = &tc.function
                     && let Some(args) = &func.arguments
                     && !args.is_empty()
                 {
                     events.push(StreamEvent::ContentDelta {
-                        index: tc.index,
+                        index: tool_index,
                         delta: args.clone(),
                     });
                 }
             }
+
+            // Store tool call metadata for post-stream assembly
+            // (id and name are extracted from the first chunk of each tool_call)
+            // This is handled by accumulating in StreamingToolParser
         }
 
         if let Some(reason) = &choice.finish_reason {
