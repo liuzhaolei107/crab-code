@@ -574,29 +574,21 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
         }
     }
 
-    // Load config.toml for multi-provider support
-    let config_toml = crab_config::config_toml::load_config_toml().unwrap_or_default();
-    let provider_override = (cli.provider != "anthropic").then_some(cli.provider.as_str());
-    let toml_settings =
-        crab_config::config_toml::config_toml_to_settings(&config_toml, provider_override);
-
-    // Merge priority: CLI args > settings.json > config.toml > defaults
-    let provider = if cli.provider != "anthropic" {
-        cli.provider.clone()
-    } else if let Some(ref p) = settings.api_provider {
-        p.clone()
-    } else if let Some(ref p) = toml_settings.api_provider {
-        p.clone()
+    // settings already has config.toml → user → project → local → env merged.
+    // CLI --provider/--model override the merged result.
+    let provider = if cli.provider == "anthropic" {
+        settings
+            .api_provider
+            .clone()
+            .unwrap_or_else(|| "anthropic".to_string())
     } else {
-        "anthropic".to_string()
+        cli.provider.clone()
     };
-
     let model_id = cli
         .model
         .as_deref()
         .map(resolve_model_alias)
         .or_else(|| settings.model.clone())
-        .or_else(|| toml_settings.model.clone())
         .unwrap_or_else(|| {
             if provider == "openai" || provider == "deepseek" || provider == "ollama" {
                 "deepseek-chat".to_string()
@@ -605,17 +597,9 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
             }
         });
 
-    // Build effective settings for backend creation
+    // Build effective settings — just override provider and model from CLI
     let effective_settings = crab_config::Settings {
         api_provider: Some(provider.clone()),
-        api_base_url: settings
-            .api_base_url
-            .clone()
-            .or_else(|| toml_settings.api_base_url.clone()),
-        api_key: settings
-            .api_key
-            .clone()
-            .or_else(|| toml_settings.api_key.clone()),
         model: Some(model_id.clone()),
         ..settings.clone()
     };

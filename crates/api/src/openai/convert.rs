@@ -8,6 +8,36 @@ use super::types::{
     CompletionUsage, ToolCall,
 };
 use crate::error::Result;
+
+/// Convert an Anthropic-style tool schema to `OpenAI` function-calling format.
+///
+/// Wraps `{name, description, input_schema}` into `{type: "function", function: {..}}`.
+fn convert_tool_to_openai_format(tool: &serde_json::Value) -> serde_json::Value {
+    // Already in OpenAI format (has "type": "function")
+    if tool.get("type").and_then(|v| v.as_str()) == Some("function") {
+        return tool.clone();
+    }
+
+    let name = tool.get("name").cloned().unwrap_or(serde_json::json!(""));
+    let description = tool
+        .get("description")
+        .cloned()
+        .unwrap_or(serde_json::json!(""));
+    let parameters = tool
+        .get("input_schema")
+        .or_else(|| tool.get("parameters"))
+        .cloned()
+        .unwrap_or(serde_json::json!({"type": "object", "properties": {}}));
+
+    serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": parameters,
+        }
+    })
+}
 use crate::types::{MessageRequest, MessageResponse, StreamEvent};
 
 /// Convert internal `MessageRequest` to Chat Completions request.
@@ -46,7 +76,11 @@ pub fn to_chat_completion_request(req: &MessageRequest<'_>, stream: bool) -> Cha
         messages,
         max_tokens: Some(req.max_tokens),
         temperature: req.temperature,
-        tools: req.tools.clone(),
+        tools: req
+            .tools
+            .iter()
+            .map(convert_tool_to_openai_format)
+            .collect(),
         stream,
         response_format,
         tool_choice,

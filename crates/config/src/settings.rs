@@ -288,21 +288,27 @@ where
     F: Fn(&str) -> std::result::Result<String, std::env::VarError>,
 {
     let api_provider = env_lookup("CRAB_API_PROVIDER").ok();
+    let effective_provider = api_provider
+        .as_deref()
+        .or(current_provider)
+        .unwrap_or("anthropic");
     let api_base_url = env_lookup("CRAB_API_BASE_URL")
         .ok()
-        // CC-compatible: ANTHROPIC_BASE_URL as fallback
-        .or_else(|| env_lookup("ANTHROPIC_BASE_URL").ok())
+        // CC-compatible: ANTHROPIC_BASE_URL only when using anthropic provider
+        .or_else(|| {
+            if effective_provider == "anthropic" {
+                env_lookup("ANTHROPIC_BASE_URL").ok()
+            } else {
+                None
+            }
+        })
         .filter(|v| !v.is_empty());
     let model = env_lookup("CRAB_MODEL").ok();
 
     // For API key: CRAB_API_KEY takes priority, then provider-specific vars
-    let api_key = env_lookup("CRAB_API_KEY").ok().or_else(|| {
-        let effective_provider = api_provider
-            .as_deref()
-            .or(current_provider)
-            .unwrap_or("anthropic");
-        provider_api_key_env(effective_provider, env_lookup)
-    });
+    let api_key = env_lookup("CRAB_API_KEY")
+        .ok()
+        .or_else(|| provider_api_key_env(effective_provider, env_lookup));
 
     Settings {
         api_provider,
