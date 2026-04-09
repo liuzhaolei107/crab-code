@@ -735,11 +735,19 @@ impl App {
             buf,
         );
 
-        // Thinking state indicator (overlays into status area)
-        render_thinking_state(&self.thinking, layout.status, buf);
-
-        // Status line / spinner
-        Widget::render(&self.spinner, layout.status, buf);
+        // Status line: spinner (when active) or status bar (model/tokens/cost)
+        if self.spinner.is_active() {
+            Widget::render(&self.spinner, layout.status, buf);
+        } else {
+            render_status_line(
+                &self.model_name,
+                self.total_input_tokens,
+                self.total_output_tokens,
+                &self.thinking,
+                layout.status,
+                buf,
+            );
+        }
 
         // Separator above input
         render_separator(layout.separator_top, buf);
@@ -925,7 +933,7 @@ fn render_separator(area: Rect, buf: &mut Buffer) {
 ///
 /// When thinking is active, shows `"Thinking... (Ns)"` with elapsed time.
 /// After thinking finishes, shows `"(thought for Ns)"` for 2 seconds.
-#[allow(clippy::cast_possible_truncation)]
+#[allow(dead_code, clippy::cast_possible_truncation)]
 fn render_thinking_state(thinking: &ThinkingState, area: Rect, buf: &mut Buffer) {
     if area.height == 0 || area.width == 0 {
         return;
@@ -1051,29 +1059,69 @@ fn render_content_scrolled(
         return;
     }
 
-    let lines: Vec<&str> = text.lines().collect();
+    // Render lines: system prefixed lines get color-coded styles,
+    // everything else goes through markdown rendering.
+    let theme = crate::theme::Theme::dark();
+    let highlighter = crate::components::syntax::SyntaxHighlighter::new();
+    let md_renderer = crate::components::markdown::MarkdownRenderer::new(&theme, &highlighter);
+
+    let mut rendered_lines: Vec<Line<'static>> = Vec::new();
+
+    // Split content into segments: system lines vs markdown blocks
+    let mut md_block = String::new();
+    for raw_line in text.lines() {
+        if is_system_line(raw_line) {
+            // Flush any accumulated markdown
+            if !md_block.is_empty() {
+                rendered_lines.extend(md_renderer.render(&md_block));
+                md_block.clear();
+            }
+            // Render system line with prefix-based styling
+            let style = classify_content_style(raw_line, styles);
+            rendered_lines.push(Line::from(Span::styled(raw_line.to_string(), style)));
+        } else {
+            md_block.push_str(raw_line);
+            md_block.push('\n');
+        }
+    }
+    // Flush remaining markdown
+    if !md_block.is_empty() {
+        rendered_lines.extend(md_renderer.render(&md_block));
+    }
+
     let visible = area.height as usize;
-    // Show the last N lines minus scroll offset (auto-scroll to bottom)
-    let end = lines.len().saturating_sub(scroll_offset);
+    let end = rendered_lines.len().saturating_sub(scroll_offset);
     let start = end.saturating_sub(visible);
 
-    for (i, line_text) in lines
+    for (i, line) in rendered_lines
         .iter()
         .skip(start)
-        .take(visible.min(end - start))
+        .take(visible.min(end.saturating_sub(start)))
         .enumerate()
     {
         let y = area.y + i as u16;
-        let style = classify_content_style(line_text, styles);
-        let line_widget = Line::from(Span::styled(*line_text, style));
         let line_area = Rect {
             x: area.x,
             y,
             width: area.width,
             height: 1,
         };
-        Widget::render(line_widget, line_area, buf);
+        Widget::render(line.clone(), line_area, buf);
     }
+}
+
+/// Check if a line is a system/tool prefix line (not markdown).
+fn is_system_line(line: &str) -> bool {
+    let t = line.trim_start();
+    t.starts_with("[tool")
+        || t.starts_with("[Error:")
+        || t.starts_with("[warn]")
+        || t.starts_with("[session]")
+        || t.starts_with("[compact]")
+        || t.starts_with("[interrupted]")
+        || t.starts_with("❯ ")
+        || t.starts_with("────")
+        || t.starts_with("Welcome!")
 }
 
 /// Choose a style for a content line based on its prefix/content.
@@ -1177,6 +1225,73 @@ fn classify_tool_risk(tool_name: &str) -> RiskLevel {
         BASH_TOOL_NAME | WRITE_TOOL_NAME | NOTEBOOK_EDIT_TOOL_NAME => RiskLevel::High,
         EDIT_TOOL_NAME => RiskLevel::Medium,
         _ => RiskLevel::Low,
+    }
+}
+
+/// Render the status line: model name | token counts | thinking state.
+///
+/// Matches CC's `StatusLine` component showing operational data.
+fn render_status_line(
+    model: &str,
+    input_tokens: u64,
+    output_tokens: u64,
+    thinking: &ThinkingState,
+    area: Rect,
+    buf: &mut Buffer,
+) {
+    if area.width < 10 || area.height == 0 {
+        return;
+    }
+
+    let mut spans = vec![
+        Span::styled(model, Style::default().fg(Color::Cyan)),
+        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
+    ];
+
+    // Token counts
+    let in_str = format_token_count(input_tokens);
+    let out_str = format_token_count(output_tokens);
+    spans.push(Span::styled(
+        format!("{in_str} in"),
+        Style::default().fg(Color::DarkGray),
+    ));
+    spans.push(Span::styled(" · ", Style::default().fg(Color::DarkGray)));
+    spans.push(Span::styled(
+        format!("{out_str} out"),
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    // Thinking state
+    match thinking {
+        ThinkingState::Thinking { started_at } => {
+            let elapsed = started_at.elapsed().as_secs();
+            spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                format!("thinking ({elapsed}s)"),
+                Style::default().fg(Color::Yellow),
+            ));
+        }
+        ThinkingState::ThoughtFor { duration, .. } => {
+            spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                format!("thought for {}s", duration.as_secs()),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+        ThinkingState::Idle => {}
+    }
+
+    Widget::render(Line::from(spans), area, buf);
+}
+
+/// Format token count: 1234 → "1.2k", 500 → "500"
+fn format_token_count(tokens: u64) -> String {
+    if tokens >= 1_000_000 {
+        format!("{:.1}M", tokens as f64 / 1_000_000.0)
+    } else if tokens >= 1000 {
+        format!("{:.1}k", tokens as f64 / 1000.0)
+    } else {
+        tokens.to_string()
     }
 }
 
