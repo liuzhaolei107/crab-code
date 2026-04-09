@@ -69,7 +69,17 @@ pub fn to_chat_completion_request(req: &MessageRequest<'_>, stream: bool) -> Cha
     let tool_choice = req
         .tool_choice
         .as_ref()
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        // Default to "auto" when tools are present (required by DeepSeek and some providers)
+        .or({
+            if req.tools.is_empty() {
+                None
+            } else {
+                Some(super::types::ToolChoice::Mode(
+                    super::types::ToolChoiceMode::Auto,
+                ))
+            }
+        });
 
     ChatCompletionRequest {
         model: req.model.0.clone(),
