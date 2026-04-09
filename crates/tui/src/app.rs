@@ -1065,17 +1065,7 @@ fn render_input_with_prompt(
         height: area.height,
     };
 
-    if input.is_empty() {
-        // Placeholder — only rendered when truly empty, mutually exclusive with input
-        let placeholder = Line::from(Span::styled(
-            "Type a message...",
-            Style::default().fg(Color::DarkGray),
-        ));
-        Widget::render(placeholder, input_area, buf);
-    } else {
-        // Actual input content — no placeholder underneath
-        Widget::render(input, input_area, buf);
-    }
+    Widget::render(input, input_area, buf);
 }
 
 /// Render structured messages list — each `ChatMessage` gets its own visual treatment.
