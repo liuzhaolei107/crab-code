@@ -13,7 +13,7 @@
 |-------|-------|----------------|
 | **Layer 4** Entry Layer | `crates/cli` `crates/daemon` | CLI entry point (clap), background daemon |
 | **Layer 3** Engine Layer | `agent` `session` | Multi-Agent orchestration, session management, context compaction |
-| **Layer 2** Service Layer | `tools` `mcp` `api` `fs` `process` `plugin` `telemetry` `tui` `bridge` | Tool system, MCP protocol stack, multi-model API client, file/process operations, TUI components, IDE bridge |
+| **Layer 2** Service Layer | `tools` `mcp` `api` `fs` `process` `plugin` `telemetry` `tui` | Tool system, MCP protocol stack, multi-model API client, file/process operations, TUI components |
 | **Layer 1** Foundation Layer | `core` `common` `config` `auth` | Domain model, config hot reload, authentication |
 
 > Dependency direction: upper layers depend on lower layers; reverse dependencies are prohibited. `core` defines the `Tool` trait to avoid circular dependencies between tools/agent.
@@ -528,17 +528,10 @@ crab-code/
 │   │       ├── export.rs              # [P1] Local OTLP export (no remote)
 │   │       └── session_recorder.rs    # [P2] Session recording (local transcript)
 │   │
-│   └── bridge/                        # [P1] crab-bridge: IDE bridge/IPC
-│       ├── Cargo.toml
-│       └── src/
-│           ├── lib.rs
-│           ├── protocol.rs            # JSON-RPC IDE communication message types
-│           ├── repl_bridge.rs         # REPL relay: IDE <-> session
-│           ├── remote_bridge.rs       # Remote connection: connect to daemon session
-│           ├── ws_server.rs           # WebSocket server
-│           ├── session_token.rs       # JWT session token
-│           ├── trusted_device.rs      # Trusted device registration/verification
-│           └── types.rs               # Shared types
+│   # NOTE: IDE integration is planned via `crates/acp/` (Agent Client Protocol,
+│   # JetBrains + Zed joint standard). Formerly `crates/bridge/` — that was a
+│   # port of CCB's remote-session client (cloud session bridge, not IDE), and
+│   # has been removed.
 │
 │   ├── cli/                           # crab-cli: terminal entry (binary crate)
 │   │   ├── Cargo.toml
@@ -572,11 +565,11 @@ crab-code/
 
 | Type | Count | Notes |
 |------|-------|-------|
-| Library crate | 15 | `crates/*` (including new `bridge`) |
+| Library crate | 14 | `crates/*` |
 | Binary crate | 2 | `crates/cli` `crates/daemon` |
 | Helper crate | 1 | `xtask` |
-| **Total** | **18** | -- |
-| Total modules | ~241 | Across 15 library crates (including 65 new files) |
+| **Total** | **17** | -- |
+| Total modules | ~241 | Across 14 library crates |
 | Total tests | ~2654 | `cargo test --workspace` (2026-04-06) |
 
 > Note: [P0]/[P1]/[P2] markers indicate CCB feature alignment priority. Unmarked files are already implemented.
@@ -637,9 +630,6 @@ crab-code/
                    ┌────────────┐
                    │ telemetry  │ <-- Independent sidecar, optional dependency for any crate
                    └────────────┘
-                   ┌────────────┐
-                   │  bridge    │ <-- Layer 2 Service Layer, IDE bridge
-                   └────────────┘
 ```
 
 ### 5.2 Dependency Manifest (Bottom-Up)
@@ -655,14 +645,13 @@ crab-code/
 | 7 | **process** | common | Subprocess management |
 | 8 | **mcp** | core, common | MCP protocol client/server |
 | 9 | **telemetry** | common | Independent sidecar, optional |
-| 10 | **bridge** | core, config, common | [P1] IDE bridge / WebSocket IPC |
-| 11 | **tools** | core, fs, process, mcp, config, common | 40+ built-in tools |
-| 12 | **session** | core, api, config, common | Session + context compaction + memory system |
-| 13 | **agent** | core, session, tools, common | Agent orchestration |
-| 14 | **plugin** | core, common | Skill/WASM sandbox + hook system |
-| 15 | **tui** | core, session, config, common | Terminal UI (does not depend on tools directly; receives tool state via core::Event) |
-| 16 | **cli** (bin) | All crates | Extremely thin entry point |
-| 17 | **daemon** (bin) | core, session, api, tools, config, agent, bridge, common | Background service |
+| 10 | **tools** | core, fs, process, mcp, config, common | 40+ built-in tools |
+| 11 | **session** | core, api, config, common | Session + context compaction + memory system |
+| 12 | **agent** | core, session, tools, common | Agent orchestration |
+| 13 | **plugin** | core, common | Skill/WASM sandbox + hook system |
+| 14 | **tui** | core, session, config, common | Terminal UI (does not depend on tools directly; receives tool state via core::Event) |
+| 15 | **cli** (bin) | All crates | Extremely thin entry point |
+| 16 | **daemon** (bin) | core, session, api, tools, config, agent, common | Background service |
 
 ### 5.3 Dependency Direction Principles
 
