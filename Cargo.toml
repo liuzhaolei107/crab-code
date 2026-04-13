@@ -120,6 +120,7 @@ crab-config = { path = "crates/config" }
 crab-auth = { path = "crates/auth" }
 crab-api = { path = "crates/api" }
 crab-mcp = { path = "crates/mcp" }
+crab-ide = { path = "crates/ide" }
 crab-fs = { path = "crates/fs" }
 crab-process = { path = "crates/process" }
 crab-tools = { path = "crates/tools" }
