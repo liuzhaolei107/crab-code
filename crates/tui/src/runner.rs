@@ -76,15 +76,19 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
 
     // Inject memories into system prompt
     if let Some(ref store) = memory_store
-        && let Ok(memories) = store.load_all()
+        && let Ok(memories) = store.scan()
         && !memories.is_empty()
     {
         system_prompt.push_str("\n\n# Loaded Memories\n\n");
         for mem in &memories {
             use std::fmt::Write as _;
-            let _ = writeln!(system_prompt, "## {} (type: {})", mem.name, mem.memory_type);
-            if !mem.description.is_empty() {
-                let _ = writeln!(system_prompt, "> {}", mem.description);
+            let _ = writeln!(
+                system_prompt,
+                "## {} (type: {})",
+                mem.metadata.name, mem.metadata.memory_type
+            );
+            if !mem.metadata.description.is_empty() {
+                let _ = writeln!(system_prompt, "> {}", mem.metadata.description);
                 system_prompt.push('\n');
             }
             let _ = writeln!(system_prompt, "{}", mem.body);

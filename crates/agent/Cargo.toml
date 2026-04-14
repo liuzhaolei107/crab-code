@@ -11,6 +11,7 @@ description = "Multi-agent orchestration for Crab Code"
 crab-common.workspace = true
 crab-core.workspace = true
 crab-config.workspace = true
+crab-memory.workspace = true
 crab-session.workspace = true
 crab-tools.workspace = true
 crab-api.workspace = true

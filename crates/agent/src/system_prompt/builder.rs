@@ -10,7 +10,7 @@ use std::fmt::Write;
 use std::path::Path;
 
 use crab_config::crab_md;
-use crab_session::MemoryFile;
+use crab_memory::MemoryFile;
 use crab_tools::registry::ToolRegistry;
 
 use crate::git_context::GitContext;
@@ -133,9 +133,13 @@ fn append_memory_context(prompt: &mut String, memories: &[MemoryFile]) {
         "The following memories were loaded from previous sessions.\n"
     );
     for mem in memories {
-        let _ = writeln!(prompt, "## {} (type: {})\n", mem.name, mem.memory_type);
-        if !mem.description.is_empty() {
-            let _ = writeln!(prompt, "> {}\n", mem.description);
+        let _ = writeln!(
+            prompt,
+            "## {} (type: {})\n",
+            mem.metadata.name, mem.metadata.memory_type
+        );
+        if !mem.metadata.description.is_empty() {
+            let _ = writeln!(prompt, "> {}\n", mem.metadata.description);
         }
         let _ = writeln!(prompt, "{}\n", mem.body);
     }
@@ -245,21 +249,36 @@ mod tests {
 
     #[test]
     fn build_with_memories_includes_memory_section() {
+        use crab_memory::{MemoryMetadata, MemoryType};
+        use std::path::PathBuf;
+
         let registry = ToolRegistry::new();
         let memories = vec![
             MemoryFile {
-                name: "User role".into(),
-                description: "Senior Rust developer".into(),
-                memory_type: "user".into(),
-                body: "The user is a senior Rust developer.".into(),
                 filename: "user_role.md".into(),
+                path: PathBuf::from("user_role.md"),
+                metadata: MemoryMetadata {
+                    name: "User role".into(),
+                    description: "Senior Rust developer".into(),
+                    memory_type: MemoryType::User,
+                    created_at: None,
+                    updated_at: None,
+                },
+                body: "The user is a senior Rust developer.".into(),
+                mtime: None,
             },
             MemoryFile {
-                name: "No mocks".into(),
-                description: "Use real DB in tests".into(),
-                memory_type: "feedback".into(),
-                body: "Always use real database connections in integration tests.".into(),
                 filename: "feedback_testing.md".into(),
+                path: PathBuf::from("feedback_testing.md"),
+                metadata: MemoryMetadata {
+                    name: "No mocks".into(),
+                    description: "Use real DB in tests".into(),
+                    memory_type: MemoryType::Feedback,
+                    created_at: None,
+                    updated_at: None,
+                },
+                body: "Always use real database connections in integration tests.".into(),
+                mtime: None,
             },
         ];
         let prompt = build_system_prompt_with_memories(Path::new("."), &registry, None, &memories);
@@ -288,13 +307,22 @@ mod tests {
 
     #[test]
     fn append_memory_context_formats_entries() {
+        use crab_memory::{MemoryMetadata, MemoryType};
+        use std::path::PathBuf;
+
         let mut prompt = String::new();
         let memories = vec![MemoryFile {
-            name: "Test".into(),
-            description: "A test memory".into(),
-            memory_type: "project".into(),
-            body: "Some project context.".into(),
             filename: "test.md".into(),
+            path: PathBuf::from("test.md"),
+            metadata: MemoryMetadata {
+                name: "Test".into(),
+                description: "A test memory".into(),
+                memory_type: MemoryType::Project,
+                created_at: None,
+                updated_at: None,
+            },
+            body: "Some project context.".into(),
+            mtime: None,
         }];
         append_memory_context(&mut prompt, &memories);
         assert!(prompt.contains("## Test (type: project)"));
@@ -345,21 +373,36 @@ mod tests {
 
     #[test]
     fn append_memory_context_multiple() {
+        use crab_memory::{MemoryMetadata, MemoryType};
+        use std::path::PathBuf;
+
         let mut prompt = String::new();
         let memories = vec![
             MemoryFile {
-                name: "A".into(),
-                description: "da".into(),
-                memory_type: "user".into(),
-                body: "ba".into(),
                 filename: "a.md".into(),
+                path: PathBuf::from("a.md"),
+                metadata: MemoryMetadata {
+                    name: "A".into(),
+                    description: "da".into(),
+                    memory_type: MemoryType::User,
+                    created_at: None,
+                    updated_at: None,
+                },
+                body: "ba".into(),
+                mtime: None,
             },
             MemoryFile {
-                name: "B".into(),
-                description: "db".into(),
-                memory_type: "feedback".into(),
-                body: "bb".into(),
                 filename: "b.md".into(),
+                path: PathBuf::from("b.md"),
+                metadata: MemoryMetadata {
+                    name: "B".into(),
+                    description: "db".into(),
+                    memory_type: MemoryType::Feedback,
+                    created_at: None,
+                    updated_at: None,
+                },
+                body: "bb".into(),
+                mtime: None,
             },
         ];
         append_memory_context(&mut prompt, &memories);

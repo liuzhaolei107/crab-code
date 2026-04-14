@@ -8,7 +8,8 @@ use crab_core::message::Message;
 use crab_core::model::ModelId;
 use crab_core::permission::PermissionPolicy;
 use crab_core::tool::ToolContext;
-use crab_session::{Conversation, CostAccumulator, MemoryStore, SessionHistory};
+use crab_memory::MemoryStore;
+use crab_session::{Conversation, CostAccumulator, SessionHistory};
 use crab_tools::executor::ToolExecutor;
 use crab_tools::registry::ToolRegistry;
 use tokio::sync::mpsc;
@@ -152,7 +153,7 @@ impl AgentSession {
 
         // Load memories and inject into system prompt
         if let Some(store) = &memory_store
-            && let Ok(memories) = store.load_all()
+            && let Ok(memories) = store.scan()
             && !memories.is_empty()
         {
             let memory_section = format_memory_section(&memories);
@@ -339,7 +340,7 @@ impl AgentSession {
 }
 
 /// Format memory files as a section to append to the system prompt.
-fn format_memory_section(memories: &[crab_session::MemoryFile]) -> String {
+fn format_memory_section(memories: &[crab_memory::MemoryFile]) -> String {
     use std::fmt::Write;
     let mut section = String::new();
     let _ = writeln!(section, "\n\n# Loaded Memories\n");
@@ -348,9 +349,13 @@ fn format_memory_section(memories: &[crab_session::MemoryFile]) -> String {
         "The following memories were loaded from previous sessions.\n"
     );
     for mem in memories {
-        let _ = writeln!(section, "## {} (type: {})\n", mem.name, mem.memory_type);
-        if !mem.description.is_empty() {
-            let _ = writeln!(section, "> {}\n", mem.description);
+        let _ = writeln!(
+            section,
+            "## {} (type: {})\n",
+            mem.metadata.name, mem.metadata.memory_type
+        );
+        if !mem.metadata.description.is_empty() {
+            let _ = writeln!(section, "> {}\n", mem.metadata.description);
         }
         let _ = writeln!(section, "{}\n", mem.body);
     }
@@ -923,12 +928,19 @@ mod tests {
 
     #[test]
     fn format_memory_section_creates_markdown() {
-        let memories = vec![crab_session::MemoryFile {
-            name: "Test".into(),
-            description: "A test".into(),
-            memory_type: "user".into(),
-            body: "Content here.".into(),
+        use crab_memory::{MemoryMetadata, MemoryType};
+        let memories = vec![crab_memory::MemoryFile {
             filename: "test.md".into(),
+            path: PathBuf::from("test.md"),
+            metadata: MemoryMetadata {
+                name: "Test".into(),
+                description: "A test".into(),
+                memory_type: MemoryType::User,
+                created_at: None,
+                updated_at: None,
+            },
+            body: "Content here.".into(),
+            mtime: None,
         }];
         let section = format_memory_section(&memories);
         assert!(section.contains("# Loaded Memories"));
@@ -939,12 +951,19 @@ mod tests {
 
     #[test]
     fn format_memory_section_empty_description() {
-        let memories = vec![crab_session::MemoryFile {
-            name: "NoDesc".into(),
-            description: String::new(),
-            memory_type: "project".into(),
-            body: "Body only.".into(),
+        use crab_memory::{MemoryMetadata, MemoryType};
+        let memories = vec![crab_memory::MemoryFile {
             filename: "nodesc.md".into(),
+            path: PathBuf::from("nodesc.md"),
+            metadata: MemoryMetadata {
+                name: "NoDesc".into(),
+                description: String::new(),
+                memory_type: MemoryType::Project,
+                created_at: None,
+                updated_at: None,
+            },
+            body: "Body only.".into(),
+            mtime: None,
         }];
         let section = format_memory_section(&memories);
         assert!(section.contains("## NoDesc (type: project)"));
@@ -954,20 +973,33 @@ mod tests {
 
     #[test]
     fn format_memory_section_multiple_memories() {
+        use crab_memory::{MemoryMetadata, MemoryType};
         let memories = vec![
-            crab_session::MemoryFile {
-                name: "First".into(),
-                description: "desc1".into(),
-                memory_type: "user".into(),
-                body: "body1".into(),
+            crab_memory::MemoryFile {
                 filename: "first.md".into(),
+                path: PathBuf::from("first.md"),
+                metadata: MemoryMetadata {
+                    name: "First".into(),
+                    description: "desc1".into(),
+                    memory_type: MemoryType::User,
+                    created_at: None,
+                    updated_at: None,
+                },
+                body: "body1".into(),
+                mtime: None,
             },
-            crab_session::MemoryFile {
-                name: "Second".into(),
-                description: "desc2".into(),
-                memory_type: "feedback".into(),
-                body: "body2".into(),
+            crab_memory::MemoryFile {
                 filename: "second.md".into(),
+                path: PathBuf::from("second.md"),
+                metadata: MemoryMetadata {
+                    name: "Second".into(),
+                    description: "desc2".into(),
+                    memory_type: MemoryType::Feedback,
+                    created_at: None,
+                    updated_at: None,
+                },
+                body: "body2".into(),
+                mtime: None,
             },
         ];
         let section = format_memory_section(&memories);

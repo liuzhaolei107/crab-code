@@ -23,7 +23,7 @@ pub use context::{ContextAction, ContextManager};
 pub use conversation::Conversation;
 pub use cost::{CostAccumulator, CostSummary, ModelPricing, lookup_pricing};
 pub use history::{ExportFormat, SearchResult, SessionHistory, SessionMetadata, SessionStats};
-pub use memory::{MemoryFile, MemoryIndexEntry, MemoryStore};
+pub use memory::{IndexEntry, MemoryFile, MemoryIndex, MemoryStore};
 pub use memory_types::{MemoryMetadata, MemoryType};
 pub use snip_compact::SnipConfig;
 pub use template::{
