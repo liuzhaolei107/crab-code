@@ -5,6 +5,7 @@
 
 pub mod age;
 pub mod index;
+pub mod paths;
 pub mod relevance;
 pub mod store;
 pub mod types;
