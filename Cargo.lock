@@ -766,6 +766,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "crab-memory"
+version = "0.1.0"
+dependencies = [
+ "crab-common",
+ "dunce",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "crab-plugin"
 version = "0.1.0"
 dependencies = [

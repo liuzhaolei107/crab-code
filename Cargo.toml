@@ -129,6 +129,7 @@ crab-agent = { path = "crates/agent" }
 crab-tui = { path = "crates/tui" }
 crab-plugin = { path = "crates/plugin" }
 crab-skill = { path = "crates/skill" }
+crab-memory = { path = "crates/memory" }
 crab-telemetry = { path = "crates/telemetry" }
 
 [workspace.lints.rust]

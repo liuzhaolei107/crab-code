@@ -1,0 +1,20 @@
+[package]
+name = "crab-memory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "File-based memory system for Crab Code"
+
+[dependencies]
+crab-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+dunce.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
