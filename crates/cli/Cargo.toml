@@ -53,6 +53,7 @@ full = [
     "crab-api/vertex",
     "crab-process/pty",
     "crab-telemetry/otlp",
+    "crab-agent/mem-ranker",
 ]
 
 [lints]

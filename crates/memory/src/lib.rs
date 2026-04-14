@@ -7,6 +7,8 @@ pub mod age;
 pub mod index;
 pub mod paths;
 pub mod prompt;
+#[cfg(feature = "mem-ranker")]
+pub mod ranker;
 pub mod relevance;
 pub mod security;
 pub mod store;
@@ -15,7 +17,9 @@ pub mod types;
 
 pub use index::{IndexEntry, MemoryIndex, Truncation};
 pub use prompt::MemoryPromptBuilder;
-pub use relevance::{MemorySelector, ScoredMemory};
+#[cfg(feature = "mem-ranker")]
+pub use ranker::LlmMemoryRanker;
+pub use relevance::{MemoryRanker, MemorySelector, ScoredMemory};
 pub use store::{MemoryFile, MemoryStore};
 pub use team::TeamMemoryStore;
 pub use types::{

@@ -1,7 +1,7 @@
 # Crab Code Architecture
 
-> Version: v2.1
-> Updated: 2026-04-06
+> Version: v2.2
+> Updated: 2026-04-14
 
 ---
 
@@ -13,7 +13,7 @@
 |-------|-------|----------------|
 | **Layer 4** Entry Layer | `crates/cli` `crates/daemon` | CLI entry point (clap), background daemon |
 | **Layer 3** Engine Layer | `agent` `session` | Multi-Agent orchestration, session management, context compaction |
-| **Layer 2** Service Layer | `tools` `mcp` `api` `fs` `process` `plugin` `skill` `telemetry` `tui` | Tool system, MCP protocol stack, multi-model API client, file/process operations, skill system, TUI components |
+| **Layer 2** Service Layer | `tools` `mcp` `api` `fs` `process` `plugin` `skill` `memory` `telemetry` `tui` | Tool system, MCP protocol stack, multi-model API client, file/process operations, skill system, persistent memory, TUI components |
 | **Layer 1** Foundation Layer | `core` `common` `config` `auth` | Domain model, config hot reload, authentication |
 
 > Dependency direction: upper layers depend on lower layers; reverse dependencies are prohibited. `core` defines the `Tool` trait to avoid circular dependencies between tools/agent.
@@ -45,12 +45,12 @@
 │  │in     │  │       │  │    │  │          │  │            │      │
 │  └┬────┬─┘  └───────┘  └────┘  └──────────┘  └────────────┘      │
 │   │    │                                                           │
-│  ┌▼──┐ ┌▼──────┐  ┌──────┐  ┌──────┐                              │
-│  │fs │ │process │  │plugin│  │skill │                              │
-│  │glob│ │sub-   │  │hooks │  │regis-│                              │
-│  │grep│ │process│  │WASM  │  │try + │                              │
-│  │    │ │signal │  │MCP↔  │  │built-│                              │
-│  └───┘ └───────┘  └──────┘  └──────┘                              │
+│  ┌▼──┐ ┌▼──────┐  ┌──────┐  ┌──────┐  ┌──────┐                    │
+│  │fs │ │process │  │plugin│  │skill │  │memory│                    │
+│  │glob│ │sub-   │  │hooks │  │regis-│  │store │                    │
+│  │grep│ │process│  │WASM  │  │try + │  │rank  │                    │
+│  │    │ │signal │  │MCP↔  │  │built-│  │age   │                    │
+│  └───┘ └───────┘  └──────┘  └──────┘  └──────┘                    │
 ├───────────────────────────────────────────────────────────────────┤
 │                      Layer 1: Foundation Layer                      │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
@@ -70,14 +70,14 @@
 | **Entry Layer** entrypoints/ | `cli.tsx` `main.tsx` | `crates/cli` `crates/daemon` | CC uses React/Ink for rendering, Crab uses ratatui |
 | **Command Layer** commands/ | `query.ts` `QueryEngine.ts` | `agent` + `session` | CC's query loop maps to agent orchestration |
 | **Tool Layer** tools/ | 52 Tool directories | `tools` + `mcp` | CC mixes tools and MCP in services/; Crab separates them |
-| **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` | `api` `mcp` `auth` `skill` `plugin` `telemetry` | CC's service layer is flat; Crab splits by responsibility |
+| **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` `memdir/` | `api` `mcp` `auth` `skill` `plugin` `memory` `telemetry` | CC's service layer is flat; Crab splits by responsibility. CC's `memdir/` maps to `memory` |
 | **Foundation Layer** utils/ types/ | `Tool.ts` `context.ts` | `core` `common` `config` | CC scatters types across files; Crab centralizes them in core |
 
 ### Core Design Philosophy
 
 1. **core has zero I/O** -- Pure data structures and trait definitions, reusable by any frontend (CLI/GUI/WASM)
 2. **Message loop driven** -- Everything revolves around the query loop: user input -> API call -> tool execution -> result return
-3. **Workspace isolation** -- 16 library crates with orthogonal responsibilities (~190 modules); incremental compilation only triggers on changed parts
+3. **Workspace isolation** -- 17 library crates with orthogonal responsibilities; incremental compilation only triggers on changed parts
 4. **Feature flags control dependencies** -- No Bedrock? AWS SDK is not compiled. No WASM? wasmtime is not compiled.
 
 ---
@@ -2337,20 +2337,21 @@ impl ToolExecutor {
 
 ### 6.10 `crates/session/` -- Session Management
 
-**Responsibility**: State management for multi-turn conversations (corresponds to CC `src/services/compact/` + `src/services/SessionMemory/` + `src/services/sessionTranscript/`)
+**Responsibility**: State management for multi-turn conversations (corresponds to CC `src/services/compact/` + `src/services/SessionMemory/` + `src/services/sessionTranscript/`). Memory system extracted to `crates/memory/`; session re-exports core memory types.
 
 **Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── conversation.rs   // Conversation state machine, multi-turn management
-├── context.rs        // Context window management, auto-compaction trigger
-├── compaction.rs     // Message compaction strategies (5 levels: Snip/Microcompact/Summarize/Hybrid/Truncate)
-├── history.rs        // Session persistence, recovery, search, export, statistics
-├── memory.rs         // Memory system (file persistence)
-├── cost.rs           // Token counting, cost tracking
-└── template.rs       // Session template + quick recovery
+├── conversation.rs    // Conversation state machine, multi-turn management
+├── context.rs         // Context window management, auto-compaction trigger
+├── compaction.rs      // Message compaction strategies (5 levels: Snip/Microcompact/Summarize/Hybrid/Truncate)
+├── history.rs         // Session persistence, recovery, search, export, statistics
+├── memory.rs          // Re-exports from crab-memory (MemoryStore, MemoryFile, etc.)
+├── memory_extract.rs  // Conversation → memory extraction (heuristic, depends on crab-core::Message)
+├── cost.rs            // Token counting, cost tracking
+└── template.rs        // Session template + quick recovery
 ```
 
 **Core Types**
@@ -3193,7 +3194,42 @@ wasm = ["wasmtime"]
 
 ---
 
-### 6.15 `crates/telemetry/` -- Observability
+### 6.15 `crates/memory/` -- Persistent Memory System
+
+**Responsibility**: File-based cross-session memory storage — user preferences, feedback, project context, external references (corresponds to CC `src/memdir/`)
+
+**Directory Structure**
+
+```
+src/
+├── lib.rs              // Public API re-exports
+├── types.rs            // MemoryType enum, MemoryMetadata, frontmatter parsing
+├── store.rs            // MemoryStore — file CRUD + mtime-sorted scan
+├── index.rs            // MEMORY.md index read/write + truncation (200 lines / 25KB)
+├── relevance.rs        // MemorySelector keyword scoring + MemoryRanker trait
+├── age.rs              // Exponential decay scoring (30-day half-life, SystemTime)
+├── paths.rs            // Per-project / global / team memory directory resolution
+├── security.rs         // Path traversal / symlink / null byte validation
+├── prompt.rs           // MemoryPromptBuilder — system prompt injection
+├── team.rs             // TeamMemoryStore — shared team memory with slugified filenames
+└── ranker.rs           // LlmMemoryRanker — Sonnet sidequery (feature = "mem-ranker")
+```
+
+**External Dependencies**: `crab-common`, `serde`, `serde_json`, `serde_yml`, `dunce`. Optional: `crab-api`, `crab-core`, `tokio` (with `mem-ranker` feature)
+
+**Feature Flags**
+
+```toml
+[features]
+default = []
+mem-ranker = ["dep:crab-api", "dep:crab-core", "dep:tokio"]  # LLM-driven memory selection
+```
+
+**Key Types**: `MemoryType` (User/Feedback/Project/Reference), `MemoryMetadata`, `MemoryFile`, `MemoryStore`, `MemorySelector`, `MemoryRanker` (trait), `LlmMemoryRanker` (impl, feature-gated), `MemoryPromptBuilder`, `TeamMemoryStore`
+
+---
+
+### 6.16 `crates/telemetry/` -- Observability
 
 **Responsibility**: Distributed tracing and metrics collection (corresponds to CC `src/services/analytics/` + `src/services/diagnosticTracking.ts`)
 
@@ -3264,7 +3300,7 @@ otlp = [                                                       # OpenTelemetry O
 
 ---
 
-### 6.15 `crates/cli/` -- Terminal Entry Point
+### 6.17 `crates/cli/` -- Terminal Entry Point
 
 **Responsibility**: An extremely thin binary entry point that only does assembly with no business logic (corresponds to CC `src/entrypoints/cli.tsx`)
 
@@ -3402,7 +3438,7 @@ full = ["tui", "crab-plugin/wasm", "crab-api/bedrock", "crab-api/vertex"]
 
 ---
 
-### 6.16 `crates/daemon/` -- Background Daemon
+### 6.18 `crates/daemon/` -- Background Daemon
 
 **Responsibility**: A persistently running background daemon that manages multiple sessions (corresponds to CC `src/daemon/`)
 
@@ -3528,7 +3564,7 @@ async fn main() -> anyhow::Result<()> {
 
 ---
 
-### 6.17 Global State Split: AppConfig / AppRuntime
+### 6.19 Global State Split: AppConfig / AppRuntime
 
 Global state shared by CLI and Daemon is split into **immutable configuration** and **mutable runtime** halves,
 avoiding a single `Arc<RwLock<AppState>>` where read paths get blocked by write locks.

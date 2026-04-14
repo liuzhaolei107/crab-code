@@ -140,6 +140,44 @@ impl MemorySelector {
     }
 }
 
+// ─── MemoryRanker trait ─────────────────────────────────────────
+
+use std::future::Future;
+use std::pin::Pin;
+
+/// Interface for LLM-driven memory selection.
+///
+/// Implementors rank memory files against a query and return the most
+/// relevant filenames. The default [`MemorySelector::select_by_keywords`]
+/// is the zero-cost local fallback.
+pub trait MemoryRanker: Send + Sync {
+    /// Select up to `max_count` relevant memory filenames from `manifest`.
+    ///
+    /// Returns a list of filenames that appear in the manifest.
+    fn rank(
+        &self,
+        query: &str,
+        manifest: &str,
+        max_count: usize,
+    ) -> Pin<Box<dyn Future<Output = crab_common::Result<Vec<String>>> + Send + '_>>;
+}
+
+/// Format memory files as a text manifest for LLM-based selection.
+///
+/// Each line: `filename — description [type]`
+pub fn format_manifest(memories: &[MemoryFile]) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    for mem in memories {
+        let _ = writeln!(
+            out,
+            "{} — {} [{}]",
+            mem.filename, mem.metadata.description, mem.metadata.memory_type
+        );
+    }
+    out
+}
+
 // ─── Tests ──────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -251,6 +289,17 @@ mod tests {
         let sel = MemorySelector::default();
         let picked = sel.select_by_keywords(&[], "anything");
         assert!(picked.is_empty());
+    }
+
+    #[test]
+    fn format_manifest_output() {
+        let memories = vec![
+            make_file("role", "Senior Rust dev", "body", MemoryType::User),
+            make_file("style", "Terse responses", "body", MemoryType::Feedback),
+        ];
+        let manifest = format_manifest(&memories);
+        assert!(manifest.contains("role.md — Senior Rust dev [user]"));
+        assert!(manifest.contains("style.md — Terse responses [feedback]"));
     }
 
     #[test]

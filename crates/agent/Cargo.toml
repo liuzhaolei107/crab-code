@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 description = "Multi-agent orchestration for Crab Code"
 
+[features]
+default = []
+mem-ranker = ["crab-memory/mem-ranker"]
+
 [dependencies]
 crab-common.workspace = true
 crab-core.workspace = true
