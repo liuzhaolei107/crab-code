@@ -1,6 +1,23 @@
+//! Backward-compatible memory store for `crab-session`.
+//!
+//! Delegates to `crab_memory` for all I/O while preserving the legacy
+//! [`MemoryFile`] shape (with `memory_type: String`) that downstream crates
+//! (notably `crab-agent`) depend on.
+
 use std::path::PathBuf;
 
+// ─── Re-export index entry under old name ──────────────────────────────
+
+/// Re-export `crab_memory::IndexEntry` as `MemoryIndexEntry` for compat.
+pub use crab_memory::IndexEntry as MemoryIndexEntry;
+
+// ─── Legacy MemoryFile (String-typed) ──────────────────────────────────
+
 /// A single memory file with frontmatter metadata.
+///
+/// This is the **legacy** shape consumed by `crab-agent`. The `memory_type`
+/// field is a plain `String` (e.g. `"user"`) rather than the typed enum in
+/// `crab_memory::MemoryFile`.
 #[derive(Debug, Clone)]
 pub struct MemoryFile {
     pub name: String,
@@ -11,193 +28,96 @@ pub struct MemoryFile {
     pub filename: String,
 }
 
-/// An entry in the `MEMORY.md` index.
-#[derive(Debug, Clone)]
-pub struct MemoryIndexEntry {
-    pub title: String,
-    pub filename: String,
-    pub description: String,
-}
+// ─── Compat MemoryStore ────────────────────────────────────────────────
 
 /// File-based memory system — reads/writes `~/.crab/memory/`.
 ///
-/// Layout:
-/// ```text
-/// ~/.crab/memory/
-///   MEMORY.md          # Index file (one-line pointers)
-///   user_role.md       # Individual memory files with frontmatter
-///   feedback_style.md
-///   project_auth.md
-/// ```
+/// Thin wrapper around `crab_memory::MemoryStore` that converts the typed
+/// [`crab_memory::MemoryFile`] into the legacy [`MemoryFile`] on read paths.
 pub struct MemoryStore {
-    pub path: PathBuf,
+    inner: crab_memory::MemoryStore,
 }
 
 impl MemoryStore {
     pub fn new(path: PathBuf) -> Self {
-        Self { path }
-    }
-
-    fn ensure_dir(&self) -> crab_common::Result<()> {
-        std::fs::create_dir_all(&self.path)?;
-        Ok(())
+        Self {
+            inner: crab_memory::MemoryStore::new(path),
+        }
     }
 
     /// Save a memory file (overwrites if exists).
     pub fn save(&self, filename: &str, content: &str) -> crab_common::Result<()> {
-        self.ensure_dir()?;
-        std::fs::write(self.path.join(filename), content)?;
-        Ok(())
+        self.inner.save(filename, content)
     }
 
     /// Load a memory file by filename. Returns `None` if not found.
     pub fn load(&self, filename: &str) -> crab_common::Result<Option<String>> {
-        let path = self.path.join(filename);
-        if !path.exists() {
-            return Ok(None);
-        }
-        let content = std::fs::read_to_string(&path)?;
-        Ok(Some(content))
+        self.inner.load(filename)
     }
 
     /// Delete a memory file.
     pub fn delete(&self, filename: &str) -> crab_common::Result<()> {
-        let path = self.path.join(filename);
-        if path.exists() {
-            std::fs::remove_file(&path)?;
-        }
-        Ok(())
+        self.inner.delete(filename)
     }
 
-    /// Parse a memory file's frontmatter and body.
+    /// Parse a memory file's frontmatter and body into a legacy [`MemoryFile`].
     pub fn parse_memory_file(content: &str) -> Option<MemoryFile> {
-        // Expect: ---\n<frontmatter>\n---\n<body>
-        let content = content.trim_start();
-        if !content.starts_with("---") {
-            return None;
-        }
-        let after_first = &content[3..];
-        let end_idx = after_first.find("\n---")?;
-        let frontmatter = &after_first[..end_idx];
-        let body = after_first[end_idx + 4..].trim().to_string();
+        let metadata = crab_memory::parse_frontmatter(content)?;
+        let body = crab_memory::extract_body(content).trim().to_string();
 
-        let mut name = String::new();
-        let mut description = String::new();
-        let mut memory_type = String::new();
-
-        for line in frontmatter.lines() {
-            let line = line.trim();
-            if let Some(val) = line.strip_prefix("name:") {
-                name = val.trim().to_string();
-            } else if let Some(val) = line.strip_prefix("description:") {
-                description = val.trim().to_string();
-            } else if let Some(val) = line.strip_prefix("type:") {
-                memory_type = val.trim().to_string();
-            }
-        }
-
-        if name.is_empty() {
+        if metadata.name.is_empty() {
             return None;
         }
 
         Some(MemoryFile {
-            name,
-            description,
-            memory_type,
+            name: metadata.name,
+            description: metadata.description,
+            memory_type: metadata.memory_type.to_string(),
             body,
             filename: String::new(), // caller fills this in
         })
     }
 
-    /// Load and parse all memory files (excluding `MEMORY.md`).
+    /// Load and parse all memory files (excluding `MEMORY.md`), returning
+    /// legacy [`MemoryFile`] values sorted by filename.
     pub fn load_all(&self) -> crab_common::Result<Vec<MemoryFile>> {
-        if !self.path.exists() {
-            return Ok(Vec::new());
-        }
-        let mut memories = Vec::new();
-        for entry in std::fs::read_dir(&self.path)? {
-            let entry = entry?;
-            let fname = entry.file_name();
-            let fname = fname.to_string_lossy();
-            if fname == "MEMORY.md" || !fname.ends_with(".md") {
-                continue;
-            }
-            let content = std::fs::read_to_string(entry.path())?;
-            if let Some(mut mem) = Self::parse_memory_file(&content) {
-                mem.filename = fname.to_string();
-                memories.push(mem);
-            }
-        }
+        let typed_files = self.inner.scan()?;
+
+        let mut memories: Vec<MemoryFile> = typed_files
+            .into_iter()
+            .map(|tf| MemoryFile {
+                name: tf.metadata.name,
+                description: tf.metadata.description,
+                memory_type: tf.metadata.memory_type.to_string(),
+                body: tf.body,
+                filename: tf.filename,
+            })
+            .collect();
+
+        // The old implementation sorted by filename.
         memories.sort_by(|a, b| a.filename.cmp(&b.filename));
         Ok(memories)
     }
 
     /// Parse the `MEMORY.md` index file.
     pub fn load_index(&self) -> crab_common::Result<Vec<MemoryIndexEntry>> {
-        let index_path = self.path.join("MEMORY.md");
-        if !index_path.exists() {
-            return Ok(Vec::new());
-        }
-        let content = std::fs::read_to_string(&index_path)?;
-        Ok(Self::parse_index(&content))
-    }
-
-    /// Parse index entries from `MEMORY.md` content.
-    ///
-    /// Expected format: `- [Title](file.md) -- one-line hook`
-    fn parse_index(content: &str) -> Vec<MemoryIndexEntry> {
-        let mut entries = Vec::new();
-        for line in content.lines() {
-            let line = line.trim();
-            if !line.starts_with("- [") {
-                continue;
-            }
-            // Parse: - [Title](file.md) -- description
-            let Some(title_end) = line.find("](") else {
-                continue;
-            };
-            let title = &line[3..title_end];
-            let rest = &line[title_end + 2..];
-            let Some(link_end) = rest.find(')') else {
-                continue;
-            };
-            let filename = &rest[..link_end];
-            let description = rest[link_end + 1..]
-                .trim()
-                .trim_start_matches("—")
-                .trim_start_matches("--")
-                .trim()
-                .to_string();
-
-            entries.push(MemoryIndexEntry {
-                title: title.to_string(),
-                filename: filename.to_string(),
-                description,
-            });
-        }
-        entries
+        let index = crab_memory::index::load_index(self.inner.dir())?;
+        Ok(index.entries)
     }
 
     /// Save the `MEMORY.md` index file.
     pub fn save_index(&self, entries: &[MemoryIndexEntry]) -> crab_common::Result<()> {
-        use std::fmt::Write;
-        self.ensure_dir()?;
-        let mut content = String::new();
-        for entry in entries {
-            let _ = writeln!(
-                content,
-                "- [{}]({}) — {}",
-                entry.title, entry.filename, entry.description
-            );
-        }
-        std::fs::write(self.path.join("MEMORY.md"), content)?;
-        Ok(())
+        crab_memory::index::save_index(self.inner.dir(), entries)
     }
 }
+
+// ─── Tests ─────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Existing tests (preserved from original) ────────────────────
 
     #[test]
     fn parse_memory_file_basic() {
@@ -232,21 +152,23 @@ This is the body content.
 
     #[test]
     fn parse_index_entries() {
-        let content = "- [No telemetry](project_no_telemetry.md) — All data stays local\n\
-                        - [Config path](project_config.md) — Use ~/.crab/ only\n";
-        let entries = MemoryStore::parse_index(content);
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::new(dir.path().to_path_buf());
+
+        // Write a MEMORY.md manually so we can test load_index.
+        std::fs::write(
+            dir.path().join("MEMORY.md"),
+            "- [No telemetry](project_no_telemetry.md) \u{2014} All data stays local\n\
+             - [Config path](project_config.md) \u{2014} Use ~/.crab/ only\n",
+        )
+        .unwrap();
+
+        let entries = store.load_index().unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].title, "No telemetry");
         assert_eq!(entries[0].filename, "project_no_telemetry.md");
         assert_eq!(entries[0].description, "All data stays local");
         assert_eq!(entries[1].title, "Config path");
-    }
-
-    #[test]
-    fn parse_index_skips_non_entries() {
-        let content = "# Memory Index\n\nSome text\n- [Valid](file.md) — desc\n";
-        let entries = MemoryStore::parse_index(content);
-        assert_eq!(entries.len(), 1);
     }
 
     #[test]
@@ -412,8 +334,16 @@ This is the body content.
 
     #[test]
     fn parse_index_with_dash_dash_separator() {
-        let content = "- [Title](file.md) -- description with dashes\n";
-        let entries = MemoryStore::parse_index(content);
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::new(dir.path().to_path_buf());
+
+        std::fs::write(
+            dir.path().join("MEMORY.md"),
+            "- [Title](file.md) -- description with dashes\n",
+        )
+        .unwrap();
+
+        let entries = store.load_index().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].title, "Title");
         assert_eq!(entries[0].filename, "file.md");
@@ -447,5 +377,77 @@ This is the body content.
 
         store.save("test.md", "content").unwrap();
         assert!(nested.join("test.md").exists());
+    }
+
+    // ── Compat-specific tests ──────────────────────────────────────
+
+    #[test]
+    fn compat_save_and_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::new(dir.path().to_path_buf());
+
+        let content = "---\nname: Compat\ndescription: compat test\ntype: project\n---\n\nBody.";
+        store.save("compat.md", content).unwrap();
+
+        let loaded = store.load("compat.md").unwrap().unwrap();
+        assert_eq!(loaded, content);
+
+        // Round-trip parse
+        let mem = MemoryStore::parse_memory_file(&loaded).unwrap();
+        assert_eq!(mem.name, "Compat");
+        assert_eq!(mem.memory_type, "project");
+    }
+
+    #[test]
+    fn compat_parse_memory_file() {
+        let content =
+            "---\nname: Style\ndescription: Be terse\ntype: feedback\n---\n\nShort answers.";
+        let mem = MemoryStore::parse_memory_file(content).unwrap();
+
+        // Verify String-typed memory_type (not enum).
+        assert_eq!(mem.memory_type, "feedback");
+        assert_eq!(mem.name, "Style");
+        assert_eq!(mem.description, "Be terse");
+        assert_eq!(mem.body, "Short answers.");
+        // filename is not set by parse_memory_file
+        assert!(mem.filename.is_empty());
+    }
+
+    #[test]
+    fn compat_load_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::new(dir.path().to_path_buf());
+
+        store
+            .save(
+                "alpha.md",
+                "---\nname: Alpha\ndescription: first\ntype: user\n---\n\nA body.",
+            )
+            .unwrap();
+        store
+            .save(
+                "beta.md",
+                "---\nname: Beta\ndescription: second\ntype: reference\n---\n\nB body.",
+            )
+            .unwrap();
+        // MEMORY.md index should be excluded
+        store
+            .save("MEMORY.md", "- [Alpha](alpha.md) \u{2014} first")
+            .unwrap();
+
+        let all = store.load_all().unwrap();
+        assert_eq!(all.len(), 2);
+
+        // Sorted by filename
+        assert_eq!(all[0].filename, "alpha.md");
+        assert_eq!(all[1].filename, "beta.md");
+
+        // memory_type is String, not enum
+        assert_eq!(all[0].memory_type, "user");
+        assert_eq!(all[1].memory_type, "reference");
+
+        // Fields are populated
+        assert_eq!(all[0].name, "Alpha");
+        assert_eq!(all[1].description, "second");
     }
 }

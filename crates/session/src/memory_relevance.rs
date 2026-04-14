@@ -139,7 +139,7 @@ impl MemorySelector {
     pub fn score_memory(entry: &MemoryEntry, context: &str) -> f64 {
         if context.is_empty() {
             // No context hint: use type-based priority only
-            return type_priority(&entry.metadata.memory_type);
+            return type_priority(entry.metadata.memory_type);
         }
 
         let ctx_lower = context.to_lowercase();
@@ -163,7 +163,7 @@ impl MemorySelector {
         };
 
         // 2. Type priority bonus
-        let type_bonus = type_priority(&entry.metadata.memory_type);
+        let type_bonus = type_priority(entry.metadata.memory_type);
 
         // 3. Name match bonus (if the memory name appears in context)
         let name_lower = entry.metadata.name.to_lowercase();
@@ -181,7 +181,7 @@ impl MemorySelector {
 
 /// Type-based priority score. Feedback and user memories are generally
 /// more actionable than references.
-fn type_priority(memory_type: &MemoryType) -> f64 {
+fn type_priority(memory_type: MemoryType) -> f64 {
     match memory_type {
         MemoryType::Feedback => 0.8,
         MemoryType::User => 0.7,
@@ -280,8 +280,8 @@ mod tests {
 
     #[test]
     fn type_priority_ordering() {
-        assert!(type_priority(&MemoryType::Feedback) > type_priority(&MemoryType::Reference));
-        assert!(type_priority(&MemoryType::User) > type_priority(&MemoryType::Project));
+        assert!(type_priority(MemoryType::Feedback) > type_priority(MemoryType::Reference));
+        assert!(type_priority(MemoryType::User) > type_priority(MemoryType::Project));
     }
 
     #[test]

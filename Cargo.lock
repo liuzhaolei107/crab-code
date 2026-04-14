@@ -814,6 +814,7 @@ dependencies = [
  "crab-common",
  "crab-config",
  "crab-core",
+ "crab-memory",
  "crab-tools",
  "serde",
  "serde_json",
