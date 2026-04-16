@@ -7,6 +7,9 @@
 pub mod mode;
 pub mod motion;
 pub mod operator;
+pub mod register;
+pub mod text_object;
+pub mod transition;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

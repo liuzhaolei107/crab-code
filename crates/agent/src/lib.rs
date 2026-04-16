@@ -5,7 +5,7 @@ pub mod git_context;
 pub mod message_bus;
 pub mod message_router;
 pub mod pr_context;
-pub mod prompt_suggestion;
+pub mod proactive;
 pub mod repl_commands;
 pub mod retry;
 pub mod rollback;

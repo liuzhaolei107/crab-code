@@ -8,6 +8,7 @@
 //! messages indicating the feature requires a native backend.
 
 pub mod input;
+pub mod platform;
 pub mod screenshot;
 pub mod window;
 
