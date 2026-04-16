@@ -110,6 +110,17 @@ jsonschema = "0.46"
 schemars = "1"
 nucleo-matcher = "0.3"
 
+# ─── Phase 1 新增：bridge / remote / sandbox 所需 ───
+jsonwebtoken = "10"
+axum = { version = "0.8", features = ["ws"] }
+croner = "3"
+# Linux-only process sandbox
+landlock = "0.4"
+# Deferred external deps for computer_use (declared here so Phase 4 doesn't touch workspace)
+# Note: `screenshots` crate is deprecated in favor of `xcap`; using xcap instead.
+xcap = "0.9"
+enigo = "0.6"
+
 # ─── 测试 ───
 tempfile = "3"
 wat = "1"
@@ -132,6 +143,10 @@ crab-plugin = { path = "crates/plugin" }
 crab-skill = { path = "crates/skill" }
 crab-memory = { path = "crates/memory" }
 crab-telemetry = { path = "crates/telemetry" }
+crab-engine = { path = "crates/engine" }
+crab-bridge = { path = "crates/bridge" }
+crab-remote = { path = "crates/remote" }
+crab-sandbox = { path = "crates/sandbox" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

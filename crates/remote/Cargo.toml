@@ -1,0 +1,33 @@
+[package]
+name = "crab-remote"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "claude.ai outbound client — RemoteTrigger / ScheduleWakeup / remote sessions"
+
+[features]
+default = ["trigger"]
+full = ["trigger", "session", "schedule"]
+trigger = []
+session = ["dep:tokio-tungstenite"]
+schedule = ["dep:croner"]
+
+[dependencies]
+crab-common.workspace = true
+crab-core.workspace = true
+crab-config.workspace = true
+crab-auth.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+# optional
+tokio-tungstenite = { workspace = true, optional = true }
+croner = { workspace = true, optional = true }
+
+[lints]
+workspace = true

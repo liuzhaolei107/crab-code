@@ -1,0 +1,26 @@
+[package]
+name = "crab-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Raw query loop for Crab Code — extracted from crab-agent in v2.3"
+
+[dependencies]
+crab-common.workspace = true
+crab-core.workspace = true
+crab-api.workspace = true
+crab-session.workspace = true
+crab-tools.workspace = true
+crab-plugin.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

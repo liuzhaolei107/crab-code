@@ -1,0 +1,1 @@
+//! `SandboxConfig` — workdir, env, timeout.

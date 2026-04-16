@@ -1,7 +1,8 @@
 # Crab Code Architecture
 
-> Version: v2.2
-> Updated: 2026-04-14
+> Version: v2.3
+> Updated: 2026-04-17
+> Changelog: +engine/bridge/remote/sandbox (4 new crates); tui promoted Layer 2 → Layer 3; ide gets its own §6.24; crate count 17 → 23.
 
 ---
 
@@ -11,73 +12,71 @@
 
 | Layer | Crate | Responsibility |
 |-------|-------|----------------|
-| **Layer 4** Entry Layer | `crates/cli` `crates/daemon` | CLI entry point (clap), background daemon |
-| **Layer 3** Engine Layer | `agent` `session` | Multi-Agent orchestration, session management, context compaction |
-| **Layer 2** Service Layer | `tools` `mcp` `api` `fs` `process` `plugin` `skill` `memory` `telemetry` `tui` | Tool system, MCP protocol stack, multi-model API client, file/process operations, skill system, persistent memory, TUI components |
-| **Layer 1** Foundation Layer | `core` `common` `config` `auth` | Domain model, config hot reload, authentication |
+| **Layer 4** Entry Layer | `cli` `daemon` | CLI entry point (clap), background daemon |
+| **Layer 3** Engine Layer | `agent` `engine` `session` `tui` `bridge` | Query loop, multi-agent orchestration, session state, terminal UI, remote-control WebSocket server |
+| **Layer 2** Service Layer | `api` `tools` `mcp` `fs` `process` `sandbox` `remote` `ide` `skill` `plugin` `memory` `telemetry` | Tool system, MCP stack, LLM clients, file/process/sandbox, claude.ai outbound client, IDE client, skill system, plugins, persistent memory, telemetry |
+| **Layer 1** Foundation Layer | `core` `common` `config` `auth` | Domain model, layered config, authentication |
 
-> Dependency direction: upper layers depend on lower layers; reverse dependencies are prohibited. `core` defines the `Tool` trait to avoid circular dependencies between tools/agent.
+> Dependency direction: upper layers depend on lower layers; reverse dependencies are prohibited. `core` defines the `Tool` trait to avoid circular dependencies between `tools` and `agent`. See §5.3 for inner-layer rules (aggregator vs leaf service; Layer 3 Event-only control flow).
 
 ### Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Layer 4: Entry Layer                         │
-│  ┌──────────────────────────┐   ┌────────────────────────────────┐  │
-│  │      crates/cli          │   │       crates/daemon            │  │
-│  │  clap subcommands +      │   │  background daemon +           │  │
-│  │  tokio runtime           │   │  session pool                  │  │
-│  └────────────┬─────────────┘   └──────────────┬─────────────────┘  │
-├───────────────┼────────────────────────────────┼────────────────────┤
-│               │        Layer 3: Engine Layer   │                    │
-│  ┌────────────▼─────────────┐   ┌──────────────▼─────────────────┐  │
-│  │         agent            │   │          session               │  │
-│  │  Agent orchestration +   │   │  Session state + context       │  │
-│  │  task dispatch           │   │  compaction + memory           │  │
-│  └──┬───────────┬───────────┘   └───────┬──────────────┬─────────┘  │
-├─────┼───────────┼───────────────────────┼──────────────┼────────────┤
-│     │           │   Layer 2: Service    │              │            │
-│     │           │   Layer              │              │            │
-│  ┌──▼────┐  ┌───▼───┐  ┌────┐  ┌───────▼──┐  ┌───────▼────┐      │
-│  │ tools │  │  mcp  │  │tui │  │   api    │  │  telemetry │      │
-│  │ 21+   │  │JSON-  │  │rata│  │LlmBack- │  │OpenTelemetry│      │
-│  │built- │  │RPC    │  │tui │  │end enum  │  │  traces    │      │
-│  │in     │  │       │  │    │  │          │  │            │      │
-│  └┬────┬─┘  └───────┘  └────┘  └──────────┘  └────────────┘      │
-│   │    │                                                           │
-│  ┌▼──┐ ┌▼──────┐  ┌──────┐  ┌──────┐  ┌──────┐                    │
-│  │fs │ │process │  │plugin│  │skill │  │memory│                    │
-│  │glob│ │sub-   │  │hooks │  │regis-│  │store │                    │
-│  │grep│ │process│  │WASM  │  │try + │  │rank  │                    │
-│  │    │ │signal │  │MCP↔  │  │built-│  │age   │                    │
-│  └───┘ └───────┘  └──────┘  └──────┘  └──────┘                    │
-├───────────────────────────────────────────────────────────────────┤
-│                      Layer 1: Foundation Layer                      │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
-│  │   core   │  │  common  │  │  config  │  │   auth   │          │
-│  │Domain    │  │Error/    │  │Multi-    │  │OAuth/Key │          │
-│  │model     │  │utility   │  │layer     │  │Keychain  │          │
-│  │Tool trait│  │Path/text │  │config    │  │          │          │
-│  │          │  │          │  │CRAB.md   │  │          │          │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘          │
-└───────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         Layer 4: Entry Layer                             │
+│  ┌──────────────┐                                    ┌────────────────┐  │
+│  │  crates/cli  │                                    │ crates/daemon  │  │
+│  │  clap + TUI  │                                    │  headless svc  │  │
+│  └──────┬───────┘                                    └────────┬───────┘  │
+├─────────┼──────────────────────────────────────────────────────┼────────┤
+│         │                 Layer 3: Engine Layer                │        │
+│  ┌──────▼──────┐ ┌──────────┐ ┌──────────┐ ┌────────┐ ┌───────▼─────┐ │
+│  │    agent    │ │  engine  │ │ session  │ │  tui   │ │   bridge    │ │
+│  │ orchestra + │ │ raw loop │ │ state +  │ │ ratatui│ │ WS server + │ │
+│  │ swarm +     │ │ stream + │ │ compact  │ │ views  │ │ JWT + REST  │ │
+│  │ proactive   │ │ tooluse  │ │ memory   │ │        │ │             │ │
+│  └────┬────────┘ └────┬─────┘ └────┬─────┘ └───┬────┘ └──────┬──────┘ │
+├───────┼────────────────┼─────────────┼───────────┼────────────┼────────┤
+│       │                │  Layer 2: Service Layer │            │        │
+│  ┌────▼─────┐ ┌────────▼──┐ ┌────────┐ ┌────────▼─┐ ┌────────▼────┐  │
+│  │  tools   │ │   mcp     │ │  api   │ │ telemetry│ │   plugin    │  │
+│  │ aggreg   │ │ JSON-RPC  │ │ Llm-   │ │  local   │ │ hooks+WASM+ │  │
+│  │ 40+ buil │ │ +streams  │ │ Backend│ │  only    │ │ skill↔mcp   │  │
+│  └──┬──┬──┬─┘ └───────────┘ └────────┘ └──────────┘ └─────────────┘  │
+│     │  │  │                                                           │
+│  ┌──▼┐┌▼─┐┌▼──────┐ ┌──────────┐ ┌────────┐ ┌───────┐ ┌──────┐ ┌───┐ │
+│  │fs ││pr││sandbox│ │  remote  │ │  ide   │ │ skill │ │memory│ │.. │ │
+│  │   ││oc││seat+  │ │claude.ai │ │IDE MCP │ │ reg + │ │store │ │   │ │
+│  │   ││  ││landlk+│ │trigger + │ │ client │ │bundled│ │ rank │ │   │ │
+│  │   ││  ││wsl    │ │ schedule │ │        │ │       │ │ age  │ │   │ │
+│  └───┘└──┘└───────┘ └──────────┘ └────────┘ └───────┘ └──────┘ └───┘ │
+├───────────────────────────────────────────────────────────────────────┤
+│                       Layer 1: Foundation Layer                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
+│  │   core   │  │  common  │  │  config  │  │   auth   │               │
+│  │Domain    │  │Error +   │  │Multi-    │  │OAuth +   │               │
+│  │model +   │  │utility   │  │layer     │  │Keychain  │               │
+│  │Tool trait│  │path/text │  │+ CRAB.md │  │          │               │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘               │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Mapping to Claude Code's Five-Layer Architecture
 
 | Claude Code (TS) | Path | Crab Code (Rust) | Notes |
 |-------------------|------|-------------------|-------|
-| **Entry Layer** entrypoints/ | `cli.tsx` `main.tsx` | `crates/cli` `crates/daemon` | CC uses React/Ink for rendering, Crab uses ratatui |
-| **Command Layer** commands/ | `query.ts` `QueryEngine.ts` | `agent` + `session` | CC's query loop maps to agent orchestration |
-| **Tool Layer** tools/ | 52 Tool directories | `tools` + `mcp` | CC mixes tools and MCP in services/; Crab separates them |
-| **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` `memdir/` | `api` `mcp` `auth` `skill` `plugin` `memory` `telemetry` | CC's service layer is flat; Crab splits by responsibility. CC's `memdir/` maps to `memory` |
-| **Foundation Layer** utils/ types/ | `Tool.ts` `context.ts` | `core` `common` `config` | CC scatters types across files; Crab centralizes them in core |
+| **Entry Layer** entrypoints/ | `cli.tsx` `main.tsx` | `cli` `daemon` | CC uses React/Ink for rendering; Crab uses ratatui |
+| **Command Layer** commands/ | `query.ts` `QueryEngine.ts` `coordinator/` | `engine` + `agent` | CC's `query.ts` ↔ crab `engine`; `QueryEngine.ts` ↔ `agent`; coordinator stays inside `agent/swarm/` |
+| **Tool Layer** tools/ | 52 Tool directories | `tools` + `mcp` | CC mixes tools and MCP in `services/`; Crab separates them |
+| **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` `memdir/` | `api` `mcp` `auth` `skill` `plugin` `memory` `telemetry` `sandbox` `remote` `ide` | CC's service layer is flat; Crab splits by responsibility. `memdir/` → `memory`; CC `utils/sandbox/` → `sandbox`; CC `remote/` → `remote`; CC IDE MCP client surface → `ide` |
+| **Bridge Layer** bridge/ | `bridgeMain.ts` `replBridge.ts` | `bridge` | New in v2.3 — WebSocket server for IDE/web clients to reach into a live session |
+| **Foundation Layer** utils/ types/ | `Tool.ts` `context.ts` | `core` `common` `config` | CC scatters types across files; Crab centralizes them in `core` |
 
 ### Core Design Philosophy
 
 1. **core has zero I/O** -- Pure data structures and trait definitions, reusable by any frontend (CLI/GUI/WASM)
 2. **Message loop driven** -- Everything revolves around the query loop: user input -> API call -> tool execution -> result return
-3. **Workspace isolation** -- 17 library crates with orthogonal responsibilities; incremental compilation only triggers on changed parts
+3. **Workspace isolation** -- 20 library crates with orthogonal responsibilities (plus 2 bin + xtask = 23 total); incremental compilation only triggers on changed parts
 4. **Feature flags control dependencies** -- No Bedrock? AWS SDK is not compiled. No WASM? wasmtime is not compiled.
 
 ---
@@ -573,6 +572,82 @@ crab-code/
 │   │       ├── protocol.rs            # IPC message protocol
 │   │       ├── server.rs              # Daemon server
 │   │       └── session_pool.rs        # Session pool management
+│   │
+│   ├── engine/                        # crab-engine: raw query loop (new v2.3)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── loop.rs                # run_query() core loop
+│   │       ├── streaming.rs           # SSE parsing
+│   │       ├── tool_orchestration.rs  # Tool dispatch
+│   │       ├── stop_hooks.rs          # StopReason
+│   │       ├── token_budget.rs
+│   │       └── effort.rs
+│   │
+│   ├── bridge/                        # crab-bridge: WS server (new v2.3)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── config.rs
+│   │       ├── server.rs
+│   │       ├── transport.rs
+│   │       ├── status.rs
+│   │       ├── protocol/
+│   │       │   ├── mod.rs
+│   │       │   ├── inbound.rs
+│   │       │   ├── outbound.rs
+│   │       │   └── types.rs
+│   │       ├── session/
+│   │       │   ├── mod.rs
+│   │       │   ├── runner.rs
+│   │       │   ├── forwarder.rs
+│   │       │   └── attachments.rs
+│   │       ├── auth/
+│   │       │   ├── mod.rs
+│   │       │   ├── jwt.rs
+│   │       │   ├── trusted_device.rs
+│   │       │   └── work_secret.rs
+│   │       ├── api/                   # feature = "rest-api"
+│   │       │   ├── mod.rs
+│   │       │   ├── rest.rs
+│   │       │   └── peer_sessions.rs
+│   │       ├── remote_core.rs         # feature = "remote-core"
+│   │       └── webhook.rs             # feature = "webhook"
+│   │
+│   ├── remote/                        # crab-remote: claude.ai outbound (new v2.3)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── config.rs
+│   │       ├── client.rs
+│   │       ├── error.rs
+│   │       ├── session/
+│   │       │   ├── mod.rs
+│   │       │   ├── manager.rs
+│   │       │   ├── websocket.rs       # feature = "session"
+│   │       │   └── sdk_adapter.rs
+│   │       ├── trigger/
+│   │       │   ├── mod.rs
+│   │       │   ├── api.rs
+│   │       │   └── schedule.rs        # feature = "schedule"
+│   │       ├── permission.rs
+│   │       └── auth.rs
+│   │
+│   ├── sandbox/                       # crab-sandbox: process sandbox (new v2.3)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── config.rs
+│   │       ├── policy.rs
+│   │       ├── error.rs
+│   │       ├── doctor.rs
+│   │       ├── violation.rs
+│   │       └── backend/
+│   │           ├── mod.rs
+│   │           ├── noop.rs
+│   │           ├── seatbelt.rs        # feature = "seatbelt"
+│   │           ├── landlock.rs        # feature = "landlock"
+│   │           └── wsl.rs             # feature = "wsl"
 │
 └── xtask/                             # Build helper scripts
     ├── Cargo.toml
@@ -580,16 +655,25 @@ crab-code/
         └── main.rs                    # codegen, release, bench
 ```
 
+> **Intra-crate expansions in v2.3** (not shown above):
+> - `crates/agent/src/proactive/` (4 files) — replaces placeholder `prompt_suggestion.rs`
+> - `crates/tui/src/components/vim/` (7 files)
+> - `crates/tui/src/components/buddy/` (expanded 4 → 7 files)
+> - `crates/tui/src/components/{bridge_status,sandbox_*,remote_session}.rs`
+> - `crates/cli/src/deep_link/` (5 files) + `crates/cli/src/installer/` (6 files)
+> - `crates/tools/src/builtin/computer_use/` (expanded 4 → 10 files + platform subdir)
+> - `crates/core/src/{bridge,remote,sandbox,proactive,query}.rs` — 5 new shared type modules
+
 ### 4.2 Crate Statistics
 
 | Type | Count | Notes |
 |------|-------|-------|
-| Library crate | 14 | `crates/*` |
+| Library crate | 20 | `crates/*` — adds `ide`, `memory`, `engine`, `bridge`, `remote`, `sandbox` since v2.2 |
 | Binary crate | 2 | `crates/cli` `crates/daemon` |
 | Helper crate | 1 | `xtask` |
-| **Total** | **17** | -- |
-| Total modules | ~257 | Across 16 library crates |
-| Total tests | ~2654 | `cargo test --workspace` (2026-04-06) |
+| **Total** | **23** | -- |
+| Total modules | ~300 | Across 20 library crates |
+| Total tests | ~2700 | `cargo test --workspace` (v2.3 snapshot) |
 
 > Note: [P0]/[P1]/[P2] markers indicate CCB feature alignment priority. Unmarked files are already implemented.
 
@@ -600,87 +684,106 @@ crab-code/
 ### 5.1 Dependency Diagram
 
 ```
-                       ┌────────────┐
-                       │ crates/cli │
-                       └────┬───────┘
-                            │ depends on all crates
-             ┌──────────────┼──────────────┐
-             │              │              │
-        ┌────▼────┐   ┌────▼─────┐  ┌─────▼────────┐
-        │   tui   │   │  agent   │  │crates/daemon │
-        └────┬────┘   └────┬─────┘  └──────┬───────┘
-              │             │               │
-              │        ┌────▼─────┐         │
-              │        │ session  │◄────────┘
-              │        └────┬─────┘
-              │             │
-              │        ┌────▼─────┐
-              │        │  tools   │◄────────┐
-                       └┬──┬──┬──┘         │
-                        │  │  │            │
-               ┌────────┘  │  └────────┐   │
-               │           │           │   │
-          ┌────▼──┐   ┌────▼──┐   ┌────▼───▼──┐
-          │  fs   │   │  mcp  │   │  process   │
-          └───┬───┘   └───┬───┘   └──────┬─────┘
-              │           │              │
-              │      ┌────▼──────────────┘
-              │      │
-         ┌────▼──────▼───┐    ┌───────────┐
-         │     api       │    │  plugin   │
-         └───────┬───────┘    └─────┬─────┘
-                 │                  │
-         ┌───────▼───────┐         │
-         │     auth      │         │
-         └───────┬───────┘         │
-                 │                 │
-         ┌───────▼─────────────────▼─────┐
-         │            config             │
-         └───────────────┬───────────────┘
-                         │
-         ┌───────────────▼───────────────┐
-         │             core              │
-         └───────────────┬───────────────┘
-                         │
-         ┌───────────────▼───────────────┐
-         │            common             │
-         └───────────────────────────────┘
+                               ┌────────────┐
+                               │    cli     │ depends on all crates
+                               └──┬───┬───┬─┘
+              ┌───────────────────┘   │   └──────────────────┐
+              │                       │                      │
+        ┌─────▼────┐  ┌────────┐  ┌───▼────┐  ┌────────┐  ┌──▼─────┐
+        │   tui    │  │ agent  │  │ engine │  │ bridge │  │ daemon │
+        └──────┬───┘  └──┬──┬──┘  └───┬────┘  └───┬────┘  └────┬───┘
+               │         │  │         │           │            │
+               │    ┌────▼──▼───┐     │           │            │
+               │    │  session  │◄────┼───────────┴────────────┤
+               │    └────┬──────┘     │                        │
+               └────────►│            │                        │
+                         ▼            ▼                        ▼
+                    ┌────────────────────────────────────────────┐
+                    │  tools (Layer 2 aggregator)                │
+                    └──┬────┬────┬────┬────┬────┬────┬────┬──────┘
+                       │    │    │    │    │    │    │    │
+                  ┌────▼┐ ┌─▼─┐ ┌▼──┐ ┌▼─┐ ┌▼──┐ ┌▼──┐ ┌▼───┐ ...
+                  │ fs  │ │pr │ │mcp│ │sb│ │rem│ │ide│ │skil│
+                  │     │ │oc │ │   │ │   │ │   │ │   │ │    │
+                  └─────┘ └───┘ └───┘ └──┘ └───┘ └───┘ └────┘
+                                    │
+                              ┌─────▼────┐   ┌────────┐   ┌────────┐
+                              │   api    │   │ plugin │   │ memory │
+                              └─────┬────┘   └────┬───┘   └────┬───┘
+                                    │             │            │
+                              ┌─────▼─────────────▼────────────▼──┐
+                              │              config               │
+                              └──────────────────┬────────────────┘
+                              ┌──────┐    ┌──────▼──────┐
+                              │ auth │◄───┤   config    │
+                              └──┬───┘    └──────┬──────┘
+                                 │               │
+                              ┌──▼───────────────▼──┐
+                              │        core         │
+                              └──────────┬──────────┘
+                                         │
+                              ┌──────────▼──────────┐
+                              │        common       │
+                              └─────────────────────┘
 
-                   ┌────────────┐
-                   │ telemetry  │ <-- Independent sidecar, optional dependency for any crate
-                   └────────────┘
+                         ┌────────────┐
+                         │ telemetry  │ ← sidecar, optional dep for any crate
+                         └────────────┘
 ```
+
+Legend: `sb` = sandbox, `rem` = remote, `skil` = skill, `proc` = process.
 
 ### 5.2 Dependency Manifest (Bottom-Up)
 
 | # | Crate | Internal Dependencies | Notes |
 |---|-------|-----------------------|-------|
-| 1 | **common** | None | Zero-dependency foundation layer |
+| 1 | **common** | — | Zero-dependency foundation |
 | 2 | **core** | common | Pure domain model |
-| 3 | **config** | core, common | Configuration read/write/merge |
-| 4 | **auth** | config, common | Authentication credential management |
-| 5 | **api** | core, auth, common | LlmBackend enum + Anthropic/OpenAI-compatible standalone clients |
-| 6 | **fs** | common | File system operations |
-| 7 | **process** | common | Subprocess management |
-| 8 | **mcp** | core, common | MCP protocol client/server |
-| 9 | **telemetry** | common | Independent sidecar, optional |
-| 10 | **tools** | core, fs, process, mcp, config, common | 40+ built-in tools |
-| 11 | **session** | core, api, config, common | Session + context compaction + memory system |
-| 12 | **agent** | core, session, tools, common | Agent orchestration |
-| 13 | **skill** | common | Skill discovery, registry, bundled definitions |
-| 14 | **plugin** | core, common, skill | Hook system, WASM sandbox, MCP↔skill bridge |
-| 15 | **tui** | core, session, config, skill, common | Terminal UI (does not depend on tools directly; receives tool state via core::Event) |
-| 16 | **cli** (bin) | All crates | Extremely thin entry point |
-| 17 | **daemon** (bin) | core, session, api, tools, config, agent, common | Background service |
+| 3 | **config** | core, common | Layered merge |
+| 4 | **auth** | config, common | Credential chain |
+| 5 | **api** | core, auth, common | LlmBackend + Anthropic/OpenAI clients |
+| 6 | **fs** | common | File system ops |
+| 7 | **process** | common | Subprocess mgmt |
+| 8 | **mcp** | core, common | MCP client/server |
+| 9 | **telemetry** | common | Sidecar, optional |
+| 10 | **sandbox** | core, common | Trait + platform backends (seatbelt/landlock/wsl/noop) |
+| 11 | **remote** | core, auth, config, common | claude.ai outbound (trigger/schedule/session) |
+| 12 | **ide** | core, common, config, mcp | Client to IDE-hosted MCP server |
+| 13 | **skill** | common | Skill discovery + bundled definitions |
+| 14 | **memory** | core, common, config | Persistent memory store + ranking |
+| 15 | **plugin** | core, common, skill | Hooks + WASM + skill↔mcp bridge |
+| 16 | **tools** | core, fs, process, mcp, config, sandbox, remote, skill, common | Layer 2 aggregator; 40+ built-in tools |
+| 17 | **session** | core, api, config, common | Session + context compaction |
+| 18 | **engine** | core, common, api, session, tools, plugin | Raw query loop (extracted from agent) |
+| 19 | **agent** | core, engine, session, tools, skill, plugin, memory, common | Orchestrator + swarm + proactive |
+| 20 | **tui** | core, session, agent, config, skill, memory, common | Terminal UI; receives tool state via `core::Event` |
+| 21 | **bridge** | core, common, config, auth, session, agent, engine | WebSocket server (new in v2.3) |
+| 22 | **cli** (bin) | All crates | Thin entry point |
+| 23 | **daemon** (bin) | engine, session, api, tools, config, core, common | Headless; skips `agent` for lean loop |
 
 ### 5.3 Dependency Direction Principles
 
 ```
-Rule 1: Upper layer -> lower layer; reverse dependencies are prohibited
-Rule 2: Same-layer crates do not depend on each other (fs <-> process is prohibited)
-Rule 3: core decouples via traits (Tool trait defined in core, implemented in tools)
-Rule 4: telemetry is a sidecar; it does not participate in the main dependency chain
-Rule 5: cli/daemon only do assembly; they contain no business logic
+Rule 1: Upper layer -> lower layer. Reverse dependencies are prohibited.
+
+Rule 2 (revised in v2.3): Layer 2 is sub-layered into aggregators and leaves.
+  - Aggregators (tools, plugin) may depend on leaf services in the same layer.
+  - Leaf services (fs, process, mcp, api, sandbox, remote, ide, skill, memory,
+    telemetry) must NOT depend on each other.
+  - Example: tools -> sandbox (OK); fs -> process (NOT OK).
+
+Rule 3: core decouples via traits (Tool trait defined in core, implemented in tools).
+
+Rule 4: telemetry is a sidecar; it does not participate in the main dependency chain.
+
+Rule 5: cli/daemon only do assembly; they contain no business logic.
+
+Rule 6 (new in v2.3): Layer 3 internal control flow goes via core::Event only.
+  - agent/session/tui/bridge/engine do not make direct method calls that trigger
+    work in another Layer 3 crate.
+  - Exception 1: bridge and agent may WRAP engine (engine does not call back up).
+  - Exception 2: agent and tui may READ session state (Conversation, costs) as a
+    data consumer; read-only access is not considered control flow.
 ```
 
 ---
@@ -2481,31 +2584,58 @@ impl MemoryStore {
 
 ---
 
-### 6.11 `crates/agent/` -- Multi-Agent System
+### 6.11 `crates/agent/` -- Orchestrator & Multi-Agent System
 
-**Responsibility**: Agent orchestration, task dispatch, message loop (corresponds to CC `src/query.ts` + `src/QueryEngine.ts` + `src/coordinator/` + `src/tasks/`)
+**Responsibility** (revised v2.3): wraps the raw query loop (`crates/engine`) and adds session-aware orchestration — system prompt assembly, context injection (git/PR), error recovery, swarm coordination, proactive suggestions, REPL commands. Corresponds to CC `QueryEngine.ts` + `coordinator/` + `tasks/` + proactive + prompt-suggestion. **Does not** contain the low-level message loop anymore (that moved to `crates/engine`, see §6.20).
 
-This is the **core engine** of the entire system, implementing the most critical query loop.
-
-**Directory Structure**
+**Directory Structure** (v2.3)
 
 ```
 src/
 ├── lib.rs
-├── coordinator.rs        // Agent orchestration, workers pool
-├── query_loop.rs         // Core message loop (the most important file)
-├── task.rs               // TaskList, TaskUpdate, dependency graph
-├── team.rs               // Team creation, member management
-├── message_bus.rs        // Inter-Agent messaging (tokio::mpsc)
-├── message_router.rs     // Inter-Agent message routing (by name/broadcast)
-├── worker.rs             // Sub-Agent worker lifecycle
-├── system_prompt.rs      // System prompt building + CRAB.md injection
-├── summarizer.rs         // Conversation summary generation
-├── rollback.rs           // Rollback mechanism (/undo)
-├── error_recovery.rs     // Error recovery strategy (auto-retry/degradation)
-├── retry.rs              // Auto-retry mechanism (exponential backoff)
-└── repl_commands.rs      // REPL commands (/undo /branch /fork /checkpoint)
+├── coordinator.rs           // wraps engine; multi-agent dispatch
+├── swarm/                   // (feature = "swarm") tmux / in-process backends
+│   ├── mod.rs
+│   ├── backend.rs
+│   ├── pane_manager.rs
+│   ├── teammate.rs
+│   ├── permission_sync.rs
+│   └── init_script.rs
+│
+├── task.rs                  // TaskList, TaskUpdate, dependency graph
+├── team.rs                  // Team creation, member management
+├── worker.rs                // Sub-Agent worker lifecycle
+├── message_bus.rs           // Inter-agent messaging (tokio::mpsc)
+├── message_router.rs        // Routing by name/broadcast
+│
+├── system_prompt/           // modular section assembly + cache
+│   ├── mod.rs
+│   ├── builder.rs
+│   ├── sections.rs
+│   └── cache.rs
+│
+├── summarizer.rs            // Conversation summary helper
+├── error_recovery.rs        // Error recovery strategy
+├── retry.rs                 // Exponential backoff
+├── rollback.rs              // /undo /branch /fork /checkpoint
+├── repl_commands.rs
+├── slash_commands.rs
+│
+├── proactive/               // NEW v2.3 (replaces prompt_suggestion.rs)
+│   ├── mod.rs
+│   ├── mini_agent.rs        // forked speculation
+│   ├── suggestion.rs        // ranking + dedup
+│   └── cache.rs
+│
+├── git_context.rs           // Git metadata injection
+├── pr_context.rs            // gh PR context
+├── auto_dream.rs            // Background memory consolidation
+└── tips.rs                  // Context-triggered tips
 ```
+
+Moved out (now in `crates/engine` per §6.20): `query_loop.rs`, `engine/`, `stop_hooks.rs`, `token_budget.rs`, `effort.rs`.
+
+Deleted: `prompt_suggestion.rs` (placeholder replaced by `proactive/`).
 
 **Message Loop (Core)**
 
@@ -2842,9 +2972,18 @@ impl StreamingToolExecutor {
 
 ### 6.12 `crates/tui/` -- Terminal UI
 
-**Responsibility**: All terminal interface rendering (corresponds to CC `src/components/` + `src/screens/` + `src/ink/` + `src/vim/`)
+**Layer**: Layer 3 Engine (promoted from Layer 2 in v2.3; already depends on `session` and now on `agent`).
 
-CC uses React/Ink to render the terminal UI; Crab uses ratatui + crossterm to achieve equivalent experience.
+**Responsibility**: All terminal interface rendering (corresponds to CC `src/components/` + `src/screens/` + `src/ink/` + `src/vim/` + `src/buddy/` + `src/bridge/bridgeUI.ts`).
+
+CC uses React/Ink to render the terminal UI; Crab uses ratatui + crossterm to achieve equivalent experience. Control flow between tui and other Layer 3 crates (agent / session / bridge / engine) follows Rule 6 (§5.3): state is consumed via `core::Event` broadcasts. Read-only access to `session::Conversation` and cost accumulators is allowed.
+
+**v2.3 additions**:
+- `components/vim/` — new 7-file module (mode / motions / operators / text_objects / transitions / register)
+- `components/buddy/` — expanded from 4 to 7 files (+ companion / prompt / render)
+- `components/bridge_status.rs` — subscribes to `core::Event::BridgeStatusChanged`
+- `components/sandbox_*.rs` — tabs mirroring CCB SandboxSettings / ConfigTab / DoctorSection
+- `components/remote_session.rs` — inbound `RemoteSession*` event display
 
 **Directory Structure**
 
@@ -3609,6 +3748,228 @@ pub struct AppRuntime {
 
 ---
 
+### 6.20 `crates/engine/` -- Raw Query Loop (new v2.3)
+
+**Responsibility**: the pure "conversation + backend + tool executor → streaming events" loop. Corresponds to CC `src/query.ts` + `src/query/{stopHooks,tokenBudget,transitions,config,deps}.ts`. Contains no session persistence, no REPL state, no swarm, no system-prompt assembly. Extracted from `crates/agent` in v2.3.
+
+**Directory Structure**
+
+```
+src/
+├── lib.rs
+├── loop.rs                  // run_query() core loop (from agent/query_loop.rs)
+├── streaming.rs             // SSE parsing (from agent/engine/streaming.rs)
+├── tool_orchestration.rs    // Tool dispatch (from agent/engine/tool_orchestration.rs)
+├── stop_hooks.rs            // StopReason + stop conditions (from agent/stop_hooks.rs)
+├── token_budget.rs          // Token budget tracking (from agent/token_budget.rs)
+└── effort.rs                // Reasoning effort levels (from agent/effort.rs)
+```
+
+**Public API**
+
+```rust
+pub struct QueryConfig { /* merged from former QueryEngineConfig + QueryLoopConfig */ }
+pub async fn run_query(
+    conversation: &mut Conversation,
+    backend: &LlmBackend,
+    executor: &ToolExecutor,
+    config: &QueryConfig,
+    events: mpsc::Sender<Event>,
+    cancel: CancellationToken,
+) -> Result<QueryOutcome, EngineError>;
+
+pub enum StopReason { NoToolCalls, ExplicitStop, MaxTurns(u32), TokenBudgetExceeded, UserCancel, Error(String) }
+```
+
+**Internal dependencies**: `core, common, api, session, tools, plugin`.
+
+**Consumers**: `daemon` (headless), `agent` (wraps with orchestration), `bridge` (drives a session's loop from a remote client).
+
+---
+
+### 6.21 `crates/bridge/` -- Remote-Control WebSocket Server (new v2.3)
+
+**Responsibility**: Layer 3 engine-level crate that exposes a live crab session to remote clients (VS Code extension, claude.ai web, IDE plugins). Corresponds to CC `src/bridge/` (12 755 LOC). Direction: inbound — remote clients drive crab. Contrast with `crates/remote` (outbound).
+
+**Directory Structure**
+
+```
+src/
+├── lib.rs
+├── config.rs                   // BridgeConfig (enabled / bind / env-less fallback)
+├── server.rs                   // WS accept + upgrade + dispatch
+├── transport.rs                // WS framing + heartbeat + codec
+├── status.rs                   // status publisher → core::Event::BridgeStatusChanged
+│
+├── protocol/                   // JSON-RPC message types
+│   ├── mod.rs
+│   ├── inbound.rs              // remote → crab (user input / command / attach)
+│   ├── outbound.rs             // crab → remote (stream event / tool result)
+│   └── types.rs                // SessionId / ClientId / RequestId
+│
+├── session/                    // session driver
+│   ├── mod.rs
+│   ├── runner.rs               // attach a crab Session to bridge
+│   ├── forwarder.rs            // inbound route + outbound Event relay
+│   └── attachments.rs          // inbound file upload
+│
+├── auth/
+│   ├── mod.rs
+│   ├── jwt.rs                  // jsonwebtoken sign/verify
+│   ├── trusted_device.rs       // device fingerprint + JSON store
+│   └── work_secret.rs          // per-session shared secret
+│
+├── api/                        // REST control plane (feature = "rest-api")
+│   ├── mod.rs
+│   ├── rest.rs                 // start/stop/list HTTP endpoints (axum)
+│   └── peer_sessions.rs
+│
+├── remote_core.rs              // outbound to relay daemon (feature = "remote-core")
+└── webhook.rs                  // webhook delivery (feature = "webhook")
+```
+
+**Feature flags**:
+
+```toml
+default     = []
+full        = ["rest-api", "remote-core", "webhook"]
+rest-api    = ["dep:axum"]
+remote-core = []
+webhook     = []
+```
+
+**Internal dependencies**: `core, common, config, auth, session, agent, engine`.
+
+**External dependencies**: `tokio-tungstenite`, `jsonwebtoken`, `axum` (feature-gated).
+
+**UI split**: the status indicator lives in `crates/tui/components/bridge_status.rs`, consuming `core::Event::BridgeStatusChanged`.
+
+---
+
+### 6.22 `crates/remote/` -- claude.ai Outbound Client (new v2.3)
+
+**Responsibility**: Layer 2 leaf service. Outbound HTTP/WS to claude.ai for RemoteTrigger, ScheduleWakeup, and remote agent sessions. Does **not** touch local `Session`. Corresponds to CC `src/remote/` (1 132 LOC) + client portion of `src/bridge/remoteBridgeCore.ts`.
+
+**Directory Structure**
+
+```
+src/
+├── lib.rs
+├── config.rs                // endpoint / auth_mode / timeout
+├── client.rs                // reqwest base + retry
+├── error.rs                 // RemoteError
+│
+├── session/                 // CCB remote/ three files
+│   ├── mod.rs
+│   ├── manager.rs           // spawn / poll / cancel / list
+│   ├── websocket.rs         // session event stream (feature = "session")
+│   └── sdk_adapter.rs       // local ↔ remote msg conversion
+│
+├── trigger/                 // RemoteTrigger backend
+│   ├── mod.rs
+│   ├── api.rs               // create / run / list / update / delete
+│   └── schedule.rs          // ScheduleWakeup cron (feature = "schedule")
+│
+├── permission.rs            // remotePermissionBridge.ts
+└── auth.rs                  // reuse crates/auth OAuth token
+```
+
+**Feature flags**:
+
+```toml
+default  = ["trigger"]
+full     = ["trigger", "session", "schedule"]
+trigger  = []                           # lightweight HTTP
+session  = ["dep:tokio-tungstenite"]    # WS stream
+schedule = ["dep:croner"]               # cron scheduling
+```
+
+**Internal dependencies**: `core, auth, config, common`.
+
+**Tools integration**: `crates/tools/src/builtin/remote_trigger.rs` + `cron.rs` depend on this crate (Layer 2 aggregator → leaf pattern per Rule 2).
+
+**Cron parsing**: shared via `crates/common/utils/cron.rs` (re-exports `croner`); both `remote/trigger/schedule.rs` and `tools/builtin/cron.rs` use the same helper.
+
+---
+
+### 6.23 `crates/sandbox/` -- Process Sandbox (new v2.3)
+
+**Responsibility**: Layer 2 leaf service. `Sandbox` trait + platform backends (seatbelt / landlock / wsl / noop), consumed by `crates/tools` for Bash/PowerShell execution. Corresponds to CC `src/utils/sandbox/sandbox-adapter.ts` (985 LOC).
+
+**Directory Structure**
+
+```
+src/
+├── lib.rs
+├── config.rs                // SandboxConfig: workdir / env / timeout
+├── policy.rs                // SandboxPolicy: read/write/exec/net allowlist
+├── error.rs                 // SandboxError + SandboxViolation
+├── doctor.rs                // diagnose platform support
+├── violation.rs             // emit core::Event::SandboxViolation
+│
+└── backend/
+    ├── mod.rs               // auto-select: seatbelt > landlock > wsl > noop
+    ├── noop.rs              // dev / fallback: allow-all
+    ├── seatbelt.rs          // macOS: generate .sb profile + sandbox-exec
+    ├── landlock.rs          // Linux 5.13+: landlock crate (feature = "landlock")
+    └── wsl.rs               // Windows: delegate to wsl.exe (feature = "wsl")
+```
+
+**Core trait**:
+
+```rust
+pub trait Sandbox: Send + Sync {
+    fn spawn(&self, cmd: &mut std::process::Command, policy: &SandboxPolicy)
+        -> Result<std::process::Child, SandboxError>;
+    fn name(&self) -> &'static str;
+    fn is_supported() -> bool where Self: Sized;
+}
+```
+
+**Feature flags**:
+
+```toml
+default  = ["noop", "auto"]
+auto     = []
+noop     = []
+seatbelt = []                       # macOS: zero external deps
+landlock = ["dep:landlock"]         # Linux 5.13+
+wsl      = []                       # Windows: spawn wsl.exe
+all      = ["seatbelt", "landlock", "wsl", "noop"]
+```
+
+**Decision**: no seccomp backend — on Linux kernel < 5.13 we fall back to `noop` with a `tracing::warn!`.
+
+**UI**: violation events surface in TUI via `core::Event::SandboxViolation`; tabs/settings UI live in `crates/tui/components/sandbox_*.rs`, not this crate.
+
+---
+
+### 6.24 `crates/ide/` -- IDE MCP Client (previously absent from §6)
+
+**Responsibility**: Layer 2 leaf service. Client that connects to an IDE plugin's MCP server (hosted by VS Code / JetBrains extensions) and receives ambient context (selection, opened file, `@`-mentions). Publishes `IdeSelection` / `IdeAtMention` / `IdeConnection` to shared state consumed by `tui` (for display) and `agent` (for system-prompt injection).
+
+**Direction contrast**: `ide` is an OUTBOUND client (crab → IDE MCP server). `bridge` is an INBOUND server (IDE / web → crab). They are orthogonal and both needed.
+
+**Directory Structure**
+
+```
+src/
+├── lib.rs
+├── client.rs                // IdeClient + connection lifecycle
+├── detection.rs             // detect running IDE MCP server
+├── lockfile.rs              // IDE lockfile discovery for endpoint
+├── notifications.rs         // inbound MCP notification handlers
+├── injection.rs             // build system-reminder for agent
+├── state.rs                 // Arc<RwLock<...>> shared handles
+└── quirks/                  // IDE-specific quirks (VS Code / JetBrains)
+```
+
+**Shared types** (`core::ide`): `IdeSelection`, `IdeAtMention`, `IdeConnection`. These live in `core` so `tui` can read without depending on `ide`.
+
+**Internal dependencies**: `core, common, config, mcp`.
+
+---
+
 ## 7. Design Principles
 
 | # | Principle | Description | Rationale |
@@ -3621,6 +3982,8 @@ pub struct AppRuntime {
 | 6 | **Feature flags control optional dependencies** | No Bedrock? Don't compile AWS SDK. No WASM? Don't compile wasmtime. | Reduces compile time and binary size |
 | 7 | **workspace.dependencies unifies versions** | All crates share the same version of third-party libraries | Avoids dependency conflicts and duplicate compilation |
 | 8 | **Binary crates only do assembly** | cli/daemon only do assembly; all logic lives in library crates | Makes it easy to add new entry points in the future (desktop/wasm/mobile) |
+| 9 | **CCB parity audit per crate (v2.3)** | Every existing crate gets a per-crate gap report vs CCB before v2.3 is called "complete"; reports live in `docs/superpowers/audits/` | Prevents silent drift from CCB behavior and makes Rust-idiom diverge decisions explicit. See `docs/superpowers/specs/2026-04-17-crate-restructure-design.md` §11 |
+| 10 | **CCB references stay in docs, not code** | Audit reports, specs, and architecture docs may cite CCB paths. Code comments, identifier names, and test names must not. | Maintains clean separation between research material and shipping code |
 
 ---
 
@@ -3655,7 +4018,48 @@ wasm = ["wasmtime"]                                   # WASM plugin sandbox
 [features]
 default = []
 pty = ["portable-pty"]                                # Pseudo-terminal allocation
-sandbox = []                                          # Process sandbox
+sandbox = []                                          # legacy flag; real sandbox lives in crates/sandbox since v2.3
+
+# --- crates/sandbox/Cargo.toml (new v2.3) ---
+[features]
+default  = ["noop", "auto"]
+auto     = []                                         # runtime backend auto-pick
+noop     = []                                         # dev / fallback
+seatbelt = []                                         # macOS: spawns sandbox-exec (zero ext deps)
+landlock = ["dep:landlock"]                           # Linux 5.13+
+wsl      = []                                         # Windows: spawns wsl.exe
+all      = ["noop", "seatbelt", "landlock", "wsl"]
+
+# --- crates/bridge/Cargo.toml (new v2.3) ---
+[features]
+default     = []
+full        = ["rest-api", "remote-core", "webhook"]
+rest-api    = ["dep:axum"]                            # REST control plane
+remote-core = []                                      # outbound relay client
+webhook     = []
+
+# --- crates/remote/Cargo.toml (new v2.3) ---
+[features]
+default  = ["trigger"]
+full     = ["trigger", "session", "schedule"]
+trigger  = []                                         # lightweight HTTP-only
+session  = ["dep:tokio-tungstenite"]                  # remote session WS stream
+schedule = ["dep:croner"]                             # cron scheduling
+
+# --- crates/agent/Cargo.toml (revised v2.3) ---
+[features]
+default = ["single"]
+single  = []                                          # single-agent orchestration
+swarm   = []                                          # multi-agent coordinator
+
+# --- crates/tools/Cargo.toml (revised v2.3) ---
+[features]
+default        = []
+computer-use   = ["dep:screenshots", "dep:enigo"]     # Computer Use tool
+macos-ax       = []                                   # macOS AX / CG input path
+win-native     = []                                   # Win32 SendInput + GDI
+x11            = []                                   # Linux X11 backend
+wayland        = []                                   # Linux Wayland backend
 
 # --- crates/telemetry/Cargo.toml ---
 [features]
@@ -3762,35 +4166,40 @@ use_field_init_shorthand = true
 
 ## 10. Data Flow Design
 
-### 10.1 Primary Data Flow: Query Loop
+### 10.1 Primary Data Flow: Query Loop (revised v2.3)
 
 ```
 User input
   |
   v
-┌──────────┐    prompt     ┌──────────┐   HTTP POST    ┌──────────────┐
-│crates/cli│──────────────>│  agent   │───────────────>│  Anthropic   │
-│ (TUI)    │               │query_loop│   /v1/messages │  API Server  │
-└──────────┘               └────┬─────┘<───────────────┘──────────────┘
-      ^                         │          SSE stream
-      |                         |
-      | Event::ContentDelta     | Parse assistant response
-      |                         |
-      |                    ┌────v─────┐
-      |                    │ Has tool │──── No ──> Loop ends, display result
-      |                    │ calls?   │
-      |                    └────┬─────┘
-      |                         | Yes
-      |                         v
-      |                    ┌──────────┐   delegate    ┌────────────┐
-      |                    │  tools   │──────────────>│  fs / mcp  │
-      |                    │ executor │               │  process   │
-      |                    └────┬─────┘<──────────────┘────────────┘
-      |                         |         ToolOutput
-      | Event::ToolResult       |
-      └─────────────────────────┘
-            Tool results appended to messages, return to top of query_loop
+┌──────────┐   prompt    ┌──────────┐        ┌──────────┐   HTTP POST   ┌───────────┐
+│   cli    │────────────>│  agent   │ wraps  │  engine  │──────────────>│ LLM API   │
+│  (tui)   │             │ (orches- │───────>│  run_    │  /v1/messages │ (Anthropic│
+│          │             │ trator)  │        │  query() │<──────────────│  /OpenAI) │
+└──────────┘             └────┬─────┘        └────┬─────┘   SSE stream  └───────────┘
+      ^                       │                   │
+      |                       │ system_prompt +   │ parse stream
+      |                       │ hook_executor     │
+      | core::Event::*        │                   v
+      |                       │            ┌──────────┐
+      |                       │            │ has tool │── No ─> StopReason → Outcome
+      |                       │            │ calls?   │
+      |                       │            └────┬─────┘
+      |                       │                 │ Yes
+      |                       │                 v
+      |                       │            ┌──────────┐  delegate   ┌────────────┐
+      |                       │            │  tools   │────────────>│ fs / mcp / │
+      |                       │            │ executor │             │ proc / sb  │
+      |                       │            └────┬─────┘<────────────└────────────┘
+      |                       │                 │       ToolOutput
+      └───────────────────────┴─────────────────┘
+               events fan out via core::Event broadcast channel
 ```
+
+Notes:
+- `engine::run_query` is the pure loop (no session state, no REPL). It emits `Event::QueryPhaseChanged`, `Event::ContentDelta`, `Event::ToolResult`, etc.
+- `agent` wraps `engine` and adds: system-prompt assembly, git/PR context, error recovery, retry, proactive suggestions, auto-dream.
+- `daemon` calls `engine::run_query` directly, skipping `agent`'s REPL-oriented layer.
 
 ### 10.2 MCP Tool Call
 
@@ -3870,6 +4279,46 @@ User input
                                                       v
                                                 Continue query_loop
 ```
+
+### 10.4 Bridge Remote-Session Flow (new v2.3)
+
+```
+┌────────────────┐   WebSocket   ┌──────────┐   attach     ┌──────────┐
+│ VS Code / Web  │──────────────>│  bridge  │─────────────>│ session  │
+│ claude.ai      │<──────────────│  server  │<─────────────│ (local)  │
+└────────────────┘  inbound msg  └────┬─────┘  outbound    └────┬─────┘
+                                       │  Event relay           │
+                                       │                        │
+                                       │                  ┌─────▼─────┐
+                                       │                  │   agent   │
+                                       │                  │ (wrapper) │
+                                       │                  └─────┬─────┘
+                                       │                        │
+                                       │                  ┌─────▼─────┐
+                                       └─────────────────>│  engine   │
+                                           drives loop    │ run_query │
+                                                          └───────────┘
+```
+
+Auth: JWT (`bridge/auth/jwt.rs`) + trusted-device fingerprint (`bridge/auth/trusted_device.rs`).
+
+### 10.5 RemoteTrigger / ScheduleWakeup Flow (new v2.3)
+
+```
+┌──────────┐   Tool call      ┌──────────────────┐   HTTPS   ┌───────────┐
+│   LLM    │─────────────────>│ tools/builtin/   │──────────>│ claude.ai │
+│          │  remote_trigger  │ remote_trigger.rs│           │   API     │
+└──────────┘                  └────────┬─────────┘<──────────└───────────┘
+                                       │ uses
+                                       v
+                               ┌───────────────┐
+                               │ crates/remote │
+                               │ trigger/api.rs│
+                               │ schedule.rs   │
+                               └───────────────┘
+```
+
+No local session is touched; pure outbound. For the cron scheduling variant, `schedule.rs` uses `croner` (shared via `common/utils/cron.rs`) and registers the trigger with the remote API.
 
 ---
 
@@ -3968,3 +4417,36 @@ GCP Scenario:
   gcp_identity.rs -> Workload Identity Federation
   vertex_auth.rs -> GCP Vertex AI dedicated authentication
 ```
+
+### 11.6 Sandbox Backend Strategy (new v2.3)
+
+`crates/sandbox` provides a trait-only core with platform backends behind feature flags. At runtime, `create_sandbox(None)` picks the best available backend using this precedence:
+
+```
+seatbelt (macOS)  >  landlock (Linux 5.13+)  >  wsl (Windows)  >  noop
+```
+
+Flow:
+
+```
+┌──────────────────────┐
+│ create_sandbox(None) │
+└──────────┬───────────┘
+           │
+           v
+┌──────────────────────┐
+│ for each backend in  │
+│ precedence order:    │
+│   if is_supported()  │──── yes ──> return Box<dyn Sandbox>
+│     return it        │
+└──────────┬───────────┘
+           │ no backend supported
+           v
+┌──────────────────────┐
+│ noop + warn!()       │
+└──────────────────────┘
+```
+
+Doctor (`sandbox::doctor::diagnose()`) reports each backend's support status, used by `/doctor` and the TUI Sandbox settings tab. Consumers (e.g., `tools/builtin/bash.rs`) may override precedence by passing `Some("seatbelt")` etc. to force a specific backend for testing.
+
+Violation events flow upward as `core::Event::SandboxViolation { backend, info }`, consumed by `tui/components/sandbox_violation.rs` for display and by the denial tracker (`core/permission/denial_tracker.rs`) for repeat-offense patterns.

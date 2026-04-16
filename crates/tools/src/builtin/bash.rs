@@ -429,9 +429,7 @@ mod pty_support {
         let mut text = String::from_utf8_lossy(&output).to_string();
 
         if strip_ansi {
-            if let Ok(stripped) = strip_ansi_escapes::strip_str(&text) {
-                text = stripped;
-            }
+            text = strip_ansi_escapes::strip_str(&text);
         }
 
         if status.success() {

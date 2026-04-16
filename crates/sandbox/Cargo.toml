@@ -1,0 +1,31 @@
+[package]
+name = "crab-sandbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Process sandbox — trait + platform backends (seatbelt / landlock / wsl / noop)"
+
+[features]
+default = ["noop", "auto"]
+auto = []
+noop = []
+seatbelt = []
+landlock = ["dep:landlock"]
+wsl = []
+all = ["noop", "seatbelt", "landlock", "wsl"]
+
+[dependencies]
+crab-common.workspace = true
+crab-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = { workspace = true, optional = true }
+
+[lints]
+workspace = true
