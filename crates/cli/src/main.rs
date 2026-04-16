@@ -605,7 +605,26 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
     };
 
     let backend = Arc::new(crab_api::create_backend(&effective_settings));
-    let registry = create_default_registry();
+    let mut registry = create_default_registry();
+
+    // Connect to MCP servers and register their tools
+    let mut _mcp_manager = if let Some(ref mcp_value) = settings.mcp_servers {
+        let mut mgr = crab_mcp::McpManager::new();
+        let failed = mgr.start_all(mcp_value).await.unwrap_or_else(|e| {
+            eprintln!("Warning: failed to parse MCP config: {e}");
+            Vec::new()
+        });
+        for name in &failed {
+            eprintln!("Warning: MCP server '{name}' failed to connect");
+        }
+        let count = crab_tools::builtin::mcp_tool::register_mcp_tools(&mgr, &mut registry).await;
+        if count > 0 {
+            eprintln!("Registered {count} MCP tool(s).");
+        }
+        Some(mgr)
+    } else {
+        None
+    };
 
     // Discover skills from global + project directories (--bare and --disable-slash-commands skip)
     let mut skill_dirs = if cli.bare || cli.disable_slash_commands {
@@ -783,6 +802,7 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
                 session_config,
                 backend,
                 skill_dirs,
+                mcp_servers: settings.mcp_servers.clone(),
             };
             crab_tui::run(tui_config).await
         }

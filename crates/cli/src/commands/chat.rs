@@ -220,6 +220,7 @@ pub async fn run_chat(config: ChatConfig) -> anyhow::Result<()> {
             session_config,
             backend,
             skill_dirs: config.skill_dirs,
+            mcp_servers: merged_settings.mcp_servers.clone(),
         };
         crab_tui::run(tui_config).await
     }

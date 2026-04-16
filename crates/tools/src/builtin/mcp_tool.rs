@@ -15,11 +15,11 @@ use tokio::sync::Mutex;
 /// When `execute()` is called, it forwards the JSON arguments to the
 /// remote MCP server via `McpClient::call_tool()` and converts the
 /// result into a native `ToolOutput`.
-pub struct McpToolAdapter {
+pub struct McpTool {
     /// Tool name in `mcp__<server>__<tool>` format for uniqueness.
     tool_name: String,
     /// Original MCP tool name (used for the actual `tools/call` RPC).
-    mcp_tool_name: String,
+    original_name: String,
     tool_description: String,
     server_name: String,
     schema: Value,
@@ -28,7 +28,7 @@ pub struct McpToolAdapter {
     client: Arc<Mutex<McpClient>>,
 }
 
-impl McpToolAdapter {
+impl McpTool {
     /// Create a new adapter.
     ///
     /// - `server_name`: logical name of the MCP server (from settings)
@@ -47,7 +47,7 @@ impl McpToolAdapter {
         let tool_name = format!("mcp__{server_name}__{mcp_tool_name}");
         Self {
             tool_name,
-            mcp_tool_name,
+            original_name: mcp_tool_name,
             tool_description: description,
             server_name,
             schema,
@@ -58,7 +58,7 @@ impl McpToolAdapter {
     /// Get the original MCP tool name (without server prefix).
     #[must_use]
     pub fn mcp_tool_name(&self) -> &str {
-        &self.mcp_tool_name
+        &self.original_name
     }
 
     /// Get the server name this tool belongs to.
@@ -68,7 +68,7 @@ impl McpToolAdapter {
     }
 }
 
-impl Tool for McpToolAdapter {
+impl Tool for McpTool {
     fn name(&self) -> &str {
         &self.tool_name
     }
@@ -91,7 +91,7 @@ impl Tool for McpToolAdapter {
                 .client
                 .lock()
                 .await
-                .call_tool(&self.mcp_tool_name, input)
+                .call_tool(&self.original_name, input)
                 .await?;
 
             // Convert MCP ToolCallResult → native ToolOutput
@@ -140,7 +140,7 @@ impl Tool for McpToolAdapter {
 
 /// Register all MCP tools from the manager into the tool registry.
 ///
-/// For each discovered tool, creates an `McpToolAdapter` and registers it.
+/// For each discovered tool, creates an `McpTool` and registers it.
 /// Returns the number of tools registered.
 pub async fn register_mcp_tools(
     manager: &crab_mcp::McpManager,
@@ -150,7 +150,7 @@ pub async fn register_mcp_tools(
     let count = discovered.len();
 
     for tool in discovered {
-        let adapter = McpToolAdapter::new(
+        let adapter = McpTool::new(
             tool.server_name,
             tool.tool_def.name,
             tool.tool_def.description,
@@ -247,7 +247,7 @@ mod tests {
 
         rt.block_on(async {
             let client = mock_client(vec![]).await;
-            let adapter = McpToolAdapter::new(
+            let adapter = McpTool::new(
                 "playwright".into(),
                 "click".into(),
                 "Click an element".into(),
@@ -288,7 +288,7 @@ mod tests {
             .await
             .unwrap();
 
-        let adapter = McpToolAdapter::new(
+        let adapter = McpTool::new(
             "test".into(),
             "do_thing".into(),
             "Does a thing".into(),
@@ -332,7 +332,7 @@ mod tests {
             .await
             .unwrap();
 
-        let adapter = McpToolAdapter::new(
+        let adapter = McpTool::new(
             "test".into(),
             "failing_tool".into(),
             "A tool that fails".into(),
@@ -419,7 +419,7 @@ mod tests {
 
         // Register manually (same logic as register_mcp_tools)
         for tool in tools {
-            let adapter = McpToolAdapter::new(
+            let adapter = McpTool::new(
                 tool.server_name,
                 tool.tool_def.name,
                 tool.tool_def.description,

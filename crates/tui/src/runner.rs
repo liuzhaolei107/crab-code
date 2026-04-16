@@ -44,6 +44,8 @@ pub struct TuiConfig {
     pub backend: Arc<LlmBackend>,
     /// Skill directories to scan for `/command` support.
     pub skill_dirs: Vec<PathBuf>,
+    /// MCP server configuration from settings (for dynamic tool registration).
+    pub mcp_servers: Option<serde_json::Value>,
 }
 
 /// Run the interactive TUI REPL. This is the main entry point for interactive mode.
@@ -53,7 +55,28 @@ pub struct TuiConfig {
 #[allow(clippy::too_many_lines)]
 pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
     // Build tool registry and executor
-    let registry = Arc::new(create_default_registry());
+    let mut registry = create_default_registry();
+
+    // Connect to MCP servers and register their tools
+    let mut _mcp_manager = if let Some(ref mcp_value) = config.mcp_servers {
+        let mut mgr = crab_mcp::McpManager::new();
+        let failed = mgr.start_all(mcp_value).await.unwrap_or_else(|e| {
+            tracing::warn!("failed to parse MCP config: {e}");
+            Vec::new()
+        });
+        for name in &failed {
+            tracing::warn!("MCP server '{name}' failed to connect");
+        }
+        let count = crab_tools::builtin::mcp_tool::register_mcp_tools(&mgr, &mut registry).await;
+        if count > 0 {
+            tracing::info!("Registered {count} MCP tool(s)");
+        }
+        Some(mgr)
+    } else {
+        None
+    };
+
+    let registry = Arc::new(registry);
     let tool_schemas = registry.tool_schemas();
     let registry_for_app = Arc::clone(&registry);
     let mut executor = ToolExecutor::new(registry);
@@ -836,6 +859,7 @@ mod tests {
                 crab_api::openai::OpenAiClient::new("http://localhost:0/v1", None),
             )),
             skill_dirs: vec![],
+            mcp_servers: None,
         };
         assert_eq!(config.session_config.session_id, "test");
         assert!(config.skill_dirs.is_empty());

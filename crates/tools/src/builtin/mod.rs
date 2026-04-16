@@ -29,6 +29,7 @@ pub mod send_user_file;
 pub mod skill;
 pub mod sleep;
 pub mod snip;
+pub mod structured_output;
 pub mod task;
 pub mod team;
 pub mod todo_write;

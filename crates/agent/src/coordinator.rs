@@ -140,13 +140,34 @@ impl AgentSession {
     pub fn new(
         session_config: SessionConfig,
         backend: Arc<LlmBackend>,
-        registry: ToolRegistry,
+        mut registry: ToolRegistry,
     ) -> Self {
+        // Register StructuredOutput tool when --json-schema is provided
+        if let Some(ref schema_arg) = session_config.json_schema {
+            match crab_tools::builtin::structured_output::StructuredOutputTool::from_arg(schema_arg)
+            {
+                Ok(tool) => {
+                    registry.register(std::sync::Arc::new(tool));
+                    tracing::info!("StructuredOutput tool registered");
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to create StructuredOutput tool");
+                }
+            }
+        }
+
         let mut conversation = Conversation::new(
             session_config.session_id.clone(),
             session_config.system_prompt,
             session_config.context_window,
         );
+
+        // Append StructuredOutput prompt when schema is provided
+        if session_config.json_schema.is_some() {
+            conversation
+                .system_prompt
+                .push_str(crab_tools::builtin::structured_output::STRUCTURED_OUTPUT_PROMPT);
+        }
 
         let memory_store = session_config.memory_dir.map(MemoryStore::new);
         let session_history = session_config.sessions_dir.map(SessionHistory::new);
