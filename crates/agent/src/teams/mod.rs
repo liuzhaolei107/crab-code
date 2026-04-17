@@ -6,6 +6,7 @@
 //! - [`task_list`] — shared [`TaskList`] with pending/claimed/completed tasks
 //! - [`roster`] — [`Team`] / [`TeamMember`] / [`TeamMode`] roster types
 //! - [`retry`] — [`RetryPolicy`] and [`RetryTracker`] for failed tasks
+//! - [`task_lock`] — file-locked [`TaskList`] for cross-process `claim_task`
 //! - [`worker_pool`] — [`WorkerPool`] + [`AgentHandle`] for spawn/collect/cancel lifecycle
 //!
 //! This module is unconditional base infrastructure (no env/settings gate);
@@ -18,6 +19,7 @@ pub mod mailbox;
 pub mod retry;
 pub mod roster;
 pub mod task_list;
+pub mod task_lock;
 pub mod worker_pool;
 
 pub use backend::{
@@ -29,4 +31,5 @@ pub use mailbox::MessageRouter;
 pub use retry::{BackoffStrategy, RetryDecision, RetryPolicy, RetryTracker};
 pub use roster::{Capability, Team, TeamMember, TeamMode};
 pub use task_list::{SharedTaskList, Task, TaskList, TaskStatus, shared_task_list};
+pub use task_lock::{claim_task, load_from_file as load_task_list_from_file, with_locked};
 pub use worker_pool::{AgentHandle, WorkerPool};

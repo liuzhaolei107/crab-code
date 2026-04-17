@@ -81,6 +81,18 @@ impl Coordinator {
     pub const fn worker_denied_tools(&self) -> &'static [&'static str] {
         tool_acl::WORKER_DENIED_TOOLS
     }
+
+    /// Build a fresh worker tool registry: the default crab registry minus
+    /// [`tool_acl::WORKER_DENIED_TOOLS`]. Used by
+    /// [`crate::session::AgentSession::handle_spawn_request`] to give each
+    /// worker a clean toolset — workers inherit neither the coordinator's
+    /// stripped 3-tool registry nor its forbidden team-management tools.
+    #[must_use]
+    pub fn build_worker_registry(&self) -> ToolRegistry {
+        let mut registry = crab_tools::builtin::create_default_registry();
+        registry.remove_names(tool_acl::WORKER_DENIED_TOOLS);
+        registry
+    }
 }
 
 #[cfg(test)]
@@ -172,6 +184,38 @@ mod tests {
         let coord = Coordinator::from_config(&config_with(true)).unwrap();
         assert_eq!(coord.allowed_tools(), tool_acl::COORDINATOR_TOOLS);
         assert_eq!(coord.worker_denied_tools(), tool_acl::WORKER_DENIED_TOOLS);
+    }
+
+    #[test]
+    fn worker_registry_strips_denied_but_keeps_hands_on_tools() {
+        let coord = Coordinator::from_config(&config_with(true)).unwrap();
+        let worker_reg = coord.build_worker_registry();
+
+        // Denied tools must be gone.
+        for denied in tool_acl::WORKER_DENIED_TOOLS {
+            assert!(
+                worker_reg.get(denied).is_none(),
+                "worker registry must not contain {denied}"
+            );
+        }
+        // Hands-on tools (the whole point workers exist) must remain.
+        assert!(worker_reg.get("Bash").is_some(), "worker needs Bash");
+        assert!(worker_reg.get("Edit").is_some(), "worker needs Edit");
+        assert!(worker_reg.get("Read").is_some(), "worker needs Read");
+
+        // Worker can still nest an Agent call (unlike TeamCreate — CCB
+        // INTERNAL_WORKER_TOOLS blocks team management, not delegation).
+        assert!(worker_reg.get("Agent").is_some());
+    }
+
+    #[test]
+    fn worker_registry_is_fresh_not_inherited() {
+        // Build two worker registries — they must be independent instances
+        // (the filter is applied on a freshly-constructed registry each time).
+        let coord = Coordinator::from_config(&config_with(true)).unwrap();
+        let a = coord.build_worker_registry();
+        let b = coord.build_worker_registry();
+        assert_eq!(a.len(), b.len());
     }
 
     // Hold Arc of a shared type to verify Coordinator is Copy/Clone-safe

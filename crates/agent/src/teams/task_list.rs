@@ -35,6 +35,7 @@ pub struct Task {
 }
 
 /// Manages tasks and their dependency graph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskList {
     tasks: Vec<Task>,
     next_id: u64,

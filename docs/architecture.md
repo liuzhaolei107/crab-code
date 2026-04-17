@@ -4051,7 +4051,8 @@ aligned with CCB's design but structured in Rust-idiomatic form.
 - `crates/agent/src/coordinator/` holds the Layer 2b overlay: `Coordinator::from_flag(true).apply(&mut registry, &mut prompt)` retains the registry to `{Agent, SendMessage, TaskStop}` and appends the anti-pattern prompt overlay.
 - `session/runtime.rs::AgentSession::new` invokes the coordinator if `coordinator_mode` is set; otherwise no-op.
 - `crates/agent/src/coordinator/tool_acl.rs` hosts the `COORDINATOR_TOOLS` / `WORKER_DENIED_TOOLS` constants; `ToolRegistry::retain_names` / `remove_names` in `crates/tools/src/registry.rs` implement the filter.
-- Workers spawned via `Agent` still receive the default registry — per-worker `WORKER_DENIED_TOOLS` enforcement (subtracting `TeamCreate`/`TeamDelete`/`SendMessage` from their registry) is the Phase 3 follow-up when `WorkerPool::spawn_worker` is extended to accept a child registry.
+- Workers spawned via `Agent` from a Coordinator session now get a fresh registry built by `Coordinator::build_worker_registry` (default registry minus `WORKER_DENIED_TOOLS`) and an overlay-free prompt snapshotted into `CoordinatorContext::worker_base_prompt`. Non-coordinator sessions inherit as before.
+- File-locked `TaskList` (`crates/agent/src/teams/task_lock.rs`) provides `with_locked` and `claim_task` over `fd-lock`, serialising cross-process task claims through an OS exclusive lock on `<path>.lock`. Used when teammates live in separate processes (tmux panes, remote agents); single-process use keeps the existing `Arc<Mutex<TaskList>>`.
 
 ---
 

@@ -24,6 +24,17 @@ use crate::teams::WorkerPool;
 
 use super::session_config::SessionConfig;
 
+/// Extra state carried only when Layer 2b Coordinator Mode is active on a
+/// session. Used by [`AgentSession::handle_spawn_request`] to give workers
+/// a filtered registry and an overlay-free prompt.
+pub struct CoordinatorContext {
+    pub coordinator: crate::coordinator::Coordinator,
+    /// The session's system prompt *before* the Coordinator overlay was
+    /// appended. Workers must not see the overlay; they use this as their
+    /// base prompt instead.
+    pub worker_base_prompt: String,
+}
+
 /// A running agent session with all the pieces wired together.
 pub struct AgentSession {
     pub conversation: Conversation,
@@ -42,6 +53,9 @@ pub struct AgentSession {
     pub cost: CostAccumulator,
     /// Query engine (new unified API — optional during migration).
     pub engine: Option<crab_engine::QueryEngine>,
+    /// Coordinator Mode state, `Some` only when `SessionConfig::coordinator_mode`
+    /// was set at construction.
+    pub coordinator_ctx: Option<CoordinatorContext>,
 }
 
 impl AgentSession {
@@ -128,15 +142,25 @@ impl AgentSession {
         // Layer 2b — apply Coordinator Mode if gated on. This strips the
         // registry to the allow-list and appends the anti-pattern prompt
         // overlay. No-op when coordinator_mode is false.
-        if coordinator_mode
-            && let Some(coordinator) = crate::coordinator::Coordinator::from_flag(coordinator_mode)
+        //
+        // The `worker_base_prompt` is snapshotted BEFORE the overlay is
+        // applied so workers spawned later can be given a clean prompt.
+        let coordinator_ctx = if coordinator_mode
+            && let Some(coordinator) = crate::coordinator::Coordinator::from_flag(true)
         {
+            let worker_base_prompt = conversation.system_prompt.clone();
             coordinator.apply(&mut registry, &mut conversation.system_prompt);
             tracing::info!(
                 allowed_tools = ?coordinator.allowed_tools(),
                 "Coordinator Mode active"
             );
-        }
+            Some(CoordinatorContext {
+                coordinator,
+                worker_base_prompt,
+            })
+        } else {
+            None
+        };
 
         let tool_schemas = registry.tool_schemas();
         let executor = ToolExecutor::new(Arc::new(registry));
@@ -184,6 +208,7 @@ impl AgentSession {
             session_history,
             cost: CostAccumulator::default(),
             engine: None,
+            coordinator_ctx,
         }
     }
 
@@ -246,12 +271,24 @@ impl AgentSession {
             .and_then(serde_json::Value::as_u64)
             .map(|v| usize::try_from(v).unwrap_or(usize::MAX));
 
-        let system_prompt = format!(
-            "You are a sub-agent worker. Complete the assigned task.\n\n{}",
-            self.conversation.system_prompt
-        );
+        // Coordinator Mode splits the worker's inputs from the parent session:
+        //  - prompt:   use the pre-overlay base (workers must not see the
+        //              "You do not execute code" coordinator guardrail).
+        //  - registry: build a fresh default registry minus WORKER_DENIED_TOOLS
+        //              so workers can Bash/Edit/Read but cannot spawn nested
+        //              teams or message peers directly.
+        // Regular sessions inherit both from the parent unchanged.
+        let (parent_prompt, worker_executor) = if let Some(ctx) = &self.coordinator_ctx {
+            let worker_reg = ctx.coordinator.build_worker_registry();
+            let exec = Arc::new(ToolExecutor::new(Arc::new(worker_reg)));
+            (ctx.worker_base_prompt.as_str(), exec)
+        } else {
+            let exec = Arc::new(ToolExecutor::new(self.executor.registry_arc()));
+            (self.conversation.system_prompt.as_str(), exec)
+        };
 
-        let worker_executor = Arc::new(ToolExecutor::new(self.executor.registry_arc()));
+        let system_prompt =
+            format!("You are a sub-agent worker. Complete the assigned task.\n\n{parent_prompt}");
 
         let worker_id = coordinator.spawn_worker(
             task,
@@ -601,6 +638,42 @@ mod tests {
         assert!(prompt.contains("Base instructions."));
         assert!(prompt.contains("Coordinator Mode"));
         assert!(prompt.contains("Based on your findings"));
+    }
+
+    #[test]
+    fn coordinator_session_captures_worker_base_prompt_without_overlay() {
+        use crab_tools::builtin::create_default_registry;
+
+        let mut config = base_config("coord-workerbase");
+        config.system_prompt = "Base instructions.".into();
+        config.coordinator_mode = true;
+
+        let session = AgentSession::new(config, test_backend(), create_default_registry());
+
+        let ctx = session
+            .coordinator_ctx
+            .as_ref()
+            .expect("coordinator_ctx set when coordinator_mode is true");
+
+        // Conversation prompt has overlay; worker base does not.
+        assert!(
+            session
+                .conversation
+                .system_prompt
+                .contains("Coordinator Mode")
+        );
+        assert!(!ctx.worker_base_prompt.contains("Coordinator Mode"));
+        assert!(ctx.worker_base_prompt.contains("Base instructions."));
+    }
+
+    #[test]
+    fn non_coordinator_session_has_no_coordinator_ctx() {
+        use crab_tools::builtin::create_default_registry;
+
+        let config = base_config("no-coord-ctx");
+        // coordinator_mode default = false
+        let session = AgentSession::new(config, test_backend(), create_default_registry());
+        assert!(session.coordinator_ctx.is_none());
     }
 
     #[test]
