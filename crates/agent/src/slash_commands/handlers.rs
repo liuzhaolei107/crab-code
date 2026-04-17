@@ -441,6 +441,16 @@ pub(super) fn cmd_copy(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashComm
     SlashCommandResult::Action(SlashAction::CopyLast)
 }
 
+pub(super) fn cmd_rewind(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+    let trimmed = args.trim();
+    let target = if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    };
+    SlashCommandResult::Action(SlashAction::Rewind(target))
+}
+
 /// Resolve well-known model aliases to full IDs.
 fn resolve_model_alias(alias: &str) -> String {
     match alias {
@@ -489,10 +499,34 @@ mod tests {
     // ─── Registry tests ───
 
     #[test]
-    fn registry_has_32_commands() {
+    fn registry_has_33_commands() {
         let reg = SlashCommandRegistry::new();
-        assert_eq!(reg.len(), 32);
+        assert_eq!(reg.len(), 33);
         assert!(!reg.is_empty());
+    }
+
+    #[test]
+    fn rewind_without_arg_targets_all() {
+        let (model, cost, dir) = make_ctx();
+        let ctx = ctx_from(&model, &cost, &dir);
+        let reg = SlashCommandRegistry::new();
+        let result = reg.execute("rewind", "", &ctx).unwrap();
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::Rewind(None))
+        ));
+    }
+
+    #[test]
+    fn rewind_with_path_targets_path() {
+        let (model, cost, dir) = make_ctx();
+        let ctx = ctx_from(&model, &cost, &dir);
+        let reg = SlashCommandRegistry::new();
+        let result = reg.execute("rewind", "foo.rs", &ctx).unwrap();
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::Rewind(Some(ref p))) if p == "foo.rs"
+        ));
     }
 
     #[test]
@@ -513,7 +547,7 @@ mod tests {
     fn registry_list_returns_all() {
         let reg = SlashCommandRegistry::new();
         let list = reg.list();
-        assert_eq!(list.len(), 32);
+        assert_eq!(list.len(), 33);
         let names: Vec<&str> = list.iter().map(|(n, _)| *n).collect();
         // Original 12
         assert!(names.contains(&"help"));
@@ -789,7 +823,7 @@ mod tests {
     #[test]
     fn default_registry_has_commands() {
         let reg = SlashCommandRegistry::default();
-        assert_eq!(reg.len(), 32);
+        assert_eq!(reg.len(), 33);
     }
 
     // ─── Batch 2 command tests ───

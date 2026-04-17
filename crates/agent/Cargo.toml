@@ -29,6 +29,7 @@ tokio-util.workspace = true
 futures.workspace = true
 tracing.workspace = true
 fd-lock.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 crab-skill.workspace = true

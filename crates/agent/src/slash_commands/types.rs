@@ -70,6 +70,8 @@ pub enum SlashAction {
     Resume(String),
     /// Copy last assistant message to clipboard.
     CopyLast,
+    /// Rewind the most recent file edit, or all edits if `None`.
+    Rewind(Option<String>),
 }
 
 /// A registered slash command.
@@ -94,8 +96,8 @@ impl SlashCommandRegistry {
             cmd_add_dir, cmd_branch, cmd_clear, cmd_commit, cmd_compact, cmd_config, cmd_copy,
             cmd_cost, cmd_diff, cmd_doctor, cmd_effort, cmd_exit, cmd_export, cmd_fast, cmd_files,
             cmd_help, cmd_history, cmd_init, cmd_keybindings, cmd_mcp, cmd_memory, cmd_model,
-            cmd_permissions, cmd_plan, cmd_plugin, cmd_rename, cmd_resume, cmd_review, cmd_skills,
-            cmd_status, cmd_theme, cmd_thinking,
+            cmd_permissions, cmd_plan, cmd_plugin, cmd_rename, cmd_resume, cmd_review, cmd_rewind,
+            cmd_skills, cmd_status, cmd_theme, cmd_thinking,
         };
 
         let mut reg = Self {
@@ -172,6 +174,11 @@ impl SlashCommandRegistry {
             cmd_rename,
         );
         reg.register("copy", "Copy last assistant message", cmd_copy);
+        reg.register(
+            "rewind",
+            "Rewind the latest file edit (/rewind [path])",
+            cmd_rewind,
+        );
         reg
     }
 

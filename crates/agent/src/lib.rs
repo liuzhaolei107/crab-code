@@ -1,9 +1,9 @@
 pub mod auto_dream;
 pub mod coordinator;
 pub mod error_recovery;
+pub mod file_history;
 pub mod proactive;
 pub mod repl_commands;
-pub mod rollback;
 pub mod session;
 pub mod slash_commands;
 pub mod summarizer;
@@ -12,8 +12,8 @@ pub mod teams;
 
 pub use coordinator::{PermissionDecisionEvent, PermissionSyncManager};
 pub use error_recovery::{ErrorCategory, ErrorClassifier, RecoveryAction, RecoveryStrategy};
+pub use file_history::{FileHistory, Snapshot, SnapshotError};
 pub use repl_commands::{CommandResult, ReplCommand};
-pub use rollback::{ActionType, RollbackEntry, RollbackManager, UndoStack};
 pub use session::{AgentSession, SessionConfig};
 pub use slash_commands::{
     SlashAction, SlashCommandContext, SlashCommandRegistry, SlashCommandResult,

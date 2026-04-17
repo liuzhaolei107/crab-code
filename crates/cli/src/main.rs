@@ -1114,6 +1114,15 @@ async fn handle_slash_action(
             );
             SlashOutcome::Continue
         }
+        SlashAction::Rewind(target) => {
+            let what = target.as_deref().unwrap_or("(most-recent edit)");
+            println!(
+                "[info] /rewind {what}: the `file_history` primitive is ready but \
+                 Edit/Write/Notebook tools do not yet call track_edit via ToolContextExt. \
+                 Wire-up lands in a follow-up."
+            );
+            SlashOutcome::Continue
+        }
         other => {
             // SwitchModel / Resume / Export / Init / TogglePlanMode / SetEffort /
             // ToggleFast / AddDir / CopyLast all need plumbing beyond REPL
