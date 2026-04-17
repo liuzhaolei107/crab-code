@@ -1,7 +1,6 @@
 pub mod auth;
 pub mod cancellation;
 pub mod capability;
-pub mod channel_permissions;
 pub mod client;
 pub mod discovery;
 pub mod elicitation;
@@ -20,6 +19,7 @@ pub mod resource;
 pub mod roots;
 pub mod sampling;
 pub mod server;
+pub mod server_acl;
 pub mod sse_server;
 pub mod transport;
 
@@ -64,6 +64,6 @@ pub use sse_server::run_sse;
 pub use transport::Transport;
 
 pub use auth::{McpAuthManager, McpAuthMethod};
-pub use channel_permissions::ChannelPermissions;
 pub use elicitation::{ElicitationRequest, ElicitationResponse};
 pub use env_expansion::{expand_env_in_args, expand_env_vars};
+pub use server_acl::{AclChannel, AclRules, ServerAclRegistry};
