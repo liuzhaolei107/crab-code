@@ -17,7 +17,7 @@
 
 ---
 
-> **Status: Active Development** -- 49 built-in tools, 6 permission modes, extended thinking, multi-agent coordination, structured message TUI with 187 spinner verbs, 3900+ tests across 17 crates, 110k+ LOC. Zero `todo!()` macros.
+> **Status: Active Development** -- 49 built-in tools, 33 slash commands, 6 permission modes, extended thinking, three-layer multi-agent architecture (Teams / Swarm / Coordinator Mode), file-history rewinding, structured message TUI with 187 spinner verbs, 3800+ tests across 17 crates, 110k+ LOC. Zero `todo!()` macros.
 
 ## What is Crab Code?
 
@@ -110,9 +110,27 @@ Crab Code supports Claude Code's `settings.json` format, including the `env` fie
 
 Plus tool-level filtering with `--allowedTools` / `--disallowedTools` supporting glob patterns (`Bash(git:*)`, `Edit`).
 
-### Slash Commands (20+)
+### Multi-Agent Architecture
 
-`/help` `/clear` `/compact` `/cost` `/status` `/memory` `/init` `/model` `/config` `/permissions` `/resume` `/history` `/export` `/doctor` `/diff` `/review` `/plan` `/exit` `/fast` `/effort` `/add-dir` `/files` `/thinking` and more.
+Three conceptually distinct layers, implemented as independent modules inside `crates/agent`:
+
+- **Layer 1 — Teams** (unconditional base plumbing): `WorkerPool`, per-agent `MessageRouter` mailbox, `Team` / `TeamMember` roster, shared `TaskList` with optional `fd-lock` file-locked `claim_task` for cross-process teammates, spawner backends (in-process, tmux).
+- **Layer 2a — Swarm** (default topology): peer-to-peer `TeamMode::PeerToPeer`. No extra module — it is just the default usage pattern when no overlay is active.
+- **Layer 2b — Coordinator Mode** (gated overlay via `CRAB_COORDINATOR_MODE=1`): the coordinator's tool registry is reduced to `{Agent, SendMessage, TaskStop}`, workers spawned through it lose `{TeamCreate, TeamDelete, SendMessage}`, and the coordinator's system prompt carries an anti-pattern guardrail ("understand before delegating"). Fully unit-tested.
+
+### File History & Rewind
+
+Every user session gets its own snapshot store at `~/.crab/file-history/{session_id}/`. Designed to mirror Claude Code's `fileHistory.ts` / `/rewind` behavior: each file edit is recorded as `{path-hash}@v{version}`, capped at 100 snapshots per session with LRU eviction. The `/rewind [path]` slash command is wired in the REPL; tool-level `track_edit` hooks on Edit/Write/Notebook are a planned follow-up.
+
+### Context Compaction
+
+`/compact` explicitly, or automatic compaction when the conversation crosses 80% of the model's context window. A heuristic summarizer (no extra LLM call) extracts decisions, code changes, unresolved issues, and topics, then replaces the conversation history with a single summary message while preserving the system prompt, session id, and cost accumulator. Emits `Event::CompactStart` and `Event::CompactEnd` for UI observability.
+
+### Slash Commands (33)
+
+REPL intercepts `/<letter>…` input and dispatches through `SlashCommandRegistry` before anything hits the LLM, so paths like `/tmp/foo` still pass through as prompts.
+
+`/help` `/clear` `/compact` `/cost` `/status` `/memory` `/init` `/model` `/config` `/permissions` `/resume` `/history` `/export` `/doctor` `/diff` `/review` `/plan` `/exit` `/fast` `/effort` `/add-dir` `/files` `/thinking` `/rewind` `/skills` `/plugin` `/mcp` `/branch` `/commit` `/theme` `/keybindings` `/copy` `/rename`
 
 ### LLM Providers
 
@@ -134,13 +152,20 @@ Plus tool-level filtering with `--allowedTools` / `--disallowedTools` supporting
 - `--resume <id>` resume specific session
 - `--fork-session` fork on resume
 - `--name` friendly session names
-- Auto-compaction at 80% context window threshold
+- Auto-compaction at 80% context window threshold (see *Context Compaction* above)
+- Per-session file-history snapshots for `/rewind` (see *File History & Rewind* above)
 
 ### Hook System
 
 - `PreToolUse` / `PostToolUse` / `UserPromptSubmit` triggers
 - Shell command execution with Allow / Deny / Modify responses
 - Configure in `settings.json`
+
+### Experimental Cargo Features (off by default)
+
+- `auto-dream` — background memory-consolidation cycles. Mirrors CCB's `src/services/autoDream/`: three-gate scheduler (min hours, min sessions, lock file) and the CCB consolidation prompt template are ready; the forked-agent LLM runner is stubbed and lands in a follow-up. Env: `CRAB_AUTO_DREAM=1`, `CRAB_AUTO_DREAM_MIN_HOURS`, `CRAB_AUTO_DREAM_MIN_SESSIONS`.
+- `proactive` — placeholder for CCB's `feature('PROACTIVE')` mini-agent. Compiles the module skeleton only; real implementation pending.
+- `mem-ranker` — enable the ML-based memory ranker inside `crab-memory`.
 
 ### Interactive TUI
 
@@ -209,10 +234,14 @@ crab auth login                   # Configure authentication
 
 ```bash
 cargo build --workspace                    # Build all
-cargo test --workspace                     # Run all tests (3900+)
+cargo test --workspace                     # Run all tests (3800+)
 cargo clippy --workspace -- -D warnings    # Lint
 cargo fmt --all --check                    # Check formatting
 cargo run --bin crab                       # Run CLI
+
+# Experimental features (default off)
+cargo build -p crab-agent --features auto-dream    # Enable auto-dream module
+cargo build -p crab-agent --features proactive     # Enable proactive stubs
 ```
 
 ## Comparison
@@ -232,7 +261,7 @@ cargo run --bin crab                       # Run CLI
 
 We'd love your help! See areas where we need contributions:
 
-- Claude Code feature alignment
+- Claude Code feature alignment (remaining gaps: auto-dream forked-agent runner, tool-level file-history hooks, proactive mini-agent)
 - OS-level sandboxing (Landlock / Seatbelt / Windows Job Object)
 - End-to-end integration testing
 - Additional LLM provider testing

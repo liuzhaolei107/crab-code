@@ -434,28 +434,48 @@ crab-code/
 │   │       ├── coordinator.rs         # Agent orchestration, workers pool + work-stealing scheduler
 │   │       ├── query_loop.rs          # Core message loop
 │   │       ├── task.rs                # TaskList, dependency graph
-│   │       ├── team.rs                # Team creation, member management
-│   │       ├── message_bus.rs         # Inter-Agent messaging (tokio::mpsc)
-│   │       ├── message_router.rs      # Inter-Agent message routing
-│   │       ├── worker.rs              # Sub-Agent worker
-│   │       ├── system_prompt/         # System prompt (module directory)
-│   │       │   ├── mod.rs             # re-exports
-│   │       │   ├── builder.rs         # [Refactored] Main assembly logic (formerly system_prompt.rs)
-│   │       │   ├── sections.rs        # [P0] Modular section architecture + dynamic boundaries
-│   │       │   └── cache.rs           # [P1] Per-section memoized cache
-│   │       ├── token_budget.rs        # [P1] Token budget management
-│   │       ├── stop_hooks.rs          # [P1] Stop condition hooks
-│   │       ├── summarizer.rs          # Conversation summary generation
-│   │       ├── rollback.rs            # Rollback mechanism
-│   │       ├── error_recovery.rs      # Error recovery strategy
-│   │       ├── retry.rs              # Auto-retry mechanism
-│   │       ├── slash_commands.rs      # Slash command registration and execution
-│   │       ├── repl_commands.rs       # REPL commands (/undo /branch /fork)
-│   │       ├── effort.rs              # Model effort level
-│   │       ├── git_context.rs         # Git context collection
-│   │       ├── pr_context.rs          # PR context collection
-│   │       ├── prompt_suggestion.rs   # [P2] Follow-up prompt suggestions
-│   │       └── tips.rs                # [P2] Contextual tips
+│   │       ├── teams/                 # Layer 1 multi-agent infrastructure
+│   │       │   ├── mod.rs              #   re-exports
+│   │       │   ├── roster.rs           #   Team / TeamMember / TeamMode
+│   │       │   ├── mailbox.rs          #   Inter-agent message routing (MessageRouter)
+│   │       │   ├── bus.rs              #   MessageBus + AgentMessage / Envelope
+│   │       │   ├── task_list.rs        #   Shared TaskList
+│   │       │   ├── task_lock.rs        #   fd-lock file-locked claim_task
+│   │       │   ├── worker.rs           #   AgentWorker (sub-agent runner)
+│   │       │   ├── worker_pool.rs      #   WorkerPool (spawn / collect / cancel)
+│   │       │   ├── retry.rs            #   RetryPolicy + RetryTracker
+│   │       │   └── backend/            #   Spawner backends (in-process / tmux)
+│   │       ├── coordinator/            # Layer 2b Coordinator Mode (gated)
+│   │       │   ├── mod.rs              #   Coordinator struct composing the 3 pieces
+│   │       │   ├── gating.rs           #   env + config gate
+│   │       │   ├── tool_acl.rs         #   COORDINATOR_TOOLS / WORKER_DENIED_TOOLS
+│   │       │   ├── prompt.rs           #   Anti-pattern prompt overlay
+│   │       │   └── permission_sync.rs  #   Cross-teammate permission sync
+│   │       ├── session/                # Layer 3 session runtime
+│   │       │   ├── mod.rs              #   re-exports
+│   │       │   ├── runtime.rs          #   AgentSession (owns Conversation, applies Coordinator)
+│   │       │   └── session_config.rs   #   SessionConfig value struct
+│   │       ├── system_prompt/          # System prompt assembly
+│   │       │   ├── mod.rs              #   re-exports
+│   │       │   ├── builder.rs          #   Main assembly logic
+│   │       │   ├── git_context.rs      #   Git status injection (promoted from top-level Phase 4.2)
+│   │       │   ├── pr_context.rs       #   PR context injection (promoted Phase 4.2)
+│   │       │   └── tips.rs             #   Contextual tips (promoted Phase 4.2)
+│   │       ├── file_history/           # Per-session edit snapshots (Phase 4.5, CCB fileHistory)
+│   │       │   ├── mod.rs
+│   │       │   └── snapshot.rs         #   FileHistory + Snapshot + rewind / rewind_to_latest
+│   │       ├── error_recovery/         # Classification + recovery strategy
+│   │       │   ├── mod.rs
+│   │       │   ├── category.rs         #   ErrorCategory + ErrorClassifier
+│   │       │   └── strategy.rs         #   Retry / AskUser / Abort
+│   │       ├── slash_commands/         # /command registry (33 built-ins, wired into REPL)
+│   │       │   ├── mod.rs
+│   │       │   ├── types.rs            #   Registry, Context, Result, Action
+│   │       │   └── handlers.rs         #   cmd_* built-in handlers
+│   │       ├── summarizer.rs           # Conversation compaction (/compact)
+│   │       ├── repl_commands.rs        # ReplCommand enum (parser helpers)
+│   │       ├── auto_dream.rs           # Memory consolidation (cargo feature `auto-dream`)
+│   │       └── proactive/              # CCB feature('PROACTIVE') placeholder (cargo feature `proactive`)
 │   │
 │   ├── tui/                           # crab-tui: terminal UI (21 components)
 │   │   ├── Cargo.toml
@@ -2592,56 +2612,73 @@ impl MemoryStore {
 
 ### 6.11 `crates/agent/` -- Orchestrator & Multi-Agent System
 
-**Responsibility** (revised v2.3): wraps the raw query loop (`crates/engine`) and adds session-aware orchestration — system prompt assembly, context injection (git/PR), error recovery, swarm coordination, proactive suggestions, REPL commands. Corresponds to CC `QueryEngine.ts` + `coordinator/` + `tasks/` + proactive + prompt-suggestion. **Does not** contain the low-level message loop anymore (that moved to `crates/engine`, see §6.20).
+**Responsibility**: wraps the raw query loop (`crates/engine`) and adds session-aware orchestration — system prompt assembly, context injection (git/PR), error recovery, multi-agent coordination, REPL slash commands, file-history snapshots, conversation compaction. Corresponds to CC `QueryEngine.ts` + `coordinator/` + `tasks/` + `services/compact/` + `utils/fileHistory.ts`. **Does not** contain the low-level message loop (that moved to `crates/engine`, see §6.20).
 
-**Directory Structure** (v2.3)
+**Directory Structure** (post Phase 4)
 
 ```
 src/
 ├── lib.rs
-├── coordinator.rs           // wraps engine; multi-agent dispatch
-├── swarm/                   // (feature = "swarm") tmux / in-process backends
+├── teams/                   // Layer 1 infrastructure (unconditional)
 │   ├── mod.rs
-│   ├── backend.rs
-│   ├── pane_manager.rs
-│   ├── teammate.rs
-│   ├── permission_sync.rs
-│   └── init_script.rs
+│   ├── roster.rs            //   Team / TeamMember / TeamMode
+│   ├── mailbox.rs           //   MessageRouter (per-agent inbox)
+│   ├── bus.rs               //   MessageBus + AgentMessage + Envelope
+│   ├── task_list.rs         //   Shared TaskList + dependency graph
+│   ├── task_lock.rs         //   fd-lock file-locked claim_task
+│   ├── worker.rs            //   AgentWorker (sub-agent runner)
+│   ├── worker_pool.rs       //   WorkerPool (spawn / collect / cancel)
+│   ├── retry.rs             //   Exponential backoff
+│   └── backend/             //   Spawner backends (in-process / tmux)
 │
-├── task.rs                  // TaskList, TaskUpdate, dependency graph
-├── team.rs                  // Team creation, member management
-├── worker.rs                // Sub-Agent worker lifecycle
-├── message_bus.rs           // Inter-agent messaging (tokio::mpsc)
-├── message_router.rs        // Routing by name/broadcast
+├── coordinator/             // Layer 2b Coordinator Mode (gated on CRAB_COORDINATOR_MODE)
+│   ├── mod.rs               //   Coordinator struct: apply(ToolRegistry, &mut prompt)
+│   ├── gating.rs            //   env + config gate
+│   ├── tool_acl.rs          //   COORDINATOR_TOOLS + WORKER_DENIED_TOOLS constants
+│   ├── prompt.rs            //   Anti-pattern prompt overlay ("understand before delegating")
+│   └── permission_sync.rs   //   Cross-teammate permission sync
 │
-├── system_prompt/           // modular section assembly + cache
+├── session/                 // Layer 3 session runtime
 │   ├── mod.rs
-│   ├── builder.rs
-│   ├── sections.rs
-│   └── cache.rs
+│   ├── runtime.rs           //   AgentSession + CoordinatorContext + compact_conversation
+│   └── session_config.rs    //   SessionConfig (flat value struct)
 │
-├── summarizer.rs            // Conversation summary helper
-├── error_recovery.rs        // Error recovery strategy
-├── retry.rs                 // Exponential backoff
-├── rollback.rs              // /undo /branch /fork /checkpoint
-├── repl_commands.rs
-├── slash_commands.rs
-│
-├── proactive/               // NEW v2.3 (replaces prompt_suggestion.rs)
+├── system_prompt/           // Modular prompt assembly
 │   ├── mod.rs
-│   ├── mini_agent.rs        // forked speculation
-│   ├── suggestion.rs        // ranking + dedup
-│   └── cache.rs
+│   ├── builder.rs           //   build_system_prompt_with_memories
+│   ├── git_context.rs       //   Git metadata injection (moved here Phase 4.2)
+│   ├── pr_context.rs        //   gh PR context (moved here Phase 4.2)
+│   └── tips.rs              //   Contextual tips (moved here Phase 4.2)
 │
-├── git_context.rs           // Git metadata injection
-├── pr_context.rs            // gh PR context
-├── auto_dream.rs            // Background memory consolidation
-└── tips.rs                  // Context-triggered tips
+├── file_history/            // CCB fileHistory equivalent (Phase 4.5)
+│   ├── mod.rs
+│   └── snapshot.rs          //   FileHistory + Snapshot + rewind / LRU(100)
+│
+├── error_recovery/          // Classification + recovery strategy
+│   ├── mod.rs
+│   ├── category.rs          //   ErrorCategory + ErrorClassifier
+│   └── strategy.rs          //   Retry / AskUser / Abort
+│
+├── slash_commands/          // 33 built-ins + registry (wired into REPL)
+│   ├── mod.rs
+│   ├── types.rs             //   Registry + Context + Result + SlashAction
+│   └── handlers.rs          //   cmd_* built-in handlers
+│
+├── summarizer.rs            // Conversation compaction (/compact, auto at 80%)
+├── repl_commands.rs         // ReplCommand enum + parser
+├── auto_dream.rs            // Background memory consolidation (cargo feature `auto-dream`)
+└── proactive/               // CCB feature('PROACTIVE') placeholder (cargo feature `proactive`)
+    ├── mod.rs
+    ├── mini_agent.rs
+    ├── suggestion.rs
+    └── cache.rs
 ```
+
+Cargo features: `auto-dream` (off), `proactive` (off), `mem-ranker` (off, re-exports `crab-memory/mem-ranker`).
 
 Moved out (now in `crates/engine` per §6.20): `query_loop.rs`, `engine/`, `stop_hooks.rs`, `token_budget.rs`, `effort.rs`.
 
-Deleted: `prompt_suggestion.rs` (placeholder replaced by `proactive/`).
+Deleted in Phase 4: `rollback.rs` (replaced by `file_history/`), `error_recovery/{circuit,degradation}.rs` (CCB has no equivalent), `system_prompt/{sections,cache}.rs` (unused alt-architecture), `task_executor/` (premature — only one impl existed, inlined to `teams/worker.rs`).
 
 **Message Loop (Core)**
 
@@ -4458,12 +4495,17 @@ MCP protocol extension modules:
 
 ### 11.3 Agent Reliability (crab-agent)
 
-**Reliability Subsystem**:
+**Reliability Subsystem** (post Phase 4):
 ```
-error_recovery -> retry -> rollback
-summarizer (conversation summary generation)
-repl_commands (/undo /branch /fork)
+error_recovery::category + error_recovery::strategy    -- classify + recommend Retry/AskUser/Abort
+teams::retry                                           -- exponential backoff
+file_history                                           -- per-session Edit/Write snapshots, /rewind
+summarizer + session::runtime::compact_conversation    -- /compact and auto-compact at 80% watermark
 ```
+
+CircuitBreaker and GracefulDegradation were dropped (CCB has no equivalents).
+The in-memory `rollback.rs` UndoStack was replaced with the file-backed
+`file_history/` module that mirrors CCB's `src/utils/fileHistory.ts`.
 
 
 ### 11.4 TUI Component Library (crab-tui, 21 Components)

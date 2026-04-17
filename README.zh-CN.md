@@ -17,7 +17,7 @@
 
 ---
 
-> **状态：积极开发中** -- 49 个内置工具、6 种权限模式、扩展思维、多 Agent 协调、结构化消息模型 TUI（187 spinner verbs），17 个 crate 共 3900+ 测试、11 万行代码。零 `todo!()` 残留。
+> **状态：积极开发中** -- 49 个内置工具、33 条斜杠命令、6 种权限模式、扩展思维、三层多 Agent 架构（Teams / Swarm / Coordinator Mode）、文件历史回滚、结构化消息模型 TUI（187 spinner verbs），17 个 crate 共 3800+ 测试、11 万行代码。零 `todo!()` 残留。
 
 ## 什么是 Crab Code？
 
@@ -110,9 +110,27 @@ Crab Code 支持 Claude Code 的 `settings.json` 格式，包括 `env` 字段：
 
 支持工具级过滤：`--allowedTools` / `--disallowedTools`，支持 glob 模式（如 `Bash(git:*)`、`Edit`）。
 
-### 斜杠命令（20+）
+### 多 Agent 架构
 
-`/help` `/clear` `/compact` `/cost` `/status` `/memory` `/init` `/model` `/config` `/permissions` `/resume` `/history` `/export` `/doctor` `/diff` `/review` `/plan` `/exit` `/fast` `/effort` `/add-dir` `/files` `/thinking` 等。
+在 `crates/agent` 内按三个语义层拆分实现：
+
+- **Layer 1 — Teams**（无条件基础设施）：`WorkerPool`、每 Agent 一个 `MessageRouter` 邮箱、`Team` / `TeamMember` 花名册、共享 `TaskList`（可选 `fd-lock` 文件锁的 `claim_task` 支持跨进程协作）、Spawner 后端（in-process、tmux）。
+- **Layer 2a — Swarm**（默认拓扑）：对等 `TeamMode::PeerToPeer`，不是独立模块，只是未启用叠加层时的默认用法。
+- **Layer 2b — Coordinator Mode**（`CRAB_COORDINATOR_MODE=1` 门控叠加层）：Coordinator 的工具仅剩 `{Agent, SendMessage, TaskStop}`；它派出的 Worker 失去 `{TeamCreate, TeamDelete, SendMessage}`；Coordinator 的 system prompt 追加反模式禁令段（"先理解再分配"）。已全单元测试覆盖。
+
+### 文件历史与回滚
+
+每个会话在 `~/.crab/file-history/{session_id}/` 保存自己的快照库，设计对齐 Claude Code 的 `fileHistory.ts` / `/rewind`：每次文件编辑记录为 `{path-hash}@v{version}`，每会话 100 份上限 + LRU 淘汰。`/rewind [path]` 斜杠命令已在 REPL 接入；Edit/Write/Notebook 工具级别的 `track_edit` 钩子是后续计划。
+
+### 上下文压缩
+
+显式 `/compact`，或在对话越过模型上下文窗口 80% 时自动触发。启发式摘要器（无额外 LLM 调用）抽出 decisions / code changes / unresolved issues / topics，用一条摘要消息替换整条对话历史，保留 system prompt、会话 id 与费用累加器。会 emit `Event::CompactStart` / `Event::CompactEnd`，UI 可订阅。
+
+### 斜杠命令（33）
+
+REPL 在每条用户输入上先看 `/<letter>…` 前缀，命中就走 `SlashCommandRegistry` 分发，不发给 LLM；`/tmp/foo` 这类路径仍按普通输入透传。
+
+`/help` `/clear` `/compact` `/cost` `/status` `/memory` `/init` `/model` `/config` `/permissions` `/resume` `/history` `/export` `/doctor` `/diff` `/review` `/plan` `/exit` `/fast` `/effort` `/add-dir` `/files` `/thinking` `/rewind` `/skills` `/plugin` `/mcp` `/branch` `/commit` `/theme` `/keybindings` `/copy` `/rename`
 
 ### LLM 提供商
 
@@ -134,13 +152,20 @@ Crab Code 支持 Claude Code 的 `settings.json` 格式，包括 `env` 字段：
 - `--resume <id>` 恢复指定会话
 - `--fork-session` 恢复时分叉
 - `--name` 友好会话名称
-- 上下文窗口 80% 阈值自动压缩
+- 上下文窗口 80% 阈值自动压缩（见上文 *上下文压缩*）
+- 每会话文件历史快照支持 `/rewind`（见上文 *文件历史与回滚*）
 
 ### Hook 系统
 
 - `PreToolUse` / `PostToolUse` / `UserPromptSubmit` 触发器
 - Shell 命令执行，返回 Allow / Deny / Modify
 - 在 `settings.json` 中配置
+
+### 实验性 Cargo Feature（默认关闭）
+
+- `auto-dream` — 后台内存整理循环。对齐 CCB `src/services/autoDream/`：三重门禁（最小小时数、最小会话数、锁文件）+ CCB 风格 consolidation prompt 模板已就位；实际调 LLM 的 forked-agent 运行器仍是桩，留作后续。env：`CRAB_AUTO_DREAM=1`、`CRAB_AUTO_DREAM_MIN_HOURS`、`CRAB_AUTO_DREAM_MIN_SESSIONS`。
+- `proactive` — CCB `feature('PROACTIVE')` 的占位。当前仅编译模块骨架，真实实现待定。
+- `mem-ranker` — 启用 `crab-memory` 内的 ML 内存排序。
 
 ### 交互式 TUI
 
@@ -209,10 +234,14 @@ crab auth login                   # 配置认证
 
 ```bash
 cargo build --workspace                    # 构建全部
-cargo test --workspace                     # 运行所有测试（3900+）
+cargo test --workspace                     # 运行所有测试（3800+）
 cargo clippy --workspace -- -D warnings    # Lint 检查
 cargo fmt --all --check                    # 格式检查
 cargo run --bin crab                       # 运行 CLI
+
+# 实验特性（默认关闭）
+cargo build -p crab-agent --features auto-dream    # 启用 auto-dream 模块
+cargo build -p crab-agent --features proactive     # 启用 proactive 骨架
 ```
 
 ## 对比
@@ -232,7 +261,7 @@ cargo run --bin crab                       # 运行 CLI
 
 欢迎参与！以下是需要帮助的方向：
 
-- 对齐 Claude Code 功能
+- 对齐 Claude Code 功能（剩余缺口：auto-dream forked-agent 运行器、文件历史的工具级 track_edit 钩子、proactive mini-agent）
 - OS 级沙箱（Landlock / Seatbelt / Windows Job Object）
 - 端到端集成测试
 - 更多 LLM 提供商测试
