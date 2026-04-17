@@ -901,6 +901,7 @@ dependencies = [
 name = "crab-job"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "crab-common",
  "crab-core",
  "croner",
@@ -908,6 +909,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 

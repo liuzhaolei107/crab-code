@@ -15,10 +15,17 @@ serde.workspace = true
 serde_json.workspace = true
 # scheduling
 tokio.workspace = true
+tokio-util.workspace = true
 croner.workspace = true
+chrono.workspace = true
 # diagnostics
 thiserror.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+# test-util gates tokio::time::{advance, pause} used to drive deterministic
+# scheduler tests; not needed at runtime.
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

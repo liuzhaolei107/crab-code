@@ -121,6 +121,7 @@ infer = "0.19"
 shellexpand = "3"
 axum = { version = "0.8", features = ["ws"] }
 croner = "3"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 # Linux-only process sandbox
 landlock = "0.4"
 # Deferred external deps for computer_use (declared here so Phase 4 doesn't touch workspace)

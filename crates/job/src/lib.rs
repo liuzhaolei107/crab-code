@@ -6,24 +6,41 @@
 //! One API, one view — the TUI can render "pending jobs", the web UI can
 //! show a jobs panel, and the CLI can offer `crab jobs list / cancel`.
 //!
-//! ## Capabilities (planned; scaffolded here)
+//! ## Quick start
 //!
-//! - **One-shot** — "run task once after delay / at instant".
-//! - **Interval** — "run every N seconds" (e.g. MCP heartbeat).
-//! - **Cron** — "every day at 09:00" via the [`croner`] crate's expressions.
-//! - **Persistence** — cron jobs survive process restart; heartbeats are
-//!   in-memory only. Backend trait decides per-kind policy.
+//! ```no_run
+//! use std::{sync::Arc, time::Duration};
+//! use crab_job::{FnHandler, JobHandler, JobScheduler, JobSpec};
 //!
-//! ## Module layout (scaffold; full impl in Phase α)
-//!
-//! ```text
-//! crab-job/
-//! ├── id.rs         JobId / JobHandle    ← this commit
-//! ├── spec.rs       JobSpec enum (one-shot | interval | cron)
-//! ├── scheduler.rs  JobScheduler + JobHandler trait — Phase α
-//! └── storage/      persistence backends (memory / json-file) — Phase α
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let sched = JobScheduler::new();
+//! let handler: Arc<dyn JobHandler> =
+//!     Arc::new(FnHandler(|_id| async move { println!("tick"); }));
+//! sched
+//!     .schedule(
+//!         JobSpec::Interval { period: Duration::from_secs(30), initial_delay: Duration::from_secs(30) },
+//!         handler,
+//!     )
+//!     .await?;
+//! # Ok(()) }
 //! ```
+//!
+//! ## Module layout
+//!
+//! - [`id`] — [`JobId`] / [`JobKind`]
+//! - [`spec`] — [`JobSpec`] enum (one-shot / interval / cron)
+//! - [`handler`] — [`JobHandler`] trait + [`FnHandler`] helper
+//! - [`scheduler`] — [`JobScheduler`] + [`JobSnapshot`] + errors
+//!
+//! Persistence for cron jobs (survives process restart) lands later
+//! under a `storage/` submodule once there is a real consumer.
 
+pub mod handler;
 pub mod id;
+pub mod scheduler;
+pub mod spec;
 
+pub use handler::{FnHandler, JobHandler};
 pub use id::{JobId, JobKind};
+pub use scheduler::{JobScheduler, JobSnapshot, ScheduleError};
+pub use spec::JobSpec;
