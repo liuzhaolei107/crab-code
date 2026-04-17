@@ -11,8 +11,8 @@
 //! - `core::permission::*` — tool-execution permission system (can this
 //!   bash command run? does the user trust this path?). That applies to
 //!   all tools regardless of origin.
-//! - The future `crab-bridge::permission_relay` module (not built yet) —
-//!   CCB's remote permission relay over Telegram / iMessage / Discord,
+//! - The future `crab-remote::server::permission_relay` module (not built
+//!   yet) — remote permission relay over Telegram / iMessage / Discord,
 //!   where the user approves or denies via an external chat message.
 //!
 //! This module is about **MCP server exposure**: "server `github` should

@@ -111,7 +111,7 @@ jsonschema = "0.46"
 schemars = "1"
 nucleo-matcher = "0.3"
 
-# ─── Phase 1 新增：bridge / remote / sandbox 所需 ───
+# ─── remote / sandbox / jobs 所需 ───
 jsonwebtoken = "10"
 # ─── Phase 7-auth：MCP OAuth 打开浏览器 + URL 编码 ───
 webbrowser = "1"
@@ -151,7 +151,6 @@ crab-skill = { path = "crates/skill" }
 crab-memory = { path = "crates/memory" }
 crab-telemetry = { path = "crates/telemetry" }
 crab-engine = { path = "crates/engine" }
-crab-bridge = { path = "crates/bridge" }
 crab-remote = { path = "crates/remote" }
 crab-sandbox = { path = "crates/sandbox" }
 

@@ -1,8 +1,7 @@
-use crate::bridge::{BridgeStatus, ClientSource};
 use crate::model::TokenUsage;
 use crate::proactive::ProactiveSuggestion;
 use crate::query::QueryPhase;
-use crate::remote::{RemoteSessionId, RemoteSessionInfo};
+use crate::remote::{ClientSource, RemoteSessionId, RemoteSessionInfo, RemoteStatus};
 use crate::sandbox::{SandboxBackend, ViolationInfo};
 use crate::tool::ToolOutput;
 use serde_json::Value;
@@ -129,21 +128,21 @@ pub enum Event {
         usage: TokenUsage,
     },
 
-    // ─── Bridge (v2.3) ───
-    /// Bridge server status changed.
-    BridgeStatusChanged(BridgeStatus),
+    // ─── Remote server (v2.3) ───
+    /// Remote-control server status changed.
+    RemoteStatusChanged(RemoteStatus),
 
-    /// A remote client attached to the bridge.
-    BridgeClientConnected {
+    /// A remote client attached to the server.
+    RemoteClientConnected {
         client_id: String,
         source: ClientSource,
     },
 
-    /// A remote client detached from the bridge.
-    BridgeClientDisconnected { client_id: String },
+    /// A remote client detached from the server.
+    RemoteClientDisconnected { client_id: String },
 
     // ─── Remote sessions (v2.3) ───
-    /// A remote claude.ai session was started.
+    /// A remote session was started.
     RemoteSessionStarted(RemoteSessionInfo),
 
     /// A remote session reported a progress step.
@@ -526,11 +525,11 @@ mod tests {
     }
 
     #[test]
-    fn bridge_status_changed_event() {
-        use crate::bridge::BridgeStatus;
-        let event = Event::BridgeStatusChanged(BridgeStatus::Listening { port: 9000 });
+    fn remote_status_changed_event() {
+        use crate::remote::RemoteStatus;
+        let event = Event::RemoteStatusChanged(RemoteStatus::Listening { port: 9000 });
         let json = serde_json::to_string(&event).unwrap();
-        assert!(json.contains("BridgeStatusChanged"));
+        assert!(json.contains("RemoteStatusChanged"));
     }
 
     #[test]

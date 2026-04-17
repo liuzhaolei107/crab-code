@@ -1,16 +1,30 @@
-//! claude.ai outbound client for Crab Code — `RemoteTrigger`, `ScheduleWakeup`,
-//! and remote agent sessions. Does not touch local session state.
+//! `crab-remote` — the remote-control protocol and both endpoints.
 //!
-//! Populated incrementally. Phase 1 only lays out the module tree.
+//! This crate is crab-code's own remote-control surface: a JSON-RPC-over-WebSocket
+//! protocol (the `crab-proto`) together with the client and server that speak it.
+//! It is the architectural hinge for every non-CLI entry point — web UI, mobile
+//! app, desktop app, and headless daemon all attach via this surface.
+//!
+//! ## Module layout (planned; landed incrementally)
+//!
+//! ```text
+//! crab-remote/
+//! ├── protocol/     wire types (JSON-RPC envelopes, message enums)  ← this commit
+//! ├── auth/         shared auth types (JWT claims, trusted devices) — Phase α
+//! ├── client/       outbound client: `RemoteClient::connect(url)`   — Phase α
+//! └── server/       inbound server: `RemoteServer` + `SessionHandler` trait — Phase α
+//! ```
+//!
+//! Protocol types derive [`schemars::JsonSchema`] so TS / Swift / Kotlin client
+//! stubs can be generated from the same source — critical for supporting web /
+//! mobile / desktop clients that are not written in Rust.
+//!
+//! ## Relation to `crab-mcp`
+//!
+//! Same shape as `crab-mcp` (client + server + protocol in one crate), different
+//! wire language: `crab-mcp` speaks MCP (external standard, tool-focused), this
+//! crate speaks `crab-proto` (our own, session-focused).
 
-pub mod auth;
-pub mod client;
-pub mod config;
-pub mod error;
-pub mod permission;
+pub mod protocol;
 
-#[cfg(feature = "trigger")]
-pub mod trigger;
-
-#[cfg(feature = "session")]
-pub mod session;
+pub use protocol::PROTOCOL_VERSION;

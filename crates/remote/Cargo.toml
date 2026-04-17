@@ -5,29 +5,34 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "claude.ai outbound client — RemoteTrigger / ScheduleWakeup / remote sessions"
-
-[features]
-default = ["trigger"]
-full = ["trigger", "session", "schedule"]
-trigger = []
-session = ["dep:tokio-tungstenite"]
-schedule = ["dep:croner"]
+description = "crab-proto — remote-control protocol (server + client + wire types)"
 
 [dependencies]
 crab-common.workspace = true
 crab-core.workspace = true
 crab-config.workspace = true
 crab-auth.workspace = true
-reqwest.workspace = true
+# protocol / serde
 serde.workspace = true
 serde_json.workspace = true
+schemars.workspace = true
+# server side
+axum = { workspace = true, optional = true }
+tokio-tungstenite.workspace = true
+jsonwebtoken.workspace = true
+# client side
+reqwest.workspace = true
+# shared
+tokio.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-tokio.workspace = true
-# optional
-tokio-tungstenite = { workspace = true, optional = true }
-croner = { workspace = true, optional = true }
+
+[features]
+# Server side is on by default (multi-entry-point architecture: web/app/desktop
+# all attach via server). `rest-api` stays optional because axum HTTP routes are
+# only needed by the REST companion API, not the core WS session-attach flow.
+default = []
+rest-api = ["dep:axum"]
 
 [lints]
 workspace = true

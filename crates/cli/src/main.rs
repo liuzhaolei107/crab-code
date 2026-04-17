@@ -1305,11 +1305,11 @@ fn event_to_json(event: &Event) -> Option<Value> {
                 "cache_creation_tokens": usage.cache_creation_tokens,
             },
         })),
-        // Bridge/remote/sandbox/proactive/query-phase events are not rendered
+        // Remote/sandbox/proactive/query-phase events are not rendered
         // in -p/--print structured output; they are for TUI and SDK consumers.
-        Event::BridgeStatusChanged(_)
-        | Event::BridgeClientConnected { .. }
-        | Event::BridgeClientDisconnected { .. }
+        Event::RemoteStatusChanged(_)
+        | Event::RemoteClientConnected { .. }
+        | Event::RemoteClientDisconnected { .. }
         | Event::RemoteSessionStarted(_)
         | Event::RemoteSessionProgress { .. }
         | Event::RemoteSessionCompleted { .. }
