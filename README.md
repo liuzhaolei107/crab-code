@@ -17,18 +17,18 @@
 
 ---
 
-> **Status: Active Development** -- 49 built-in tools, 33 slash commands, 6 permission modes, extended thinking, three-layer multi-agent architecture (Teams / Swarm / Coordinator Mode), file-history rewinding, structured message TUI with 187 spinner verbs, 3800+ tests across 17 crates, 110k+ LOC. Zero `todo!()` macros.
+> **Status: Active Development** -- 46 built-in tools · 33 slash commands · 6 permission modes · three-layer multi-agent architecture · file-history rewinding · extended thinking · TUI with 188 spinner verbs · 3800+ tests · 24 crates · ~129k LOC.
 
 ## What is Crab Code?
 
 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) pioneered the agentic coding CLI -- an AI that doesn't just suggest code, but thinks, plans, and executes autonomously in your terminal.
 
-**Crab Code** brings this experience to the open-source world, independently built from the ground up in Rust:
+**Crab Code** brings that experience to the open-source world, independently built from the ground up in Rust:
 
 - **Fully open source** -- Apache 2.0, no feature-gating, no black box
 - **Rust-native performance** -- instant startup, minimal memory, no Node.js overhead
 - **Model agnostic** -- Claude, GPT, DeepSeek, Qwen, Ollama, or any OpenAI-compatible API
-- **Secure** -- 6 permission modes (default, acceptEdits, dontAsk, bypassPermissions, plan, auto)
+- **Secure** -- 6 permission modes + tool-level allow/deny lists
 - **MCP compatible** -- stdio, SSE, and WebSocket transports
 - **Claude Code aligned** -- CLI flags, slash commands, tools, and workflows match Claude Code behavior
 
@@ -48,7 +48,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 # Single-shot mode
 ./target/release/crab "explain this codebase"
 
-# Print mode (non-interactive)
+# Print mode (non-interactive, reads from stdin if no prompt given)
 ./target/release/crab -p "fix the bug in main.rs"
 
 # With a specific provider
@@ -57,7 +57,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 ### Claude Code Compatible Configuration
 
-Crab Code supports Claude Code's `settings.json` format, including the `env` field:
+Crab Code reads Claude Code's `settings.json` format, including the `env` field:
 
 ```json
 // ~/.crab/settings.json
@@ -75,143 +75,136 @@ Crab Code supports Claude Code's `settings.json` format, including the `env` fie
 ### Core Agent Loop
 
 - **Streaming SSE** -- real-time token-by-token output from LLM APIs
-- **Tool execution cycle** -- model reasoning -> tool call -> permission check -> execute -> result -> next turn
-- **Extended thinking** -- budget_tokens support for deep reasoning (Anthropic thinking blocks)
+- **Tool execution cycle** -- model reasoning → tool call → permission check → execute → result → next turn
+- **Extended thinking** -- `budget_tokens` support for deep reasoning (Anthropic thinking blocks)
 - **Retry + fallback** -- automatic retry on transient errors, model fallback on overload
-- **Effort levels** -- low/medium/high/max mapped to API parameters
+- **Effort levels** -- low / medium / high / max mapped to API parameters
+- **Auto-compaction** -- heuristic summarizer triggers at 80% context-window watermark; `/compact` to invoke manually
 
-### Built-in Tools (49)
+### Built-in Tools (46)
 
 | Category | Tools |
 |----------|-------|
-| File I/O | Read, Write, Edit, Glob, Grep |
-| Execution | Bash, PowerShell (Windows) |
-| Agent | AgentTool (sub-agents), TeamCreate, TeamDelete, SendMessage |
-| Tasks | TaskCreate, TaskGet, TaskList, TaskUpdate, TaskStop, TaskOutput |
-| Scheduling | CronCreate, CronDelete, CronList |
-| Planning | EnterPlanMode, ExitPlanMode |
-| Notebook | NotebookEdit, NotebookRead |
-| Web | WebFetch, WebSearch |
-| LSP | LSP (go-to-definition, references, hover, symbols) |
-| Worktree | EnterWorktree, ExitWorktree |
-| Remote | RemoteTrigger |
-| Other | AskUserQuestion, Skill |
-
-### Permission System
-
-6 modes aligned with Claude Code:
-
-- **default** -- prompt for potentially dangerous operations
-- **acceptEdits** -- auto-approve file edits, prompt for Bash
-- **dontAsk** -- auto-approve everything (no prompts)
-- **bypassPermissions** -- skip all checks
-- **plan** -- read-only mode, requires plan approval before execution
-- **auto** -- AI classifier auto-approves low-risk operations
-
-Plus tool-level filtering with `--allowedTools` / `--disallowedTools` supporting glob patterns (`Bash(git:*)`, `Edit`).
+| File I/O | `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ImageRead` |
+| Execution | `Bash`, `PowerShell` (Windows) |
+| Sub-agents | `Agent`, `TeamCreate`, `TeamDelete`, `SendMessage` |
+| Tasks | `TaskCreate`, `TaskGet`, `TaskList`, `TaskUpdate`, `TaskStop`, `TaskOutput`, `TodoWrite` |
+| Scheduling | `CronCreate`, `CronDelete`, `CronList` |
+| Planning | `EnterPlanMode`, `ExitPlanMode`, `VerifyPlanExecution` |
+| Notebook | `NotebookEdit`, `NotebookRead` |
+| Web | `WebFetch`, `WebSearch`, `WebBrowser` |
+| LSP | `LSP` (definition, references, hover, symbols) |
+| Worktree | `EnterWorktree`, `ExitWorktree` |
+| MCP | `ListMcpResources`, `ReadMcpResource`, `McpAuth` |
+| Files | `SendUserFile` |
+| Other | `AskUserQuestion`, `Skill`, `Sleep`, `Snip`, `Brief`, `Config`, `ToolSearch`, `Monitor`, `RemoteTrigger` |
 
 ### Multi-Agent Architecture
 
-Three conceptually distinct layers, implemented as independent modules inside `crates/agent`:
+Three conceptually distinct layers in `crates/agent/`:
 
-- **Layer 1 — Teams** (unconditional base plumbing): `WorkerPool`, per-agent `MessageRouter` mailbox, `Team` / `TeamMember` roster, shared `TaskList` with optional `fd-lock` file-locked `claim_task` for cross-process teammates, spawner backends (in-process, tmux).
-- **Layer 2a — Swarm** (default topology): peer-to-peer `TeamMode::PeerToPeer`. No extra module — it is just the default usage pattern when no overlay is active.
-- **Layer 2b — Coordinator Mode** (gated overlay via `CRAB_COORDINATOR_MODE=1`): the coordinator's tool registry is reduced to `{Agent, SendMessage, TaskStop}`, workers spawned through it lose `{TeamCreate, TeamDelete, SendMessage}`, and the coordinator's system prompt carries an anti-pattern guardrail ("understand before delegating"). Fully unit-tested.
+- **Teams** — base infrastructure: `WorkerPool`, per-agent mailbox router, shared `TaskList` (`fd-lock` file-locked `claim_task` for cross-process teammates), spawner backends (in-process, tmux).
+- **Swarm** — the default flat topology (`TeamMode::PeerToPeer`). No extra module — it's just how teammates cooperate when no overlay is active.
+- **Coordinator Mode** — a star-topology overlay gated on `CRAB_COORDINATOR_MODE=1`. The coordinator's tool registry is reduced to `{Agent, SendMessage, TaskStop}`; workers it spawns lose `{TeamCreate, TeamDelete, SendMessage}`; the coordinator's system prompt carries an anti-pattern guardrail.
 
 ### File History & Rewind
 
-Every user session gets its own snapshot store at `~/.crab/file-history/{session_id}/`. Designed to mirror Claude Code's `fileHistory.ts` / `/rewind` behavior: each file edit is recorded as `{path-hash}@v{version}`, capped at 100 snapshots per session with LRU eviction. The `/rewind [path]` slash command is wired in the REPL; tool-level `track_edit` hooks on Edit/Write/Notebook are a planned follow-up.
+Every session snapshots file edits under `~/.crab/file-history/{session_id}/` (at most 100 per session, LRU-evicted). `/rewind [path]` restores a file to an earlier version. Tool-level `track_edit` hooks on `Edit` / `Write` / `Notebook` are a planned follow-up; the `file_history` primitive is already unit-tested.
 
-### Context Compaction
+### Permission System
 
-`/compact` explicitly, or automatic compaction when the conversation crosses 80% of the model's context window. A heuristic summarizer (no extra LLM call) extracts decisions, code changes, unresolved issues, and topics, then replaces the conversation history with a single summary message while preserving the system prompt, session id, and cost accumulator. Emits `Event::CompactStart` and `Event::CompactEnd` for UI observability.
+6 modes aligned with Claude Code behaviour:
+
+- **default** — prompt for potentially dangerous operations
+- **acceptEdits** — auto-approve file edits, still prompt for Bash
+- **trust-project** — auto-approve in-project writes; out-of-project and dangerous ops still prompt
+- **dontAsk** — auto-approve everything (no prompts)
+- **dangerously** — auto-approve everything except `denied_tools` (use with care)
+- **plan** — read-only planning mode; mutations require explicit plan approval
+
+Plus tool-level filtering via `--allowedTools` / `--disallowedTools` with glob patterns (`Bash(git:*)`, `mcp__*`, `Edit`).
 
 ### Slash Commands (33)
 
-REPL intercepts `/<letter>…` input and dispatches through `SlashCommandRegistry` before anything hits the LLM, so paths like `/tmp/foo` still pass through as prompts.
+The REPL intercepts input matching `/<letter>…` and dispatches through `SlashCommandRegistry` before the prompt reaches the LLM, so paths like `/tmp/foo` still pass through as prompts.
 
 `/help` `/clear` `/compact` `/cost` `/status` `/memory` `/init` `/model` `/config` `/permissions` `/resume` `/history` `/export` `/doctor` `/diff` `/review` `/plan` `/exit` `/fast` `/effort` `/add-dir` `/files` `/thinking` `/rewind` `/skills` `/plugin` `/mcp` `/branch` `/commit` `/theme` `/keybindings` `/copy` `/rename`
 
 ### LLM Providers
 
-- **Anthropic** -- Messages API with SSE streaming (default: `claude-sonnet-4-6`)
-- **OpenAI-compatible** -- Chat Completions API (GPT, DeepSeek, Qwen, Ollama, vLLM, etc.)
-- **AWS Bedrock** -- SigV4 signing with inference profile discovery
-- **GCP Vertex AI** -- ADC authentication
+- **Anthropic** — Messages API with SSE streaming (default `claude-sonnet-4-6`)
+- **OpenAI-compatible** — Chat Completions API (GPT, DeepSeek, Qwen, Ollama, vLLM, …)
+- **AWS Bedrock** — SigV4 signing with inference profile discovery
+- **GCP Vertex AI** — Application Default Credentials
 
 ### MCP (Model Context Protocol)
 
 - stdio, SSE, and WebSocket transports
-- `McpToolAdapter` bridges MCP tools to native `Tool` trait
+- `McpToolAdapter` bridges MCP tools to the native `Tool` trait
 - Configure via `~/.crab/settings.json` or `--mcp-config`
 
 ### Session Management
 
-- Auto-save conversation history
-- `--continue` / `-c` resume last session
-- `--resume <id>` resume specific session
-- `--fork-session` fork on resume
+- Auto-save conversation history to `~/.crab/sessions/`
+- `--continue` / `-c` resumes the last session
+- `--resume <id>` resumes a specific session
+- `--fork-session` branches on resume instead of continuing in-place
 - `--name` friendly session names
-- Auto-compaction at 80% context window threshold (see *Context Compaction* above)
-- Per-session file-history snapshots for `/rewind` (see *File History & Rewind* above)
+- Per-session file-history snapshots for `/rewind`
 
 ### Hook System
 
 - `PreToolUse` / `PostToolUse` / `UserPromptSubmit` triggers
-- Shell command execution with Allow / Deny / Modify responses
+- Shell command execution with `Allow` / `Deny` / `Modify` responses
 - Configure in `settings.json`
-
-### Experimental Cargo Features (off by default)
-
-- `auto-dream` — background memory-consolidation cycles. Mirrors CCB's `src/services/autoDream/`: three-gate scheduler (min hours, min sessions, lock file) and the CCB consolidation prompt template are ready; the forked-agent LLM runner is stubbed and lands in a follow-up. Env: `CRAB_AUTO_DREAM=1`, `CRAB_AUTO_DREAM_MIN_HOURS`, `CRAB_AUTO_DREAM_MIN_SESSIONS`.
-- `proactive` — placeholder for CCB's `feature('PROACTIVE')` mini-agent. Compiles the module skeleton only; real implementation pending.
-- `mem-ranker` — enable the ML-based memory ranker inside `crab-memory`.
 
 ### Interactive TUI
 
-- ratatui + crossterm terminal UI
+- `ratatui` + `crossterm` terminal UI, immediate-mode rendering
 - Markdown rendering with syntax highlighting
-- Vim mode editing
+- Vim-mode editing
 - Autocomplete for slash commands and file paths
 - Permission dialogs
 - Cost tracking status bar
+- 188 spinner verbs mirrored from Claude Code
 
 ## Architecture
 
-4-layer, 17-crate Rust workspace:
+24 Rust crates organised in 4 layers:
 
 ```
-Layer 4 (Entry)     cli          daemon        xtask
-                      |              |
-Layer 3 (Orch)     agent         session
-                      |              |
-Layer 2 (Service)  api   tools   mcp   tui   skill   plugin   telemetry
-                      |     |      |     |      |         |
-Layer 1 (Found)    common   core   config   auth
+Layer 4 (Entry)     cli          daemon
+                      |             |
+Layer 3 (Orch)     agent      engine      session
+                      |          |           |
+Layer 2 (Service)  api  tools  mcp  tui  skill  plugin  telemetry  acp  ide  job  remote  sandbox
+                      |    |     |    |     |       |         |
+Layer 1 (Found)    common   core   config   auth   fs   memory   process
 ```
 
 Key design decisions:
-- **Async runtime**: tokio (multi-threaded)
-- **LLM dispatch**: `enum LlmBackend` -- zero dynamic dispatch, exhaustive match
-- **Tool system**: `trait Tool` with JSON Schema discovery, `ToolRegistry` + `ToolExecutor`
-- **TUI**: ratatui + crossterm, immediate-mode rendering
-- **Error handling**: `thiserror` for libraries, `anyhow` for application
+- **Async runtime** — tokio (multi-threaded)
+- **LLM dispatch** — `enum LlmBackend`; zero dynamic dispatch, exhaustive match
+- **Tool system** — `trait Tool` + `ToolRegistry` + `ToolExecutor`, discovered via JSON Schema
+- **TUI** — `ratatui` + `crossterm`, immediate-mode
+- **Error handling** — `thiserror` for libraries, `anyhow` for the application
 
 > Full architecture details: [`docs/architecture.md`](docs/architecture.md)
 
 ## Configuration
 
 ```bash
-# Global config
+# Global
 ~/.crab/settings.json        # API keys, provider settings, MCP servers
 ~/.crab/memory/              # Persistent memory files
 ~/.crab/sessions/            # Saved conversation sessions
+~/.crab/file-history/        # Per-session pre-edit snapshots
 ~/.crab/skills/              # Global skill definitions
 
-# Project config
-your-project/CRAB.md         # Project instructions (like CLAUDE.md)
-your-project/.crab/settings.json  # Project-level overrides
-your-project/.crab/skills/   # Project-specific skills
+# Project
+your-project/CRAB.md                # Project instructions (like CLAUDE.md)
+your-project/.crab/settings.json    # Project-level overrides
+your-project/.crab/skills/          # Project-specific skills
 ```
 
 ## CLI Usage
@@ -221,28 +214,33 @@ crab                              # Interactive TUI mode
 crab "your prompt"                # Single-shot mode
 crab -p "your prompt"             # Print mode (non-interactive)
 crab -c                           # Continue last session
-crab --provider openai            # Use OpenAI-compatible provider
-crab --model opus                 # Model alias (sonnet/opus/haiku)
+crab --provider openai            # Use an OpenAI-compatible provider
+crab --model opus                 # Model alias (sonnet / opus / haiku)
 crab --permission-mode plan       # Plan mode
-crab --effort high                # Set effort level
+crab --effort high                # Set reasoning effort
 crab --resume <session-id>        # Resume a saved session
 crab doctor                       # Run diagnostics
 crab auth login                   # Configure authentication
 ```
+
+Insider toggles (no CLI flag, env only — keeps the surface hidden from `--help`):
+- `CRAB_COORDINATOR_MODE=1` — enables Coordinator Mode overlay
+- `CRAB_AUTO_DREAM=1` — arms the `auto-dream` memory-consolidation gate (requires the `auto-dream` cargo feature)
 
 ## Build & Development
 
 ```bash
 cargo build --workspace                    # Build all
 cargo test --workspace                     # Run all tests (3800+)
-cargo clippy --workspace -- -D warnings    # Lint
+cargo clippy --workspace -- -D warnings    # Lint (CI treats warnings as errors)
 cargo fmt --all --check                    # Check formatting
 cargo run --bin crab                       # Run CLI
-
-# Experimental features (default off)
-cargo build -p crab-agent --features auto-dream    # Enable auto-dream module
-cargo build -p crab-agent --features proactive     # Enable proactive stubs
 ```
+
+Experimental cargo features (all default off):
+- `auto-dream` on `crab-agent` — CCB-aligned memory-consolidation scheduler (runner still stubbed)
+- `proactive` on `crab-agent` — placeholder matching CCB's `feature('PROACTIVE')` posture
+- `mem-ranker` on `crab-agent` — re-exports `crab-memory/mem-ranker`
 
 ## Comparison
 
@@ -254,14 +252,14 @@ cargo build -p crab-agent --features proactive     # Enable proactive stubs
 | Self-hosted | Yes | No | Yes | Yes |
 | MCP Support | stdio + SSE + WS | 6 transports | LSP | 2 transports |
 | TUI | ratatui | Ink (React) | Custom | ratatui |
-| Built-in Tools | 49 | 52 | ~10 | ~10 |
+| Built-in Tools | 46 | 52 | ~10 | ~10 |
 | Permission Modes | 6 | 6 | 2 | 3 |
 
 ## Contributing
 
-We'd love your help! See areas where we need contributions:
+Areas where we'd love help:
 
-- Claude Code feature alignment (remaining gaps: auto-dream forked-agent runner, tool-level file-history hooks, proactive mini-agent)
+- Claude Code feature alignment — remaining gaps include the `auto-dream` forked-agent runner, tool-level `track_edit` hooks on Edit / Write / Notebook, and the `proactive` mini-agent
 - OS-level sandboxing (Landlock / Seatbelt / Windows Job Object)
 - End-to-end integration testing
 - Additional LLM provider testing

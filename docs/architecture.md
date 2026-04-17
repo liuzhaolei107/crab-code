@@ -1,6 +1,6 @@
 # Crab Code Architecture
 
-> Version: v2.3
+
 > Updated: 2026-04-17
 > Changelog: +engine/remote/sandbox/acp/job (5 new crates; bridge merged into remote + claude.ai outbound dropped 2026-04); tui promoted Layer 2 → Layer 3; ide gets its own §6.24; crate count 17 → 24.
 
@@ -133,7 +133,7 @@
 | 3 | Terminal styling | chalk | crossterm Style | [docs.rs/crossterm](https://docs.rs/crossterm) |
 | 4 | Markdown rendering | marked | pulldown-cmark | [docs.rs/pulldown-cmark](https://docs.rs/pulldown-cmark) |
 | 5 | Syntax highlighting | highlight.js | syntect | [docs.rs/syntect](https://docs.rs/syntect) |
-| 6 | Fuzzy search | Fuse.js | nucleo *(planned)* | [docs.rs/nucleo](https://docs.rs/nucleo) |
+| 6 | Fuzzy search | Fuse.js | nucleo ** | [docs.rs/nucleo](https://docs.rs/nucleo) |
 
 ### 3.2 Network / API
 
@@ -226,11 +226,11 @@ crab-code/
 │   │       ├── model.rs               # ModelId, TokenUsage, CostTracker
 │   │       ├── permission/            # Permission system (module directory)
 │   │       │   ├── mod.rs             # PermissionMode, PermissionPolicy, re-exports
-│   │       │   ├── rule_parser.rs     # [P0] Rule AST parsing: "Bash(cmd:git*)" format
-│   │       │   ├── path_validator.rs  # [P0] File path permission engine, symlink resolution
-│   │       │   ├── denial_tracker.rs  # [P1] Consecutive denial counting, pattern detection
-│   │       │   ├── explainer.rs       # [P1] Human-readable permission decision explanation
-│   │       │   └── shadowed_rules.rs  # [P2] Shadowed rule detection
+│   │       │   ├── rule_parser.rs     # Rule AST parsing: "Bash(cmd:git*)" format
+│   │       │   ├── path_validator.rs  # File path permission engine, symlink resolution
+│   │       │   ├── denial_tracker.rs  # Consecutive denial counting, pattern detection
+│   │       │   ├── explainer.rs       # Human-readable permission decision explanation
+│   │       │   └── shadowed_rules.rs  # Shadowed rule detection
 │   │       ├── config.rs              # trait ConfigSource
 │   │       ├── event.rs               # Domain event enum (inter-crate decoupled communication)
 │   │       └── capability.rs          # Agent capability declaration
@@ -242,16 +242,16 @@ crab-code/
 │   │       ├── settings.rs            # settings.json read/write, layered merging
 │   │       ├── crab_md.rs             # CRAB.md parsing (project/user/global)
 │   │       ├── hooks.rs               # Hook definition and triggering
-│   │       ├── feature_flag.rs        # [P1] Runtime feature flag management (local evaluation)
-│   │       ├── policy.rs              # [P0] Permission policy restrictions, MDM/managed-path
-│   │       ├── keybinding.rs          # [P1] Keybinding schema/parsing/validation/resolver
+│   │       ├── feature_flag.rs        # Runtime feature flag management (local evaluation)
+│   │       ├── policy.rs              # Permission policy restrictions, MDM/managed-path
+│   │       ├── keybinding.rs          # Keybinding schema/parsing/validation/resolver
 │   │       ├── config_toml.rs         # config.toml multi-provider configuration
 │   │       ├── hot_reload.rs          # settings.json hot reload monitoring
 │   │       ├── permissions.rs         # Unified permission decision entry point
-│   │       ├── validation.rs          # [P1] Settings validation engine
-│   │       ├── settings_cache.rs      # [P1] Memoized settings cache
-│   │       ├── change_detector.rs     # [P2] Per-source change detection
-│   │       └── mdm.rs                 # [P2] Enterprise MDM managed settings
+│   │       ├── validation.rs          # Settings validation engine
+│   │       ├── settings_cache.rs      # Memoized settings cache
+│   │       ├── change_detector.rs     # Per-source change detection
+│   │       └── mdm.rs                 # Enterprise MDM managed settings
 │   │
 │   ├── auth/                          # crab-auth: authentication
 │   │   ├── Cargo.toml
@@ -292,10 +292,10 @@ crab-code/
 │   │       ├── context_optimizer.rs   # Context window optimization + smart truncation
 │   │       ├── retry_strategy.rs      # Enhanced retry strategy
 │   │       ├── error_classifier.rs    # Error classification (retryable/non-retryable)
-│   │       ├── token_estimation.rs    # [P1] Approximate token count estimation
-│   │       ├── ttft_tracker.rs        # [P1] Time-to-first-token latency tracking
-│   │       ├── fast_mode.rs           # [P1] Fast mode switching
-│   │       └── usage_tracker.rs       # [P1] Usage aggregation (per-session/model)
+│   │       ├── token_estimation.rs    # Approximate token count estimation
+│   │       ├── ttft_tracker.rs        # Time-to-first-token latency tracking
+│   │       ├── fast_mode.rs           # Fast mode switching
+│   │       └── usage_tracker.rs       # Usage aggregation (per-session/model)
 │   │
 │   ├── mcp/                           # crab-mcp: MCP facade + protocol adaptation layer
 │   │   ├── Cargo.toml
@@ -322,12 +322,12 @@ crab-code/
 │   │       ├── progress.rs            # Progress reporting
 │   │       ├── cancellation.rs        # Request cancellation mechanism
 │   │       ├── health.rs              # Health check + heartbeat
-│   │       ├── auth.rs                # [P1] MCP OAuth2/API key authentication
-│   │       ├── channel_permissions.rs # [P1] Channel-level tool/resource permissions
-│   │       ├── elicitation.rs         # [P1] User input request handling
-│   │       ├── env_expansion.rs       # [P1] ${VAR} environment variable expansion in config
-│   │       ├── official_registry.rs   # [P2] Official MCP server registry
-│   │       └── normalization.rs       # [P2] Tool/resource name normalization
+│   │       ├── auth.rs                # MCP OAuth2/API key authentication
+│   │       ├── channel_permissions.rs # Channel-level tool/resource permissions
+│   │       ├── elicitation.rs         # User input request handling
+│   │       ├── env_expansion.rs       # ${VAR} environment variable expansion in config
+│   │       ├── official_registry.rs   # Official MCP server registry
+│   │       └── normalization.rs       # Tool/resource name normalization
 │   │
 │   ├── fs/                            # crab-fs: file system
 │   │   ├── Cargo.toml
@@ -360,7 +360,7 @@ crab-code/
 │   │       │   ├── mod.rs
 │   │       │   ├── bash.rs            # BashTool
 │   │       │   ├── bash_security.rs   # Bash security checks
-│   │       │   ├── bash_classifier.rs # [P0] Bash command classification (read-only/write/dangerous)
+│   │       │   ├── bash_classifier.rs # Bash command classification (read-only/write/dangerous)
 │   │       │   ├── read.rs            # ReadTool
 │   │       │   ├── read_enhanced.rs   # Enhanced file reading (PDF/image/Notebook)
 │   │       │   ├── edit.rs            # EditTool (diff-based)
@@ -372,39 +372,39 @@ crab-code/
 │   │       │   ├── web_fetch.rs       # WebFetchTool
 │   │       │   ├── web_cache.rs       # Web page cache
 │   │       │   ├── web_formatter.rs   # Web page formatter
-│   │       │   ├── web_browser.rs     # [P2] Playwright/CDP browser automation
+│   │       │   ├── web_browser.rs     # Playwright/CDP browser automation
 │   │       │   ├── agent.rs           # AgentTool (sub-Agent)
-│   │       │   ├── send_message.rs    # [P0] SendMessageTool (cross-Agent messaging)
-│   │       │   ├── skill.rs           # [P0] SkillTool (invoke skill by name)
+│   │       │   ├── send_message.rs    # SendMessageTool (cross-Agent messaging)
+│   │       │   ├── skill.rs           # SkillTool (invoke skill by name)
 │   │       │   ├── notebook.rs        # NotebookTool
 │   │       │   ├── task.rs            # TaskCreate/Get/List/Update
-│   │       │   ├── todo_write.rs      # [P1] TodoWriteTool (structured TODO)
+│   │       │   ├── todo_write.rs      # TodoWriteTool (structured TODO)
 │   │       │   ├── team.rs            # TeamCreate/Delete
 │   │       │   ├── mcp_tool.rs        # MCP tool adapter
-│   │       │   ├── mcp_resource.rs    # [P1] ListMcpResources + ReadMcpResource
-│   │       │   ├── mcp_auth.rs        # [P1] MCP server authentication tool
+│   │       │   ├── mcp_resource.rs    # ListMcpResources + ReadMcpResource
+│   │       │   ├── mcp_auth.rs        # MCP server authentication tool
 │   │       │   ├── worktree.rs        # Git Worktree tool
 │   │       │   ├── ask_user.rs        # User interaction tool
 │   │       │   ├── image_read.rs      # Image reading tool
 │   │       │   ├── plan_mode.rs       # Plan mode tool
 │   │       │   ├── plan_file.rs       # Plan file operations
 │   │       │   ├── plan_approval.rs   # Plan approval tool
-│   │       │   ├── verify_plan.rs     # [P1] Plan execution verification
-│   │       │   ├── config_tool.rs     # [P1] ConfigTool (programmatic settings read/write)
-│   │       │   ├── brief.rs           # [P1] BriefTool (conversation summary)
-│   │       │   ├── snip.rs            # [P1] SnipTool (trim large tool output)
-│   │       │   ├── sleep.rs           # [P1] SleepTool (async wait)
-│   │       │   ├── tool_search.rs     # [P1] ToolSearchTool (search available tools)
-│   │       │   ├── monitor.rs         # [P2] MonitorTool (file/process monitoring)
-│   │       │   ├── workflow.rs        # [P2] WorkflowTool (multi-step workflow)
-│   │       │   ├── send_user_file.rs  # [P2] SendUserFileTool
+│   │       │   ├── verify_plan.rs     # Plan execution verification
+│   │       │   ├── config_tool.rs     # ConfigTool (programmatic settings read/write)
+│   │       │   ├── brief.rs           # BriefTool (conversation summary)
+│   │       │   ├── snip.rs            # SnipTool (trim large tool output)
+│   │       │   ├── sleep.rs           # SleepTool (async wait)
+│   │       │   ├── tool_search.rs     # ToolSearchTool (search available tools)
+│   │       │   ├── monitor.rs         # MonitorTool (file/process monitoring)
+│   │       │   ├── workflow.rs        # WorkflowTool (multi-step workflow)
+│   │       │   ├── send_user_file.rs  # SendUserFileTool
 │   │       │   ├── powershell.rs      # PowerShellTool
 │   │       │   ├── cron.rs            # CronCreate/Delete/List
 │   │       │   └── remote_trigger.rs  # RemoteTriggerTool
 │   │       ├── permission.rs          # Tool permission checking logic
 │   │       ├── sandbox.rs             # Tool sandbox policy
 │   │       ├── schema.rs              # Tool schema conversion
-│   │       └── tool_use_summary.rs    # [P1] Tool result summary generation
+│   │       └── tool_use_summary.rs    # Tool result summary generation
 │   │
 │   ├── session/                       # crab-session: session management
 │   │   ├── Cargo.toml
@@ -413,19 +413,19 @@ crab-code/
 │   │       ├── conversation.rs        # Conversation state machine, multi-turn management
 │   │       ├── context.rs             # Context window management
 │   │       ├── compaction.rs          # Message compaction strategies (5 levels)
-│   │       ├── micro_compact.rs       # [P0] Micro-compaction: per-message replacement of large tool results
-│   │       ├── auto_compact.rs        # [P1] Auto-compaction trigger + cleanup
-│   │       ├── snip_compact.rs        # [P1] Snip compaction: "[snipped]" marker
+│   │       ├── micro_compact.rs       # Micro-compaction: per-message replacement of large tool results
+│   │       ├── auto_compact.rs        # Auto-compaction trigger + cleanup
+│   │       ├── snip_compact.rs        # Snip compaction: "[snipped]" marker
 │   │       ├── history.rs             # Session persistence, recovery, search, export
 │   │       ├── memory.rs              # Memory system (file persistence)
-│   │       ├── memory_types.rs        # [P1] Memory type schema (user/project/feedback)
-│   │       ├── memory_relevance.rs    # [P1] Memory relevance matching and scoring
-│   │       ├── memory_extract.rs      # [P2] Automatic memory extraction
-│   │       ├── memory_age.rs          # [P2] Memory aging and decay
-│   │       ├── team_memory.rs         # [P2] Team memory paths and loading
+│   │       ├── memory_types.rs        # Memory type schema (user/project/feedback)
+│   │       ├── memory_relevance.rs    # Memory relevance matching and scoring
+│   │       ├── memory_extract.rs      # Automatic memory extraction
+│   │       ├── memory_age.rs          # Memory aging and decay
+│   │       ├── team_memory.rs         # Team memory paths and loading
 │   │       ├── cost.rs                # Token counting, cost tracking
 │   │       ├── template.rs            # Session template + quick recovery
-│   │       └── migration.rs           # [P2] Data migration system
+│   │       └── migration.rs           # Data migration system
 │   │
 │   ├── agent/                         # crab-agent: multi-Agent system
 │   │   ├── Cargo.toml
@@ -458,10 +458,10 @@ crab-code/
 │   │       ├── system_prompt/          # System prompt assembly
 │   │       │   ├── mod.rs              #   re-exports
 │   │       │   ├── builder.rs          #   Main assembly logic
-│   │       │   ├── git_context.rs      #   Git status injection (promoted from top-level Phase 4.2)
-│   │       │   ├── pr_context.rs       #   PR context injection (promoted Phase 4.2)
-│   │       │   └── tips.rs             #   Contextual tips (promoted Phase 4.2)
-│   │       ├── file_history/           # Per-session edit snapshots (Phase 4.5, CCB fileHistory)
+│   │       │   ├── git_context.rs      #   Git status injection 
+│   │       │   ├── pr_context.rs       #   PR context injection 
+│   │       │   └── tips.rs             #   Contextual tips 
+│   │       ├── file_history/           # Per-session edit snapshots (CCB fileHistory)
 │   │       │   ├── mod.rs
 │   │       │   └── snapshot.rs         #   FileHistory + Snapshot + rewind / rewind_to_latest
 │   │       ├── error_recovery/         # Classification + recovery strategy
@@ -509,10 +509,10 @@ crab-code/
 │   │       │   ├── shortcut_hint.rs   # Shortcut hint bar
 │   │       │   ├── status_bar.rs      # Enhanced status bar
 │   │       │   ├── tool_output.rs     # Collapsible tool output display
-│   │       │   ├── output_styles.rs   # [P1] Output formatting style configuration
-│   │       │   ├── permission_dialog.rs # [P1] Dedicated permission prompt dialog
-│   │       │   ├── session_sidebar.rs # [P1] Session sidebar
-│   │       │   └── context_collapse.rs # [P2] Context collapse/expand
+│   │       │   ├── output_styles.rs   # Output formatting style configuration
+│   │       │   ├── permission_dialog.rs # Dedicated permission prompt dialog
+│   │       │   ├── session_sidebar.rs # Session sidebar
+│   │       │   └── context_collapse.rs # Context collapse/expand
 │   │       ├── vim/
 │   │       │   ├── mod.rs
 │   │       │   ├── motion.rs
@@ -562,8 +562,8 @@ crab-code/
 │   │       ├── tracer.rs              # OpenTelemetry tracer
 │   │       ├── metrics.rs             # Custom metrics
 │   │       ├── cost.rs                # Cost tracking
-│   │       ├── export.rs              # [P1] Local OTLP export (no remote)
-│   │       └── session_recorder.rs    # [P2] Session recording (local transcript)
+│   │       ├── export.rs              # Local OTLP export (no remote)
+│   │       └── session_recorder.rs    # Session recording (local transcript)
 │   │
 │   # NOTE: three separate crates cover the different IDE/editor integration
 │   # directions — crates/ide (outbound MCP client to VS Code / JetBrains
@@ -593,7 +593,7 @@ crab-code/
 │   │       ├── server.rs              # Daemon server
 │   │       └── session_pool.rs        # Session pool management
 │   │
-│   ├── engine/                        # crab-engine: raw query loop (new v2.3)
+│   ├── engine/                        # crab-engine: raw query loop
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -655,7 +655,7 @@ crab-code/
 │   │       ├── scheduler.rs           # JobScheduler + JobHandler trait
 │   │       └── storage/               # persistence backends
 │   │
-│   ├── sandbox/                       # crab-sandbox: process sandbox (new v2.3)
+│   ├── sandbox/                       # crab-sandbox: process sandbox
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -677,8 +677,8 @@ crab-code/
         └── main.rs                    # codegen, release, bench
 ```
 
-> **Intra-crate expansions in v2.3** (not shown above):
-> - `crates/agent/src/proactive/` (4 files) — replaces placeholder `prompt_suggestion.rs`
+> **Intra-crate expansions** (not shown above):
+> - `crates/agent/src/proactive/` (4 files) — mini-agent speculation
 > - `crates/tui/src/vim/` (6 files: mode / motion / operator / register / text_object / transition) — sibling of `keybindings`/`overlay`/`theme`/`traits`, NOT under `components/`. Vim is a key-handling state machine, not a visual widget. Matches CCB's `src/vim/` top-level layout.
 > - `crates/tui/src/components/buddy/` (expanded 4 → 7 files)
 > - `crates/tui/src/components/{remote_status,sandbox_*,remote_session}.rs`
@@ -690,14 +690,13 @@ crab-code/
 
 | Type | Count | Notes |
 |------|-------|-------|
-| Library crate | 22 | `crates/*` — adds `ide`, `memory`, `engine`, `remote`, `sandbox`, `acp`, `job` since v2.2 (bridge merged into remote 2026-04) |
+| Library crate | 22 | `crates/*` — adds `ide`, `memory`, `engine`, `remote`, `sandbox`, `acp`, `job` |
 | Binary crate | 2 | `crates/cli` `crates/daemon` |
 | Helper crate | 1 | `xtask` |
 | **Total** | **23** | -- |
 | Total modules | ~300 | Across 20 library crates |
-| Total tests | ~2700 | `cargo test --workspace` (v2.3 snapshot) |
+| Total tests | ~2700 | `cargo test --workspace` |
 
-> Note: [P0]/[P1]/[P2] markers indicate CCB feature alignment priority. Unmarked files are already implemented.
 
 ---
 
@@ -789,7 +788,7 @@ Legend: `sb` = sandbox, `rem` = remote, `skil` = skill, `proc` = process.
 ```
 Rule 1: Upper layer -> lower layer. Reverse dependencies are prohibited.
 
-Rule 2 (revised in v2.3): Layer 2 is sub-layered into aggregators and leaves.
+Rule 2: Layer 2 is sub-layered into aggregators and leaves.
   - Aggregators (tools, plugin) may depend on leaf services in the same layer.
   - Leaf services (fs, process, mcp, acp, api, sandbox, ide, job, skill,
     memory, telemetry) must NOT depend on each other.
@@ -804,7 +803,7 @@ Rule 4: telemetry is a sidecar; it does not participate in the main dependency c
 
 Rule 5: cli/daemon only do assembly; they contain no business logic.
 
-Rule 6 (new in v2.3): Layer 3 internal control flow goes via core::Event only.
+Rule 6: Layer 3 internal control flow goes via core::Event only.
   - agent/session/tui/remote/engine do not make direct method calls that trigger
     work in another Layer 3 crate.
   - Exception 1: remote and agent may WRAP engine (engine does not call back up).
@@ -1507,7 +1506,7 @@ use futures::stream::{self, Stream, StreamExt};
 use either::Either;
 
 /// LLM backend enum -- provider count is limited (2 standards + 2 cloud variants), enum is sufficient
-/// If third-party provider extension is needed in the future, WASM plugin system can support it in Phase 2
+/// Third-party provider extension would go through a WASM plugin system (not built yet)
 pub enum LlmBackend {
     Anthropic(anthropic::AnthropicClient),
     OpenAi(openai::OpenAiClient),
@@ -2614,7 +2613,7 @@ impl MemoryStore {
 
 **Responsibility**: wraps the raw query loop (`crates/engine`) and adds session-aware orchestration — system prompt assembly, context injection (git/PR), error recovery, multi-agent coordination, REPL slash commands, file-history snapshots, conversation compaction. Corresponds to CC `QueryEngine.ts` + `coordinator/` + `tasks/` + `services/compact/` + `utils/fileHistory.ts`. **Does not** contain the low-level message loop (that moved to `crates/engine`, see §6.20).
 
-**Directory Structure** (post Phase 4)
+**Directory Structure** 
 
 ```
 src/
@@ -2646,11 +2645,11 @@ src/
 ├── system_prompt/           // Modular prompt assembly
 │   ├── mod.rs
 │   ├── builder.rs           //   build_system_prompt_with_memories
-│   ├── git_context.rs       //   Git metadata injection (moved here Phase 4.2)
-│   ├── pr_context.rs        //   gh PR context (moved here Phase 4.2)
-│   └── tips.rs              //   Contextual tips (moved here Phase 4.2)
+│   ├── git_context.rs       //   Git metadata injection
+│   ├── pr_context.rs        //   gh PR context
+│   └── tips.rs              //   Contextual tips
 │
-├── file_history/            // CCB fileHistory equivalent (Phase 4.5)
+├── file_history/            // CCB fileHistory equivalent
 │   ├── mod.rs
 │   └── snapshot.rs          //   FileHistory + Snapshot + rewind / LRU(100)
 │
@@ -2676,9 +2675,7 @@ src/
 
 Cargo features: `auto-dream` (off), `proactive` (off), `mem-ranker` (off, re-exports `crab-memory/mem-ranker`).
 
-Moved out (now in `crates/engine` per §6.20): `query_loop.rs`, `engine/`, `stop_hooks.rs`, `token_budget.rs`, `effort.rs`.
-
-Deleted in Phase 4: `rollback.rs` (replaced by `file_history/`), `error_recovery/{circuit,degradation}.rs` (CCB has no equivalent), `system_prompt/{sections,cache}.rs` (unused alt-architecture), `task_executor/` (premature — only one impl existed, inlined to `teams/worker.rs`).
+The raw message loop, stop hooks, token budget, and effort mapping live in `crates/engine` (§6.20), not here.
 
 **Message Loop (Core)**
 
@@ -3015,15 +3012,15 @@ impl StreamingToolExecutor {
 
 ### 6.12 `crates/tui/` -- Terminal UI
 
-**Layer**: Layer 3 Engine (promoted from Layer 2 in v2.3; already depends on `session` and now on `agent`).
+**Layer**: Layer 3 Engine.
 
 **Responsibility**: All terminal interface rendering (corresponds to CC `src/components/` + `src/screens/` + `src/ink/` + `src/vim/` + `src/buddy/` + `src/bridge/bridgeUI.ts`).
 
 CC uses React/Ink to render the terminal UI; Crab uses ratatui + crossterm to achieve equivalent experience. Control flow between tui and other Layer 3 crates (agent / session / remote / engine) follows Rule 6 (§5.3): state is consumed via `core::Event` broadcasts. Read-only access to `session::Conversation` and cost accumulators is allowed.
 
-**v2.3 additions**:
-- `vim/` (top-level, NOT under `components/`) — extended from 4 → 6 files (mode / motion / operator / register / text_object / transition). Vim is a key-handling state machine, so it sits alongside `keybindings`/`overlay`/`theme`/`traits` rather than among visual widgets. Aligns with CCB's `src/vim/` top-level layout.
-- `components/buddy/` — expanded from 4 to 7 files (+ companion / prompt / render)
+**Layout notes**:
+- `vim/` sits at the top level (not under `components/`) — it's a key-handling state machine with 6 files (mode / motion / operator / register / text_object / transition), naturally grouped with `keybindings`/`overlay`/`theme`/`traits` rather than with visual widgets. Aligns with CCB's `src/vim/` top-level layout.
+- `components/buddy/` — 7 files (companion / prompt / render plus cache / mini-agent siblings)
 - `components/bridge_status.rs` — subscribes to `core::Event::BridgeStatusChanged`
 - `components/sandbox_*.rs` — tabs mirroring CCB SandboxSettings / ConfigTab / DoctorSection
 - `components/remote_session.rs` — inbound `RemoteSession*` event display
@@ -3068,9 +3065,9 @@ src/
 │   ├── mode.rs             // Normal/Insert/Visual/Command
 │   ├── motion.rs           // hjkl, w/b/e, 0/$, gg/G, f/t
 │   ├── operator.rs         // d/c/y + motion composition
-│   ├── register.rs         // Unnamed/named/system-clipboard registers (v2.3 stub)
-│   ├── text_object.rs      // iw/aw/i"/a(/ip (v2.3 stub)
-│   └── transition.rs       // State transition table (v2.3 stub)
+│   ├── register.rs         // Unnamed/named/system-clipboard registers
+│   ├── text_object.rs      // iw/aw/i"/a(/ip
+│   └── transition.rs       // State transition table
 │
 └── theme.rs                // Color theme (dark/light/solarized/customizable)
 ```
@@ -3796,9 +3793,9 @@ pub struct AppRuntime {
 
 ---
 
-### 6.20 `crates/engine/` -- Raw Query Loop (new v2.3)
+### 6.20 `crates/engine/` -- Raw Query Loop
 
-**Responsibility**: the pure "conversation + backend + tool executor → streaming events" loop. Corresponds to CC `src/query.ts` + `src/query/{stopHooks,tokenBudget,transitions,config,deps}.ts`. Contains no session persistence, no REPL state, no swarm, no system-prompt assembly. Extracted from `crates/agent` in v2.3.
+**Responsibility**: the pure "conversation + backend + tool executor → streaming events" loop. Corresponds to CC `src/query.ts` + `src/query/{stopHooks,tokenBudget,transitions,config,deps}.ts`. Contains no session persistence, no REPL state, no swarm, no system-prompt assembly. 
 
 **Directory Structure**
 
@@ -3904,7 +3901,7 @@ Server WebSocket listener is NOT feature-gated — per the project rule that pro
 
 ---
 
-### 6.23 `crates/sandbox/` -- Process Sandbox (new v2.3)
+### 6.23 `crates/sandbox/` -- Process Sandbox
 
 **Responsibility**: Layer 2 leaf service. `Sandbox` trait + platform backends (seatbelt / landlock / wsl / noop), consumed by `crates/tools` for Bash/PowerShell execution. Corresponds to CC `src/utils/sandbox/sandbox-adapter.ts` (985 LOC).
 
@@ -4060,10 +4057,10 @@ aligned with CCB's design but structured in Rust-idiomatic form.
 
 | Layer | Purpose | CCB equivalent | crab location |
 |-------|---------|----------------|---------------|
-| **L1 — Teams (infrastructure)** | Mailbox, shared task list with `claimTask()`, spawner backends, worker pool, roster (team/member) | `isAgentSwarmsEnabled()` gate + `TeamCreate/Delete/SendMessage` tools + `teammateMailbox` | `crates/agent/src/teams/` *(planned, Phase 2)* |
+| **L1 — Teams (infrastructure)** | Mailbox, shared task list with `claimTask()`, spawner backends, worker pool, roster (team/member) | `isAgentSwarmsEnabled()` gate + `TeamCreate/Delete/SendMessage` tools + `teammateMailbox` | `crates/agent/src/teams/` ** |
 | **L2a — Swarm (flat topology)** | Peer-to-peer, competitive task claiming; default usage when Teams is on and Coordinator Mode is off | "opened Teams but didn't enable Coordinator Mode" | `TeamMode::PeerToPeer` enum variant — no separate module |
-| **L2b — Coordinator Mode (star overlay)** | Coordinator agent stripped of hands-on tools, workers run with allow-list, anti-pattern prompt ("understand before delegating") | `feature('COORDINATOR_MODE') && CLAUDE_CODE_COORDINATOR_MODE=1` | `crates/agent/src/coordinator/` *(planned, Phase 3)* |
-| **L3 — Session runtime** | `AgentSession` ties conversation + backend + executor + topology choice | — | `crates/agent/src/session/` *(planned, Phase 2)* |
+| **L2b — Coordinator Mode (star overlay)** | Coordinator agent stripped of hands-on tools, workers run with allow-list, anti-pattern prompt ("understand before delegating") | `feature('COORDINATOR_MODE') && CLAUDE_CODE_COORDINATOR_MODE=1` | `crates/agent/src/coordinator/` ** |
+| **L3 — Session runtime** | `AgentSession` ties conversation + backend + executor + topology choice | — | `crates/agent/src/session/` ** |
 
 ### Gating
 
@@ -4075,16 +4072,16 @@ aligned with CCB's design but structured in Rust-idiomatic form.
 
 | CCB choice | crab choice | Reason |
 |------------|-------------|--------|
-| `feature('COORDINATOR_MODE')` GrowthBook feature flag | `settings.experimental.coordinator_mode_enabled` (planned) + env var | No remote telemetry; no GrowthBook in crab |
+| `feature('COORDINATOR_MODE')` GrowthBook feature flag | `settings.experimental.coordinator_mode_enabled`  + env var | No remote telemetry; no GrowthBook in crab |
 | `<task-notification>` XML protocol | Reuse `crab_core::Event` + `serde_json` | Rust serde is idiomatic; XML is a JS/TS artefact |
-| Node `proper-lockfile` for `claimTask()` | `fd-lock` crate (planned Phase 4) | Rust-native, cross-platform |
-| 7 concrete `*Task` classes | `trait TaskExecutor` + 4 concrete impls (planned) | Rust trait polymorphism vs JS duck typing |
+| Node `proper-lockfile` for `claimTask()` | `fd-lock` crate  | Rust-native, cross-platform |
+| 7 concrete `*Task` classes | `trait TaskExecutor` + 4 concrete impls  | Rust trait polymorphism vs JS duck typing |
 | CCB gates Agent Teams behind env + CLI flag | L1 Teams ships unconditional; only Coordinator Mode is gated | Teams is base plumbing for crab's multi-agent story — not an experiment to toggle |
 
-### Current state (Phase 3 shipped)
+### Current state
 
 - `SessionConfig.coordinator_mode: bool` is propagated from env (`CRAB_COORDINATOR_MODE=1`).
-- `crates/agent/src/teams/worker_pool.rs::WorkerPool` is the Layer 1 worker pool (was `AgentCoordinator` pre-Phase 2).
+- `crates/agent/src/teams/worker_pool.rs::WorkerPool` is the Layer 1 worker pool.
 - `crates/agent/src/coordinator/` holds the Layer 2b overlay: `Coordinator::from_flag(true).apply(&mut registry, &mut prompt)` retains the registry to `{Agent, SendMessage, TaskStop}` and appends the anti-pattern prompt overlay.
 - `session/runtime.rs::AgentSession::new` invokes the coordinator if `coordinator_mode` is set; otherwise no-op.
 - `crates/agent/src/coordinator/tool_acl.rs` hosts the `COORDINATOR_TOOLS` / `WORKER_DENIED_TOOLS` constants; `ToolRegistry::retain_names` / `remove_names` in `crates/tools/src/registry.rs` implement the filter.
@@ -4105,7 +4102,7 @@ aligned with CCB's design but structured in Rust-idiomatic form.
 | 6 | **Feature flags control optional dependencies** | No Bedrock? Don't compile AWS SDK. No WASM? Don't compile wasmtime. | Reduces compile time and binary size |
 | 7 | **workspace.dependencies unifies versions** | All crates share the same version of third-party libraries | Avoids dependency conflicts and duplicate compilation |
 | 8 | **Binary crates only do assembly** | cli/daemon only do assembly; all logic lives in library crates | Makes it easy to add new entry points in the future (desktop/wasm/mobile) |
-| 9 | **CCB parity audit per crate (v2.3)** | Every existing crate gets a per-crate gap report vs CCB before v2.3 is called "complete"; reports live in `docs/superpowers/audits/` | Prevents silent drift from CCB behavior and makes Rust-idiom diverge decisions explicit. See `docs/superpowers/specs/2026-04-17-crate-restructure-design.md` §11 |
+| 9 | **CCB parity audit per crate** | Every existing crate gets a per-crate gap report vs CCB initially; reports live in `docs/superpowers/audits/` | Prevents silent drift from CCB behavior and makes Rust-idiom diverge decisions explicit. See `docs/superpowers/specs/2026-04-17-crate-restructure-design.md` §11 |
 | 10 | **CCB references stay in docs, not code** | Audit reports, specs, and architecture docs may cite CCB paths. Code comments, identifier names, and test names must not. | Maintains clean separation between research material and shipping code |
 
 ---
@@ -4165,13 +4162,13 @@ default = []
 [features]
 default = []
 
-# --- crates/agent/Cargo.toml (revised v2.3) ---
+# --- crates/agent/Cargo.toml ---
 [features]
 default = ["single"]
 single  = []                                          # single-agent orchestration
 swarm   = []                                          # multi-agent coordinator
 
-# --- crates/tools/Cargo.toml (revised v2.3) ---
+# --- crates/tools/Cargo.toml ---
 [features]
 default        = []
 computer-use   = ["dep:screenshots", "dep:enigo"]     # Computer Use tool
@@ -4285,7 +4282,7 @@ use_field_init_shorthand = true
 
 ## 10. Data Flow Design
 
-### 10.1 Primary Data Flow: Query Loop (revised v2.3)
+### 10.1 Primary Data Flow: Query Loop
 
 ```
 User input
@@ -4495,7 +4492,7 @@ MCP protocol extension modules:
 
 ### 11.3 Agent Reliability (crab-agent)
 
-**Reliability Subsystem** (post Phase 4):
+**Reliability Subsystem** :
 ```
 error_recovery::category + error_recovery::strategy    -- classify + recommend Retry/AskUser/Abort
 teams::retry                                           -- exponential backoff
@@ -4540,7 +4537,7 @@ GCP Scenario:
   vertex_auth.rs -> GCP Vertex AI dedicated authentication
 ```
 
-### 11.6 Sandbox Backend Strategy (new v2.3)
+### 11.6 Sandbox Backend Strategy
 
 `crates/sandbox` provides a trait-only core with platform backends behind feature flags. At runtime, `create_sandbox(None)` picks the best available backend using this precedence:
 
