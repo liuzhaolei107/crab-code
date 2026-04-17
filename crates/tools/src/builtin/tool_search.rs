@@ -98,7 +98,7 @@ fn search_tools(query: &str, tool_descriptions: &[String]) -> Result<ToolOutput>
         })
         .collect();
 
-    matches.sort_by(|a, b| b.1.cmp(&a.1));
+    matches.sort_by_key(|m| std::cmp::Reverse(m.1));
 
     if matches.is_empty() {
         return Ok(ToolOutput::success(format!(
