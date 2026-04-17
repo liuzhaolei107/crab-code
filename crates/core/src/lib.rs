@@ -11,4 +11,5 @@ pub mod proactive;
 pub mod query;
 pub mod remote;
 pub mod sandbox;
+pub mod tip;
 pub mod tool;

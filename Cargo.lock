@@ -770,6 +770,7 @@ dependencies = [
  "directories",
  "dunce",
  "strip-ansi-escapes",
+ "tempfile",
  "thiserror 2.0.18",
  "tracing",
  "tracing-appender",
@@ -858,6 +859,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "ignore",
+ "lru 0.17.0",
  "notify",
  "regex",
  "serde",
@@ -2135,6 +2137,11 @@ name = "hashbrown"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f467dd6dccf739c208452f8014c75c18bb8301b050ad1cfb27153803edb0f51"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash 0.2.0",
+]
 
 [[package]]
 name = "heck"
@@ -2885,6 +2892,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
 dependencies = [
  "hashbrown 0.16.1",
+]
+
+[[package]]
+name = "lru"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e0b564323a0fb6d54b864f625ae139de9612e27edb944dda37c109f05aac531"
+dependencies = [
+ "hashbrown 0.17.0",
 ]
 
 [[package]]
@@ -4054,7 +4070,7 @@ dependencies = [
  "indoc",
  "itertools",
  "kasuari",
- "lru",
+ "lru 0.16.4",
  "serde",
  "strum",
  "thiserror 2.0.18",

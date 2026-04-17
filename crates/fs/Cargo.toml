@@ -21,6 +21,7 @@ regex.workspace = true
 grep-matcher.workspace = true
 grep-regex.workspace = true
 grep-searcher.workspace = true
+lru.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
