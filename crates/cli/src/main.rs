@@ -996,7 +996,7 @@ async fn run_repl(
                 .next()
                 .is_some_and(|c| c.is_ascii_alphabetic())
         {
-            match dispatch_slash_command(session, skill_registry, &slash_registry, cmd_rest) {
+            match dispatch_slash_command(session, skill_registry, &slash_registry, cmd_rest).await {
                 SlashOutcome::Continue => continue,
                 SlashOutcome::Exit => break,
                 SlashOutcome::FallThrough(expanded) => {
@@ -1027,7 +1027,7 @@ enum SlashOutcome {
 ///
 /// `cmd_rest` is the input with the leading `/` already stripped.
 #[cfg(not(feature = "tui"))]
-fn dispatch_slash_command(
+async fn dispatch_slash_command(
     session: &mut AgentSession,
     skill_registry: &crab_skill::SkillRegistry,
     slash_registry: &crab_agent::SlashCommandRegistry,
@@ -1069,7 +1069,7 @@ fn dispatch_slash_command(
             SlashOutcome::Continue
         }
         Some(crab_agent::SlashCommandResult::Action(action)) => {
-            handle_slash_action(session, action)
+            handle_slash_action(session, action).await
         }
         Some(crab_agent::SlashCommandResult::Silent) => SlashOutcome::Continue,
         None => {
@@ -1088,7 +1088,7 @@ fn dispatch_slash_command(
 
 /// Apply a [`SlashAction`](crab_agent::SlashAction) to the running session.
 #[cfg(not(feature = "tui"))]
-fn handle_slash_action(
+async fn handle_slash_action(
     session: &mut AgentSession,
     action: crab_agent::SlashAction,
 ) -> SlashOutcome {
@@ -1105,8 +1105,13 @@ fn handle_slash_action(
             SlashOutcome::Continue
         }
         SlashAction::Compact => {
-            // Wired to summarizer in a follow-up commit.
-            println!("[info] /compact is not yet wired to the summarizer.");
+            let before = session.conversation.len();
+            let summary = session.compact_conversation().await;
+            let after = session.conversation.len();
+            println!(
+                "[info] Compacted {before} messages → {after} (extracted {} summary items).",
+                summary.items.len()
+            );
             SlashOutcome::Continue
         }
         other => {

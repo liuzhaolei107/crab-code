@@ -213,7 +213,15 @@ impl AgentSession {
     }
 
     /// Handle user input: add user message, run the query loop, and auto-save.
+    ///
+    /// If the conversation is above the 80% context-window watermark when
+    /// this is called, [`compact_conversation`](Self::compact_conversation)
+    /// runs first so the new turn starts with headroom.
     pub async fn handle_user_input(&mut self, input: &str) -> crab_common::Result<()> {
+        if self.conversation.needs_compaction() {
+            self.compact_conversation().await;
+        }
+
         self.conversation.push(Message::user(input));
 
         let result = query_loop::query_loop(
@@ -232,6 +240,51 @@ impl AgentSession {
         self.auto_save_session().await;
 
         result
+    }
+
+    /// Replace the conversation message history with a single summary
+    /// message, freeing context-window space.
+    ///
+    /// Uses the heuristic summarizer (no LLM call) so the compaction itself
+    /// is free and deterministic. Emits [`Event::CompactStart`] and
+    /// [`Event::CompactEnd`]. System prompt, cost accumulator, and context
+    /// window are preserved; the id stays the same.
+    pub async fn compact_conversation(&mut self) -> crate::summarizer::ConversationSummary {
+        let before_tokens = self.conversation.estimated_tokens();
+        let before_count = self.conversation.len();
+
+        let _ = self
+            .event_tx
+            .send(Event::CompactStart {
+                strategy: "heuristic-summarizer".into(),
+                before_tokens,
+            })
+            .await;
+
+        let summary = crate::summarizer::summarize_conversation(
+            self.conversation.messages(),
+            &crate::summarizer::SummarizerConfig::default(),
+        );
+
+        let summary_text = summary.to_compact_text();
+        self.conversation.clear();
+        if !summary_text.is_empty() {
+            self.conversation
+                .push_user(format!("[Previous conversation summary]\n\n{summary_text}"));
+        }
+
+        let after_tokens = self.conversation.estimated_tokens();
+        let removed_messages = before_count.saturating_sub(self.conversation.len());
+
+        let _ = self
+            .event_tx
+            .send(Event::CompactEnd {
+                after_tokens,
+                removed_messages,
+            })
+            .await;
+
+        summary
     }
 
     /// Cancel the running query loop.
@@ -638,6 +691,34 @@ mod tests {
         assert!(prompt.contains("Base instructions."));
         assert!(prompt.contains("Coordinator Mode"));
         assert!(prompt.contains("Based on your findings"));
+    }
+
+    #[tokio::test]
+    async fn compact_conversation_replaces_history_with_summary() {
+        use crab_tools::builtin::create_default_registry;
+
+        let config = base_config("compact-test");
+        let mut session = AgentSession::new(config, test_backend(), create_default_registry());
+
+        // Build a non-trivial history.
+        session.conversation.push(Message::user("Refactor foo.rs"));
+        session
+            .conversation
+            .push(Message::assistant("Proposed three changes."));
+        session.conversation.push(Message::user("Apply them."));
+        session.conversation.push(Message::assistant("Applied."));
+        let before = session.conversation.len();
+        assert_eq!(before, 4);
+
+        let summary = session.compact_conversation().await;
+
+        // History collapsed to a single synthetic user message with the
+        // summary text embedded.
+        assert!(session.conversation.len() <= 1);
+        if !summary.items.is_empty() {
+            let text = session.conversation.messages()[0].text();
+            assert!(text.contains("Previous conversation summary"));
+        }
     }
 
     #[test]
