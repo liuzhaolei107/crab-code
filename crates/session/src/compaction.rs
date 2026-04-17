@@ -54,10 +54,11 @@ impl CompactionTrigger {
     /// Check whether compaction should be triggered for the given conversation.
     pub fn should_compact(&self, conversation: &Conversation) -> bool {
         // Token threshold check
-        if conversation.context_window > 0 {
-            let used = conversation.estimated_tokens();
+        if let Some(ratio) =
+            (conversation.estimated_tokens() * 100).checked_div(conversation.context_window)
+        {
             #[allow(clippy::cast_possible_truncation)]
-            let percent = (used * 100 / conversation.context_window) as u8;
+            let percent = ratio as u8;
             if percent >= self.token_threshold_percent {
                 return true;
             }
@@ -235,15 +236,13 @@ pub async fn compact_with_config(
 
     // Determine strategy based on mode
     let strategy = match &config.mode {
-        CompactionMode::Auto => {
-            if conversation.context_window == 0 {
-                CompactionStrategy::Truncate
-            } else {
+        CompactionMode::Auto => (tokens_before * 100)
+            .checked_div(conversation.context_window)
+            .map_or(CompactionStrategy::Truncate, |ratio| {
                 #[allow(clippy::cast_possible_truncation)]
-                let percent = (tokens_before * 100 / conversation.context_window) as u8;
+                let percent = ratio as u8;
                 CompactionStrategy::for_usage(percent).unwrap_or(CompactionStrategy::Snip)
-            }
-        }
+            }),
         CompactionMode::Summarize => CompactionStrategy::Summarize,
         CompactionMode::Truncate => CompactionStrategy::Truncate,
         CompactionMode::SlidingWindow { window_size } => CompactionStrategy::SlidingWindow {

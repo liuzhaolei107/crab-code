@@ -91,25 +91,21 @@ pub fn micro_compact(messages: &[Message], config: &MicroCompactConfig) -> Micro
                     tool_use_id,
                     content,
                     is_error,
-                } => {
-                    if !is_error && should_compact_result(content, config.max_tool_result_tokens) {
-                        let original_tokens = estimate_tokens(content);
-                        let summary =
-                            summarize_tool_result("tool", content, config.summary_target_tokens);
-                        let summary_tokens = estimate_tokens(&summary);
+                } if !is_error && should_compact_result(content, config.max_tool_result_tokens) => {
+                    let original_tokens = estimate_tokens(content);
+                    let summary =
+                        summarize_tool_result("tool", content, config.summary_target_tokens);
+                    let summary_tokens = estimate_tokens(&summary);
 
-                        tokens_saved += original_tokens.saturating_sub(summary_tokens);
-                        compacted_count += 1;
-                        message_modified = true;
+                    tokens_saved += original_tokens.saturating_sub(summary_tokens);
+                    compacted_count += 1;
+                    message_modified = true;
 
-                        new_content.push(ContentBlock::ToolResult {
-                            tool_use_id: tool_use_id.clone(),
-                            content: summary,
-                            is_error: *is_error,
-                        });
-                    } else {
-                        new_content.push(block.clone());
-                    }
+                    new_content.push(ContentBlock::ToolResult {
+                        tool_use_id: tool_use_id.clone(),
+                        content: summary,
+                        is_error: *is_error,
+                    });
                 }
                 _ => {
                     new_content.push(block.clone());

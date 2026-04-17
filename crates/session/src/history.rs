@@ -178,7 +178,7 @@ impl SessionHistory {
             }
         }
         // Sort by mtime, newest first
-        results.sort_by(|a, b| b.modified.cmp(&a.modified));
+        results.sort_by_key(|r| std::cmp::Reverse(r.modified));
         Ok(results)
     }
 

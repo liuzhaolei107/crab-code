@@ -234,7 +234,7 @@ pub fn quick_resume_list(
     }
 
     // Sort by file size descending (largest / most active first)
-    summaries.sort_by(|a, b| b.file_size.cmp(&a.file_size));
+    summaries.sort_by_key(|s| std::cmp::Reverse(s.file_size));
     summaries.truncate(limit);
     Ok(summaries)
 }
