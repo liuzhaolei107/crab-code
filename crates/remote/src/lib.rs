@@ -25,6 +25,8 @@
 //! wire language: `crab-mcp` speaks MCP (external standard, tool-focused), this
 //! crate speaks `crab-proto` (our own, session-focused).
 
+pub mod auth;
 pub mod protocol;
+pub mod server;
 
 pub use protocol::PROTOCOL_VERSION;

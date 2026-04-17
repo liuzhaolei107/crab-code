@@ -112,7 +112,9 @@ schemars = "1"
 nucleo-matcher = "0.3"
 
 # ─── remote / sandbox / jobs 所需 ───
-jsonwebtoken = "10"
+# rust_crypto: pure-rust HMAC/RSA backend; avoids cmake + aws_lc_rs build deps
+# across Windows / Linux CI.
+jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
 # ─── Phase 7-auth：MCP OAuth 打开浏览器 + URL 编码 ───
 webbrowser = "1"
 urlencoding = "2"
