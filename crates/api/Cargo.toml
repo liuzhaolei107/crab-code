@@ -20,6 +20,10 @@ eventsource-stream.workspace = true
 futures.workspace = true
 either.workspace = true
 thiserror.workspace = true
+mime_guess.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [features]
 default = []
