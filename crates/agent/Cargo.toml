@@ -10,6 +10,13 @@ description = "Multi-agent orchestration for Crab Code"
 [features]
 default = []
 mem-ranker = ["crab-memory/mem-ranker"]
+# Background memory-consolidation cycles (crab's port of CCB's src/services/autoDream/).
+# Gated because the forked-agent runner inside is a stub today; flipping this
+# on only reveals the scheduling primitives, not an actual LLM dream.
+auto-dream = []
+# CCB proactive-suggestions placeholder. Matches CCB's feature('PROACTIVE')
+# gate where the open-source build ships an empty stub.
+proactive = []
 
 [dependencies]
 crab-common.workspace = true
