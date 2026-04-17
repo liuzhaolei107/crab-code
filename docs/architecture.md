@@ -2,7 +2,7 @@
 
 > Version: v2.3
 > Updated: 2026-04-17
-> Changelog: +engine/bridge/remote/sandbox (4 new crates); tui promoted Layer 2 → Layer 3; ide gets its own §6.24; crate count 17 → 23.
+> Changelog: +engine/remote/sandbox/acp/job (5 new crates; bridge merged into remote + claude.ai outbound dropped 2026-04); tui promoted Layer 2 → Layer 3; ide gets its own §6.24; crate count 17 → 24.
 
 ---
 
@@ -13,7 +13,7 @@
 | Layer | Crate | Responsibility |
 |-------|-------|----------------|
 | **Layer 4** Entry Layer | `cli` `daemon` | CLI entry point (clap), background daemon |
-| **Layer 3** Engine Layer | `agent` `engine` `session` `tui` `bridge` | Query loop, multi-agent orchestration, session state, terminal UI, remote-control WebSocket server |
+| **Layer 3** Engine Layer | `agent` `engine` `session` `tui` `remote` | Query loop, multi-agent orchestration, session state, terminal UI, remote-control WebSocket server + client |
 | **Layer 2** Service Layer | `api` `tools` `mcp` `fs` `process` `sandbox` `remote` `ide` `skill` `plugin` `memory` `telemetry` | Tool system, MCP stack, LLM clients, file/process/sandbox, claude.ai outbound client, IDE client, skill system, plugins, persistent memory, telemetry |
 | **Layer 1** Foundation Layer | `core` `common` `config` `auth` | Domain model, layered config, authentication |
 
@@ -31,10 +31,10 @@
 ├─────────┼──────────────────────────────────────────────────────┼────────┤
 │         │                 Layer 3: Engine Layer                │        │
 │  ┌──────▼──────┐ ┌──────────┐ ┌──────────┐ ┌────────┐ ┌───────▼─────┐ │
-│  │    agent    │ │  engine  │ │ session  │ │  tui   │ │   bridge    │ │
+│  │    agent    │ │  engine  │ │ session  │ │  tui   │ │   remote    │ │
 │  │ orchestra + │ │ raw loop │ │ state +  │ │ ratatui│ │ WS server + │ │
-│  │ swarm +     │ │ stream + │ │ compact  │ │ views  │ │ JWT + REST  │ │
-│  │ proactive   │ │ tooluse  │ │ memory   │ │        │ │             │ │
+│  │ swarm +     │ │ stream + │ │ compact  │ │ views  │ │ client +    │ │
+│  │ proactive   │ │ tooluse  │ │ memory   │ │        │ │ crab-proto  │ │
 │  └────┬────────┘ └────┬─────┘ └────┬─────┘ └───┬────┘ └──────┬──────┘ │
 ├───────┼────────────────┼─────────────┼───────────┼────────────┼────────┤
 │       │                │  Layer 2: Service Layer │            │        │
@@ -68,8 +68,8 @@
 | **Entry Layer** entrypoints/ | `cli.tsx` `main.tsx` | `cli` `daemon` | CC uses React/Ink for rendering; Crab uses ratatui |
 | **Command Layer** commands/ | `query.ts` `QueryEngine.ts` `coordinator/` | `engine` + `agent` | CC's `query.ts` ↔ crab `engine`; `QueryEngine.ts` ↔ `agent`; coordinator stays inside `agent/swarm/` |
 | **Tool Layer** tools/ | 52 Tool directories | `tools` + `mcp` | CC mixes tools and MCP in `services/`; Crab separates them |
-| **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` `memdir/` | `api` `mcp` `auth` `skill` `plugin` `memory` `telemetry` `sandbox` `remote` `ide` | CC's service layer is flat; Crab splits by responsibility. `memdir/` → `memory`; CC `utils/sandbox/` → `sandbox`; CC `remote/` → `remote`; CC IDE MCP client surface → `ide` |
-| **Bridge Layer** bridge/ | `bridgeMain.ts` `replBridge.ts` | `bridge` | New in v2.3 — WebSocket server for IDE/web clients to reach into a live session |
+| **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` `memdir/` | `api` `mcp` `acp` `auth` `skill` `plugin` `memory` `telemetry` `sandbox` `ide` `job` | CC's service layer is flat; Crab splits by responsibility. `memdir/` → `memory`; CC `utils/sandbox/` → `sandbox`; CC IDE MCP client surface → `ide`; ACP server → `acp`; unified scheduling → `job` |
+| **Bridge Layer** bridge/ | `bridgeMain.ts` `replBridge.ts` | `remote` (server + client) | CC's `src/bridge/` (inbound server) + `src/remote/` (outbound client) both land in crates/remote, which owns the full crab-proto stack (server + client + wire types, mirroring crab-mcp) |
 | **Foundation Layer** utils/ types/ | `Tool.ts` `context.ts` | `core` `common` `config` | CC scatters types across files; Crab centralizes them in `core` |
 
 ### Core Design Philosophy
@@ -546,10 +546,11 @@ crab-code/
 │   │       ├── export.rs              # [P1] Local OTLP export (no remote)
 │   │       └── session_recorder.rs    # [P2] Session recording (local transcript)
 │   │
-│   # NOTE: IDE integration is planned via `crates/acp/` (Agent Client Protocol,
-│   # JetBrains + Zed joint standard). Formerly `crates/bridge/` — that was a
-│   # port of CCB's remote-session client (cloud session bridge, not IDE), and
-│   # has been removed.
+│   # NOTE: three separate crates cover the different IDE/editor integration
+│   # directions — crates/ide (outbound MCP client to VS Code / JetBrains
+│   # lockfile plugins), crates/acp (inbound ACP server for Zed / Neovim /
+│   # Helix), crates/remote (inbound crab-proto server + outbound client for
+│   # web / app / desktop entry points).
 │
 │   ├── cli/                           # crab-cli: terminal entry (binary crate)
 │   │   ├── Cargo.toml
@@ -584,54 +585,56 @@ crab-code/
 │   │       ├── token_budget.rs
 │   │       └── effort.rs
 │   │
-│   ├── bridge/                        # crab-bridge: WS server (new v2.3)
+│   ├── remote/                        # crab-remote: crab-proto server + client (merged bridge, 2026-04)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── config.rs
-│   │       ├── server.rs
-│   │       ├── transport.rs
-│   │       ├── status.rs
-│   │       ├── protocol/
+│   │       ├── protocol/              # wire types + JSON-RPC envelopes (schemars::JsonSchema)
 │   │       │   ├── mod.rs
 │   │       │   ├── inbound.rs
 │   │       │   ├── outbound.rs
 │   │       │   └── types.rs
-│   │       ├── session/
-│   │       │   ├── mod.rs
-│   │       │   ├── runner.rs
-│   │       │   ├── forwarder.rs
-│   │       │   └── attachments.rs
-│   │       ├── auth/
+│   │       ├── auth/                  # shared auth (JWT + trusted device + work secret)
 │   │       │   ├── mod.rs
 │   │       │   ├── jwt.rs
 │   │       │   ├── trusted_device.rs
 │   │       │   └── work_secret.rs
-│   │       ├── api/                   # feature = "rest-api"
+│   │       ├── client/                # outbound client (crab → another crab-proto server)
 │   │       │   ├── mod.rs
-│   │       │   ├── rest.rs
-│   │       │   └── peer_sessions.rs
-│   │       ├── remote_core.rs         # feature = "remote-core"
-│   │       └── webhook.rs             # feature = "webhook"
+│   │       │   ├── config.rs
+│   │       │   └── error.rs
+│   │       └── server/                # inbound server (web / app / desktop → crab)
+│   │           ├── mod.rs
+│   │           ├── config.rs
+│   │           ├── status.rs
+│   │           ├── session/
+│   │           │   ├── mod.rs
+│   │           │   ├── runner.rs
+│   │           │   ├── forwarder.rs
+│   │           │   └── attachments.rs
+│   │           ├── api/               # feature = "rest-api"
+│   │           │   ├── mod.rs
+│   │           │   ├── rest.rs
+│   │           │   └── peer_sessions.rs
+│   │           ├── permission_relay.rs  # remote permission-dialog relay
+│   │           └── webhook.rs
 │   │
-│   ├── remote/                        # crab-remote: claude.ai outbound (new v2.3)
+│   ├── acp/                           # crab-acp: Agent Client Protocol server (new)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── config.rs
-│   │       ├── client.rs
-│   │       ├── error.rs
-│   │       ├── session/
-│   │       │   ├── mod.rs
-│   │       │   ├── manager.rs
-│   │       │   ├── websocket.rs       # feature = "session"
-│   │       │   └── sdk_adapter.rs
-│   │       ├── trigger/
-│   │       │   ├── mod.rs
-│   │       │   ├── api.rs
-│   │       │   └── schedule.rs        # feature = "schedule"
-│   │       ├── permission.rs
-│   │       └── auth.rs
+│   │       ├── protocol/              # ACP wire types
+│   │       │   └── mod.rs
+│   │       └── server.rs              # AcpServer + AgentHandler trait
+│   │
+│   ├── job/                           # crab-job: unified scheduling (new)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── id.rs                  # JobId + JobKind
+│   │       ├── spec.rs                # JobSpec (one-shot / interval / cron)
+│   │       ├── scheduler.rs           # JobScheduler + JobHandler trait
+│   │       └── storage/               # persistence backends
 │   │
 │   ├── sandbox/                       # crab-sandbox: process sandbox (new v2.3)
 │   │   ├── Cargo.toml
@@ -659,16 +662,16 @@ crab-code/
 > - `crates/agent/src/proactive/` (4 files) — replaces placeholder `prompt_suggestion.rs`
 > - `crates/tui/src/vim/` (6 files: mode / motion / operator / register / text_object / transition) — sibling of `keybindings`/`overlay`/`theme`/`traits`, NOT under `components/`. Vim is a key-handling state machine, not a visual widget. Matches CCB's `src/vim/` top-level layout.
 > - `crates/tui/src/components/buddy/` (expanded 4 → 7 files)
-> - `crates/tui/src/components/{bridge_status,sandbox_*,remote_session}.rs`
+> - `crates/tui/src/components/{remote_status,sandbox_*,remote_session}.rs`
 > - `crates/cli/src/deep_link.rs` (single file, 229 LOC) + `crates/cli/src/installer.rs` (single file, 201 LOC) — kept monolithic; sub-dir split deferred until real use exposes natural split points (platform-specific protocol registrars, per-manager adapters).
 > - `crates/tools/src/builtin/computer_use/` (expanded 4 → 10 files + platform subdir)
-> - `crates/core/src/{bridge,remote,sandbox,proactive,query}.rs` — 5 new shared type modules
+> - `crates/core/src/{remote,sandbox,proactive,query}.rs` — shared type modules (core::bridge merged into core::remote 2026-04)
 
 ### 4.2 Crate Statistics
 
 | Type | Count | Notes |
 |------|-------|-------|
-| Library crate | 20 | `crates/*` — adds `ide`, `memory`, `engine`, `bridge`, `remote`, `sandbox` since v2.2 |
+| Library crate | 22 | `crates/*` — adds `ide`, `memory`, `engine`, `remote`, `sandbox`, `acp`, `job` since v2.2 (bridge merged into remote 2026-04) |
 | Binary crate | 2 | `crates/cli` `crates/daemon` |
 | Helper crate | 1 | `xtask` |
 | **Total** | **23** | -- |
@@ -690,7 +693,7 @@ crab-code/
               ┌───────────────────┘   │   └──────────────────┐
               │                       │                      │
         ┌─────▼────┐  ┌────────┐  ┌───▼────┐  ┌────────┐  ┌──▼─────┐
-        │   tui    │  │ agent  │  │ engine │  │ bridge │  │ daemon │
+        │   tui    │  │ agent  │  │ engine │  │ remote │  │ daemon │
         └──────┬───┘  └──┬──┬──┘  └───┬────┘  └───┬────┘  └────┬───┘
                │         │  │         │           │            │
                │    ┌────▼──▼───┐     │           │            │
@@ -747,19 +750,20 @@ Legend: `sb` = sandbox, `rem` = remote, `skil` = skill, `proc` = process.
 | 8 | **mcp** | core, common | MCP client/server |
 | 9 | **telemetry** | common | Sidecar, optional |
 | 10 | **sandbox** | core, common | Trait + platform backends (seatbelt/landlock/wsl/noop) |
-| 11 | **remote** | core, auth, config, common | claude.ai outbound (trigger/schedule/session) |
-| 12 | **ide** | core, common, config, mcp | Client to IDE-hosted MCP server |
-| 13 | **skill** | common | Skill discovery + bundled definitions |
-| 14 | **memory** | core, common, config | Persistent memory store + ranking |
-| 15 | **plugin** | core, common, skill | Hooks + WASM + skill↔mcp bridge |
-| 16 | **tools** | core, fs, process, mcp, config, sandbox, remote, skill, common | Layer 2 aggregator; 40+ built-in tools |
-| 17 | **session** | core, api, config, common | Session + context compaction |
-| 18 | **engine** | core, common, api, session, tools, plugin | Raw query loop (extracted from agent) |
-| 19 | **agent** | core, engine, session, tools, skill, plugin, memory, common | Orchestrator + swarm + proactive |
-| 20 | **tui** | core, session, agent, config, skill, memory, common | Terminal UI; receives tool state via `core::Event` |
-| 21 | **bridge** | core, common, config, auth, session, agent, engine | WebSocket server (new in v2.3) |
-| 22 | **cli** (bin) | All crates | Thin entry point |
-| 23 | **daemon** (bin) | engine, session, api, tools, config, core, common | Headless; skips `agent` for lean loop |
+| 11 | **remote** | core, common, config, auth, session, agent, engine | crab-proto protocol + WS server + outbound client (inbound hinge for web/app/desktop entry points) |
+| 12 | **acp** | core, common | Agent Client Protocol server (editor → crab, Zed/Neovim/Helix) |
+| 13 | **ide** | core, common, config, mcp | Client to IDE-hosted MCP server (lockfile-based VSCode/JetBrains plugins) |
+| 14 | **job** | core, common | Unified scheduler — one-shot / interval / cron |
+| 15 | **skill** | common | Skill discovery + bundled definitions |
+| 16 | **memory** | core, common, config | Persistent memory store + ranking |
+| 17 | **plugin** | core, common, skill | Hooks + WASM + skill↔mcp bridge |
+| 18 | **tools** | core, fs, process, mcp, config, sandbox, skill, common | Layer 2 aggregator; 40+ built-in tools |
+| 19 | **session** | core, api, config, common | Session + context compaction |
+| 20 | **engine** | core, common, api, session, tools, plugin | Raw query loop (extracted from agent) |
+| 21 | **agent** | core, engine, session, tools, skill, plugin, memory, common | Orchestrator + swarm + proactive |
+| 22 | **tui** | core, session, agent, config, skill, memory, common | Terminal UI; receives tool state via `core::Event` |
+| 23 | **cli** (bin) | All crates | Thin entry point (interactive) |
+| 24 | **daemon** (bin) | engine, session, api, tools, config, core, common, remote, mcp, acp, job | Headless composition root — hosts server-side protocols for web/app/desktop |
 
 ### 5.3 Dependency Direction Principles
 
@@ -768,9 +772,12 @@ Rule 1: Upper layer -> lower layer. Reverse dependencies are prohibited.
 
 Rule 2 (revised in v2.3): Layer 2 is sub-layered into aggregators and leaves.
   - Aggregators (tools, plugin) may depend on leaf services in the same layer.
-  - Leaf services (fs, process, mcp, api, sandbox, remote, ide, skill, memory,
-    telemetry) must NOT depend on each other.
+  - Leaf services (fs, process, mcp, acp, api, sandbox, ide, job, skill,
+    memory, telemetry) must NOT depend on each other.
   - Example: tools -> sandbox (OK); fs -> process (NOT OK).
+  - remote is a Layer 3 crate (depends on agent/engine/session) because its
+    server side attaches to running sessions — clients connecting via web /
+    app / desktop need to drive the full agent loop.
 
 Rule 3: core decouples via traits (Tool trait defined in core, implemented in tools).
 
@@ -779,9 +786,9 @@ Rule 4: telemetry is a sidecar; it does not participate in the main dependency c
 Rule 5: cli/daemon only do assembly; they contain no business logic.
 
 Rule 6 (new in v2.3): Layer 3 internal control flow goes via core::Event only.
-  - agent/session/tui/bridge/engine do not make direct method calls that trigger
+  - agent/session/tui/remote/engine do not make direct method calls that trigger
     work in another Layer 3 crate.
-  - Exception 1: bridge and agent may WRAP engine (engine does not call back up).
+  - Exception 1: remote and agent may WRAP engine (engine does not call back up).
   - Exception 2: agent and tui may READ session state (Conversation, costs) as a
     data consumer; read-only access is not considered control flow.
 ```
@@ -2976,7 +2983,7 @@ impl StreamingToolExecutor {
 
 **Responsibility**: All terminal interface rendering (corresponds to CC `src/components/` + `src/screens/` + `src/ink/` + `src/vim/` + `src/buddy/` + `src/bridge/bridgeUI.ts`).
 
-CC uses React/Ink to render the terminal UI; Crab uses ratatui + crossterm to achieve equivalent experience. Control flow between tui and other Layer 3 crates (agent / session / bridge / engine) follows Rule 6 (§5.3): state is consumed via `core::Event` broadcasts. Read-only access to `session::Conversation` and cost accumulators is allowed.
+CC uses React/Ink to render the terminal UI; Crab uses ratatui + crossterm to achieve equivalent experience. Control flow between tui and other Layer 3 crates (agent / session / remote / engine) follows Rule 6 (§5.3): state is consumed via `core::Event` broadcasts. Read-only access to `session::Conversation` and cost accumulators is allowed.
 
 **v2.3 additions**:
 - `vim/` (top-level, NOT under `components/`) — extended from 4 → 6 files (mode / motion / operator / register / text_object / transition). Vim is a key-handling state machine, so it sits alongside `keybindings`/`overlay`/`theme`/`traits` rather than among visual widgets. Aligns with CCB's `src/vim/` top-level layout.
@@ -3580,9 +3587,11 @@ full = ["tui", "crab-plugin/wasm", "crab-api/bedrock", "crab-api/vertex"]
 
 ---
 
-### 6.18 `crates/daemon/` -- Background Daemon
+### 6.18 `crates/daemon/` -- Headless Composition Root
 
-**Responsibility**: A persistently running background daemon that manages multiple sessions (corresponds to CC `src/daemon/`)
+**Responsibility**: The headless entry point — opposite of `cli`. Where `cli` is the interactive composition root (brings up `engine + agent + tui + ide-client + ...`), `daemon` is the headless one: it hosts the **server-side** protocols (`remote-server`, `mcp-server`, `acp-server`) and the `job` scheduler, without pulling `tui` or any of its deps (ratatui / crossterm / unicode-width). This is what web / app / desktop clients attach to; it is also the natural target for systemd / Docker deployments.
+
+**Split rationale**: the decision between `daemon` and "`crab daemon` subcommand of cli" came down to deps. A headless server image should not ship ratatui. Keeping `daemon` as a separate binary lets the `cargo install crab-daemon` path produce a small artifact.
 
 **Directory Structure**
 
@@ -3786,112 +3795,76 @@ pub enum StopReason { NoToolCalls, ExplicitStop, MaxTurns(u32), TokenBudgetExcee
 
 **Internal dependencies**: `core, common, api, session, tools, plugin`.
 
-**Consumers**: `daemon` (headless), `agent` (wraps with orchestration), `bridge` (drives a session's loop from a remote client).
+**Consumers**: `daemon` (headless), `agent` (wraps with orchestration), `remote::server` (drives a session's loop from a remote client).
 
 ---
 
-### 6.21 `crates/bridge/` -- Remote-Control WebSocket Server (new v2.3)
+### 6.21 `crates/remote/` -- crab-proto: Remote-Control Protocol (server + client)
 
-**Responsibility**: Layer 3 engine-level crate that exposes a live crab session to remote clients (VS Code extension, claude.ai web, IDE plugins). Corresponds to CC `src/bridge/` (12 755 LOC). Direction: inbound — remote clients drive crab. Contrast with `crates/remote` (outbound).
+**Responsibility**: Layer 3 crate that owns the `crab-proto` open protocol and both of its endpoints — a WebSocket **server** that attaches running sessions to remote clients, and an outbound **client** that connects to another crab-proto server. This is the **hinge for every non-CLI entry point**: web UI, mobile app, desktop app all attach via the server side; the client side powers crab-to-crab dispatch (supervisor crab driving worker crab) and bot integrations.
+
+**Why a single crate (not three: proto / client / server)**: the same pattern `crab-mcp` already uses — one crate per protocol, with client + server + wire types grouped. Avoids the "server depends on client" awkwardness (proto types aren't client-owned), and removes the third-crate overhead that would only pay off if a Rust third-party consumer wanted proto-only access (current web/app/desktop clients will generate stubs from JSON Schema instead).
+
+**Direction contrast**: both roles live here, unified by the protocol. `remote::server` is inbound (remote clients drive crab). `remote::client` is outbound (crab connects to another crab-proto endpoint, or any server speaking the same protocol). Contrast with `crates/ide` (outbound MCP client to IDE plugins) and `crates/acp` (inbound ACP server for editors) — those speak different protocols.
+
+**Why not claude.ai**: the previous scaffold pinned remote to Anthropic's private endpoints. As a third-party open-source tool we can't rely on those, and binding a single vendor contradicts our multi-entry-point goal. The protocol is our own; claude.ai compatibility, if ever needed, would live as an optional adapter under the client side.
 
 **Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── config.rs                   // BridgeConfig (enabled / bind / env-less fallback)
-├── server.rs                   // WS accept + upgrade + dispatch
-├── transport.rs                // WS framing + heartbeat + codec
-├── status.rs                   // status publisher → core::Event::BridgeStatusChanged
 │
-├── protocol/                   // JSON-RPC message types
+├── protocol/                    // wire types, JSON-RPC envelopes
+│   ├── mod.rs                   // PROTOCOL_VERSION + initialize/auth/session msgs
+│   ├── inbound.rs               // remote → crab (user input / command / attach)
+│   ├── outbound.rs              // crab → remote (stream event / tool result)
+│   └── types.rs                 // MessageId / SessionId / ClientId
+│
+├── auth/                        // shared auth types (server verifies, client sends)
 │   ├── mod.rs
-│   ├── inbound.rs              // remote → crab (user input / command / attach)
-│   ├── outbound.rs             // crab → remote (stream event / tool result)
-│   └── types.rs                // SessionId / ClientId / RequestId
+│   ├── jwt.rs                   // jsonwebtoken sign/verify
+│   ├── trusted_device.rs        // device fingerprint + JSON store
+│   └── work_secret.rs           // per-session shared secret
 │
-├── session/                    // session driver
-│   ├── mod.rs
-│   ├── runner.rs               // attach a crab Session to bridge
-│   ├── forwarder.rs            // inbound route + outbound Event relay
-│   └── attachments.rs          // inbound file upload
+├── client/                      // outbound crab-proto client
+│   ├── mod.rs                   // RemoteClient::connect(url, auth)
+│   ├── config.rs                // endpoint / auth_mode / timeout
+│   └── error.rs                 // ClientError
 │
-├── auth/
-│   ├── mod.rs
-│   ├── jwt.rs                  // jsonwebtoken sign/verify
-│   ├── trusted_device.rs       // device fingerprint + JSON store
-│   └── work_secret.rs          // per-session shared secret
-│
-├── api/                        // REST control plane (feature = "rest-api")
-│   ├── mod.rs
-│   ├── rest.rs                 // start/stop/list HTTP endpoints (axum)
-│   └── peer_sessions.rs
-│
-├── remote_core.rs              // outbound to relay daemon (feature = "remote-core")
-└── webhook.rs                  // webhook delivery (feature = "webhook")
+├── server/                      // inbound crab-proto server
+│   ├── mod.rs                   // RemoteServer + SessionHandler trait
+│   ├── config.rs                // RemoteConfig (bind / env-less fallback)
+│   ├── status.rs                // status publisher → core::Event::RemoteStatusChanged
+│   ├── session/
+│   │   ├── mod.rs
+│   │   ├── runner.rs            // attach crab Session to remote
+│   │   ├── forwarder.rs         // inbound route + outbound Event relay
+│   │   └── attachments.rs       // inbound file upload
+│   ├── api/                     // REST control plane (feature = "rest-api")
+│   │   ├── mod.rs
+│   │   ├── rest.rs              // start/stop/list HTTP endpoints (axum)
+│   │   └── peer_sessions.rs
+│   ├── permission_relay.rs      // remote permission-dialog relay (Telegram / Discord)
+│   └── webhook.rs               // webhook delivery
 ```
+
+**Protocol types derive `schemars::JsonSchema`** so TS / Swift / Kotlin client stubs can be generated from the same source file — critical for supporting web / mobile / desktop clients without needing Rust bindings on those clients.
 
 **Feature flags**:
 
 ```toml
-default     = []
-full        = ["rest-api", "remote-core", "webhook"]
-rest-api    = ["dep:axum"]
-remote-core = []
-webhook     = []
+default  = []
+rest-api = ["dep:axum"]          # axum HTTP routes for control plane
 ```
+
+Server WebSocket listener is NOT feature-gated — per the project rule that protocol server sides ship default-on.
 
 **Internal dependencies**: `core, common, config, auth, session, agent, engine`.
 
-**External dependencies**: `tokio-tungstenite`, `jsonwebtoken`, `axum` (feature-gated).
+**External dependencies**: `tokio-tungstenite`, `jsonwebtoken`, `reqwest`, `schemars`, `axum` (feature-gated).
 
-**UI split**: the status indicator lives in `crates/tui/components/bridge_status.rs`, consuming `core::Event::BridgeStatusChanged`.
-
----
-
-### 6.22 `crates/remote/` -- claude.ai Outbound Client (new v2.3)
-
-**Responsibility**: Layer 2 leaf service. Outbound HTTP/WS to claude.ai for RemoteTrigger, ScheduleWakeup, and remote agent sessions. Does **not** touch local `Session`. Corresponds to CC `src/remote/` (1 132 LOC) + client portion of `src/bridge/remoteBridgeCore.ts`.
-
-**Directory Structure**
-
-```
-src/
-├── lib.rs
-├── config.rs                // endpoint / auth_mode / timeout
-├── client.rs                // reqwest base + retry
-├── error.rs                 // RemoteError
-│
-├── session/                 // CCB remote/ three files
-│   ├── mod.rs
-│   ├── manager.rs           // spawn / poll / cancel / list
-│   ├── websocket.rs         // session event stream (feature = "session")
-│   └── sdk_adapter.rs       // local ↔ remote msg conversion
-│
-├── trigger/                 // RemoteTrigger backend
-│   ├── mod.rs
-│   ├── api.rs               // create / run / list / update / delete
-│   └── schedule.rs          // ScheduleWakeup cron (feature = "schedule")
-│
-├── permission.rs            // remotePermissionBridge.ts
-└── auth.rs                  // reuse crates/auth OAuth token
-```
-
-**Feature flags**:
-
-```toml
-default  = ["trigger"]
-full     = ["trigger", "session", "schedule"]
-trigger  = []                           # lightweight HTTP
-session  = ["dep:tokio-tungstenite"]    # WS stream
-schedule = ["dep:croner"]               # cron scheduling
-```
-
-**Internal dependencies**: `core, auth, config, common`.
-
-**Tools integration**: `crates/tools/src/builtin/remote_trigger.rs` + `cron.rs` depend on this crate (Layer 2 aggregator → leaf pattern per Rule 2).
-
-**Cron parsing**: shared via `crates/common/utils/cron.rs` (re-exports `croner`); both `remote/trigger/schedule.rs` and `tools/builtin/cron.rs` use the same helper.
+**UI split**: the status indicator lives in `crates/tui/components/remote_status.rs`, consuming `core::Event::RemoteStatusChanged`.
 
 ---
 
@@ -3951,7 +3924,7 @@ all      = ["seatbelt", "landlock", "wsl", "noop"]
 
 **Responsibility**: Layer 2 leaf service. Client that connects to an IDE plugin's MCP server (hosted by VS Code / JetBrains extensions) and receives ambient context (selection, opened file, `@`-mentions). Publishes `IdeSelection` / `IdeAtMention` / `IdeConnection` to shared state consumed by `tui` (for display) and `agent` (for system-prompt injection).
 
-**Direction contrast**: `ide` is an OUTBOUND client (crab → IDE MCP server). `bridge` is an INBOUND server (IDE / web → crab). They are orthogonal and both needed.
+**Direction contrast**: `ide` is an OUTBOUND client over MCP (crab → IDE MCP server). `remote::server` is an INBOUND server over crab-proto (web / app / desktop → crab). `acp` is an INBOUND server over ACP (editor → crab). Three different inbound/outbound × protocol combinations — all needed, all clean.
 
 **Directory Structure**
 
@@ -3970,6 +3943,77 @@ src/
 **Shared types** (`core::ide`): `IdeSelection`, `IdeAtMention`, `IdeConnection`. These live in `core` so `tui` can read without depending on `ide`.
 
 **Internal dependencies**: `core, common, config, mcp`.
+
+---
+
+### 6.25 `crates/acp/` -- Agent Client Protocol server (new)
+
+**Responsibility**: Layer 2 crate that implements the server side of the [Agent Client Protocol](https://agentclientprotocol.com), the open JSON-RPC standard introduced by Zed in 2025 that lets editors drive external AI coding agents the way LSP lets them drive language servers. This crate lets crab **be** such an external agent: users in Zed / Neovim / Helix pick crab from their editor's "external agents" menu, the editor spawns crab as a child process, and messages flow over stdio framed as ACP JSON-RPC.
+
+**Architectural role**:
+
+```
+Editor (ACP client)  ◄── ACP over stdio ──►  crab-acp (this crate)
+                                                    │
+                                                    ▼
+                                              AgentHandler trait
+                                                    │
+                                                    ▼
+                                         crab-engine / crab-agent
+```
+
+`AgentHandler` is the crate's external boundary — consumers (cli / daemon) plug in a real implementation wired to `crab-engine`. Mirrors how `crab-mcp::McpServer` takes a `ToolHandler` trait without embedding any specific tool backend.
+
+**Symmetry with `crab-mcp`**: both crates are Layer 2 protocol implementations, both follow the "trait-in-this-crate, impl-elsewhere" pattern, both derive `schemars::JsonSchema` on wire types. The split is by **protocol**, not by direction — `crab-mcp` handles client+server of MCP, `crab-acp` handles server of ACP.
+
+**Why not inside `crates/ide/`**: `ide` is crab-as-MCP-client (outbound); `acp` is crab-as-ACP-server (inbound). Opposite directions, different protocol stacks. Keeping them separate matches the "one crate = one protocol" rule.
+
+**Directory Structure** (scaffold — full surface in Phase δ):
+
+```
+src/
+├── lib.rs
+├── protocol/
+│   └── mod.rs                   // PROTOCOL_VERSION + AgentInfo (this commit)
+└── server.rs                    // AcpServer + AgentHandler trait (Phase δ)
+```
+
+**Internal dependencies**: `core, common`.
+
+**External dependencies**: `serde`, `schemars`, `tokio`, `thiserror`, `tracing`.
+
+---
+
+### 6.26 `crates/job/` -- Unified Scheduling (new)
+
+**Responsibility**: Layer 2 crate that replaces the hand-rolled `tokio::time::interval` and `sleep_until` calls scattered across `crab-mcp` (heartbeat), `crab-agent` (proactive timers), `crab-remote` (server-scheduled triggers), and provides user-facing cron jobs. One API, one view — TUI can render "pending jobs", web UI can show a jobs panel, CLI can offer `crab jobs list / cancel`.
+
+**Why needed under the multi-entry-point architecture**: every entry point (cli / ide / web / app / desktop) needs to **observe** scheduled work. Centralising through a shared crate means the scheduler state is queryable from any composition root (daemon for headless hosts, cli for interactive).
+
+**Three job kinds**:
+
+| Kind | Trigger | Persistence | Example |
+|---|---|---|---|
+| `OneShot` | one time at instant / after delay | in-memory | `ScheduleWakeup` |
+| `Interval` | every N seconds from a reference point | in-memory | MCP server heartbeat |
+| `Cron` | cron-expression schedule | JSON file under `~/.crab/jobs/` | "every day at 09:00, pull the latest report" |
+
+**Directory Structure** (scaffold — full impl in Phase α):
+
+```
+src/
+├── lib.rs
+├── id.rs                        // JobId + JobKind (this commit)
+├── spec.rs                      // JobSpec enum (one-shot | interval | cron) — Phase α
+├── scheduler.rs                 // JobScheduler + JobHandler trait — Phase α
+└── storage/                     // persistence backends (memory / json-file) — Phase α
+```
+
+**Naming**: singular `job` (not `jobs`) per workspace convention — system-concept crates are singular (`skill`, `session`, `memory`, `engine`); only `tools` is plural because it's a collection of implementations. CLI commands stay plural (`crab jobs list`) per Unix convention; crate name and CLI surface don't need to match.
+
+**Internal dependencies**: `core, common`.
+
+**External dependencies**: `croner` (cron expression parsing, already in workspace), `tokio` (timers), `serde`, `thiserror`, `tracing`.
 
 ---
 
@@ -4008,9 +4052,10 @@ default = []
 bedrock = ["aws-sdk-bedrockruntime", "aws-config"]   # AWS SigV4 signing
 
 # --- crates/mcp/Cargo.toml ---
+# Note: ws transport is NOT feature-gated as of 2026-04 — MCP server and WS
+# transport ship default-on per the "no gates on protocol server side" rule.
 [features]
 default = []
-ws = ["tokio-tungstenite"]                            # WebSocket transport
 
 # --- crates/plugin/Cargo.toml ---
 [features]
@@ -4033,21 +4078,20 @@ landlock = ["dep:landlock"]                           # Linux 5.13+
 wsl      = []                                         # Windows: spawns wsl.exe
 all      = ["noop", "seatbelt", "landlock", "wsl"]
 
-# --- crates/bridge/Cargo.toml (new v2.3) ---
+# --- crates/remote/Cargo.toml (revised 2026-04: bridge merged in, claude.ai dropped) ---
+# Server WS listener + WS client both ship default-on (no gates on protocol
+# server side). Only the REST control-plane helpers are feature-gated.
 [features]
-default     = []
-full        = ["rest-api", "remote-core", "webhook"]
-rest-api    = ["dep:axum"]                            # REST control plane
-remote-core = []                                      # outbound relay client
-webhook     = []
+default  = []
+rest-api = ["dep:axum"]                               # REST control plane over axum
 
-# --- crates/remote/Cargo.toml (new v2.3) ---
+# --- crates/acp/Cargo.toml (new) ---
 [features]
-default  = ["trigger"]
-full     = ["trigger", "session", "schedule"]
-trigger  = []                                         # lightweight HTTP-only
-session  = ["dep:tokio-tungstenite"]                  # remote session WS stream
-schedule = ["dep:croner"]                             # cron scheduling
+default = []
+
+# --- crates/job/Cargo.toml (new) ---
+[features]
+default = []
 
 # --- crates/agent/Cargo.toml (revised v2.3) ---
 [features]
@@ -4283,45 +4327,43 @@ Notes:
                                                 Continue query_loop
 ```
 
-### 10.4 Bridge Remote-Session Flow (new v2.3)
+### 10.4 Remote-Session Attach Flow (crab-proto)
 
 ```
-┌────────────────┐   WebSocket   ┌──────────┐   attach     ┌──────────┐
-│ VS Code / Web  │──────────────>│  bridge  │─────────────>│ session  │
-│ claude.ai      │<──────────────│  server  │<─────────────│ (local)  │
-└────────────────┘  inbound msg  └────┬─────┘  outbound    └────┬─────┘
-                                       │  Event relay           │
-                                       │                        │
-                                       │                  ┌─────▼─────┐
-                                       │                  │   agent   │
-                                       │                  │ (wrapper) │
-                                       │                  └─────┬─────┘
-                                       │                        │
-                                       │                  ┌─────▼─────┐
-                                       └─────────────────>│  engine   │
-                                           drives loop    │ run_query │
-                                                          └───────────┘
+┌────────────────┐   WebSocket   ┌───────────────┐   attach     ┌──────────┐
+│ Web / App /    │──────────────>│ remote::server│─────────────>│ session  │
+│ Desktop / CLI  │<──────────────│   (crab-proto)│<─────────────│ (local)  │
+└────────────────┘  inbound msg  └───────┬───────┘  outbound    └────┬─────┘
+                                          │  Event relay             │
+                                          │                          │
+                                          │                    ┌─────▼─────┐
+                                          │                    │   agent   │
+                                          │                    │ (wrapper) │
+                                          │                    └─────┬─────┘
+                                          │                          │
+                                          │                    ┌─────▼─────┐
+                                          └───────────────────>│  engine   │
+                                              drives loop      │ run_query │
+                                                               └───────────┘
 ```
 
-Auth: JWT (`bridge/auth/jwt.rs`) + trusted-device fingerprint (`bridge/auth/trusted_device.rs`).
+Auth: JWT (`remote/auth/jwt.rs`) + trusted-device fingerprint (`remote/auth/trusted_device.rs`). Wire types derive `schemars::JsonSchema` so TS / Swift / Kotlin clients are stub-generated from the same Rust source.
 
-### 10.5 RemoteTrigger / ScheduleWakeup Flow (new v2.3)
+### 10.5 Crab-to-Crab Trigger Flow (crab-proto, outbound side)
 
 ```
-┌──────────┐   Tool call      ┌──────────────────┐   HTTPS   ┌───────────┐
-│   LLM    │─────────────────>│ tools/builtin/   │──────────>│ claude.ai │
-│          │  remote_trigger  │ remote_trigger.rs│           │   API     │
-└──────────┘                  └────────┬─────────┘<──────────└───────────┘
-                                       │ uses
-                                       v
-                               ┌───────────────┐
-                               │ crates/remote │
-                               │ trigger/api.rs│
-                               │ schedule.rs   │
-                               └───────────────┘
+┌──────────┐   Tool call      ┌──────────────────┐   WS       ┌────────────────────┐
+│   LLM    │─────────────────>│ tools/builtin/   │──────────> │ another crab's     │
+│          │  remote_trigger  │ remote_trigger.rs│            │ remote::server     │
+└──────────┘                  └────────┬─────────┘            └────────────────────┘
+                                        │ uses
+                                        v
+                               ┌────────────────┐
+                               │ remote::client │
+                               └────────────────┘
 ```
 
-No local session is touched; pure outbound. For the cron scheduling variant, `schedule.rs` uses `croner` (shared via `common/utils/cron.rs`) and registers the trigger with the remote API.
+A supervisor crab uses `remote::client` to dispatch work to a worker crab's `remote::server`. Target need not be another crab — any server speaking crab-proto works (webhook bot, user-built VPS front-end). No local session is touched on the sender; on the receiver the request lands via the same attach flow as §10.4. Scheduling for recurring triggers is delegated to `crates/job` (cron / interval / one-shot) rather than hand-rolled per-subsystem timers.
 
 ---
 
