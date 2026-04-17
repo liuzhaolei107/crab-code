@@ -1,236 +1,13 @@
-//! Slash command framework and built-in commands.
+//! Built-in `cmd_*` handlers plus the `resolve_model_alias` helper.
 //!
-//! Provides a registry of `/command` handlers that can be executed
-//! from the REPL or TUI. Commands receive a context struct with
-//! references to session state and return a result indicating
-//! what action (if any) the caller should take.
+//! Each handler has signature `fn(&str, &SlashCommandContext) -> SlashCommandResult`
+//! and gets registered by [`super::types::SlashCommandRegistry::new`].
+use std::path::PathBuf;
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use super::types::{SlashAction, SlashCommandContext, SlashCommandRegistry, SlashCommandResult};
 
-use crab_core::model::ModelId;
-use crab_core::permission::PermissionMode;
-use crab_session::CostAccumulator;
 
-/// Context passed to slash commands, providing read access to session state.
-pub struct SlashCommandContext<'a> {
-    /// Current model ID.
-    pub model: &'a ModelId,
-    /// Current session ID.
-    pub session_id: &'a str,
-    /// Working directory.
-    pub working_dir: &'a Path,
-    /// Permission mode.
-    pub permission_mode: PermissionMode,
-    /// Cost accumulator (read-only snapshot).
-    pub cost: &'a CostAccumulator,
-    /// Estimated token count in conversation.
-    pub estimated_tokens: u64,
-    /// Number of messages in conversation.
-    pub message_count: usize,
-    /// Memory directory (if configured).
-    pub memory_dir: Option<&'a Path>,
-}
-
-/// The result of executing a slash command.
-#[derive(Debug, Clone)]
-pub enum SlashCommandResult {
-    /// Display a message to the user.
-    Message(String),
-    /// Trigger an action in the session/REPL.
-    Action(SlashAction),
-    /// Command executed silently (no output, no action).
-    Silent,
-}
-
-/// Actions that a slash command can request the caller to perform.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SlashAction {
-    /// Clear conversation history.
-    Clear,
-    /// Trigger context compaction.
-    Compact,
-    /// Exit the session.
-    Exit,
-    /// Switch to a different model.
-    SwitchModel(String),
-    /// Toggle plan mode.
-    TogglePlanMode,
-    /// Generate a CRAB.md template in the working directory.
-    Init,
-    /// Export conversation to a file.
-    Export(String),
-    /// Set effort level (low/medium/high/max).
-    SetEffort(String),
-    /// Toggle fast mode.
-    ToggleFast,
-    /// Add an additional working directory.
-    AddDir(PathBuf),
-    /// Resume a previous session by ID.
-    Resume(String),
-    /// Copy last assistant message to clipboard.
-    CopyLast,
-}
-
-/// A registered slash command.
-struct CommandEntry {
-    name: &'static str,
-    description: &'static str,
-    handler: fn(args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult,
-}
-
-/// Registry of all available slash commands.
-pub struct SlashCommandRegistry {
-    commands: HashMap<&'static str, CommandEntry>,
-    /// Insertion-ordered list of command names for /help display.
-    order: Vec<&'static str>,
-}
-
-impl SlashCommandRegistry {
-    /// Create a new registry with all built-in commands pre-registered.
-    #[must_use]
-    pub fn new() -> Self {
-        let mut reg = Self {
-            commands: HashMap::new(),
-            order: Vec::new(),
-        };
-        reg.register("help", "List all available commands", cmd_help);
-        reg.register("clear", "Clear conversation history", cmd_clear);
-        reg.register("compact", "Trigger context compaction", cmd_compact);
-        reg.register("cost", "Show token usage and cost", cmd_cost);
-        reg.register(
-            "status",
-            "Show session status (model, tokens, dir)",
-            cmd_status,
-        );
-        reg.register("memory", "List memory files", cmd_memory);
-        reg.register(
-            "init",
-            "Generate a CRAB.md template in current directory",
-            cmd_init,
-        );
-        reg.register("model", "Switch model (/model <name-or-alias>)", cmd_model);
-        reg.register("config", "Show current configuration values", cmd_config);
-        reg.register(
-            "permissions",
-            "Show current permission mode",
-            cmd_permissions,
-        );
-        reg.register("exit", "Exit the session", cmd_exit);
-        reg.register("plan", "Toggle plan mode", cmd_plan);
-        // ─── Batch 2 ───
-        reg.register(
-            "resume",
-            "Resume a previous session (/resume [id])",
-            cmd_resume,
-        );
-        reg.register("history", "List recent sessions", cmd_history);
-        reg.register("export", "Export conversation (/export [path])", cmd_export);
-        reg.register("doctor", "Run health diagnostics", cmd_doctor);
-        reg.register("diff", "Show git diff summary", cmd_diff);
-        reg.register("review", "Show pending review items", cmd_review);
-        reg.register(
-            "effort",
-            "Set effort level (/effort low|medium|high|max)",
-            cmd_effort,
-        );
-        reg.register("fast", "Toggle fast mode", cmd_fast);
-        reg.register(
-            "thinking",
-            "Show current thinking/effort settings",
-            cmd_thinking,
-        );
-        reg.register("skills", "List available skills", cmd_skills);
-        // ─── Batch 3 ───
-        reg.register(
-            "add-dir",
-            "Add working directory (/add-dir <path>)",
-            cmd_add_dir,
-        );
-        reg.register(
-            "files",
-            "List tracked files in working directory",
-            cmd_files,
-        );
-        reg.register("plugin", "List loaded plugins", cmd_plugin);
-        reg.register("mcp", "List MCP server connections", cmd_mcp);
-        reg.register("branch", "Show current git branch", cmd_branch);
-        reg.register("commit", "Show recent git commits", cmd_commit);
-        reg.register("theme", "Show current theme", cmd_theme);
-        reg.register("keybindings", "Show key bindings", cmd_keybindings);
-        reg.register(
-            "rename",
-            "Rename current session (/rename <name>)",
-            cmd_rename,
-        );
-        reg.register("copy", "Copy last assistant message", cmd_copy);
-        reg
-    }
-
-    fn register(
-        &mut self,
-        name: &'static str,
-        description: &'static str,
-        handler: fn(&str, &SlashCommandContext<'_>) -> SlashCommandResult,
-    ) {
-        self.commands.insert(
-            name,
-            CommandEntry {
-                name,
-                description,
-                handler,
-            },
-        );
-        self.order.push(name);
-    }
-
-    /// Execute a slash command by name.
-    ///
-    /// Returns `None` if the command is not found.
-    pub fn execute(
-        &self,
-        name: &str,
-        args: &str,
-        ctx: &SlashCommandContext<'_>,
-    ) -> Option<SlashCommandResult> {
-        self.commands
-            .get(name)
-            .map(|entry| (entry.handler)(args, ctx))
-    }
-
-    /// Look up a command by name.
-    pub fn find(&self, name: &str) -> Option<(&str, &str)> {
-        self.commands.get(name).map(|e| (e.name, e.description))
-    }
-
-    /// List all commands in registration order as `(name, description)` pairs.
-    pub fn list(&self) -> Vec<(&str, &str)> {
-        self.order
-            .iter()
-            .filter_map(|name| self.commands.get(name).map(|e| (e.name, e.description)))
-            .collect()
-    }
-
-    /// Number of registered commands.
-    pub fn len(&self) -> usize {
-        self.commands.len()
-    }
-
-    /// Whether the registry is empty.
-    pub fn is_empty(&self) -> bool {
-        self.commands.is_empty()
-    }
-}
-
-impl Default for SlashCommandRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// ─── Built-in command implementations ────────────────────────────
-
-fn cmd_help(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_help(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     // We build the help text from a fresh registry to list all commands.
     // This avoids needing &self in the handler signature.
     let reg = SlashCommandRegistry::new();
@@ -242,15 +19,15 @@ fn cmd_help(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Message(lines.join("\n"))
 }
 
-fn cmd_clear(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_clear(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Action(SlashAction::Clear)
 }
 
-fn cmd_compact(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_compact(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Action(SlashAction::Compact)
 }
 
-fn cmd_cost(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_cost(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let summary = ctx.cost.summary();
     let text = format!(
         "Session cost:\n  Input tokens:    {}\n  Output tokens:   {}\n  Cache read:      {}\n  Cache creation:  {}\n  API calls:       {}\n  Total cost:      ${:.4}",
@@ -264,7 +41,7 @@ fn cmd_cost(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Message(text)
 }
 
-fn cmd_status(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_status(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let text = format!(
         "Session status:\n  Model:           {}\n  Session ID:      {}\n  Working dir:     {}\n  Permission mode: {}\n  Messages:        {}\n  Est. tokens:     {}",
         ctx.model,
@@ -277,7 +54,7 @@ fn cmd_status(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult 
     SlashCommandResult::Message(text)
 }
 
-fn cmd_memory(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_memory(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let Some(dir) = ctx.memory_dir else {
         return SlashCommandResult::Message("No memory directory configured.".into());
     };
@@ -310,11 +87,11 @@ fn cmd_memory(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult 
     SlashCommandResult::Message(text)
 }
 
-fn cmd_init(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_init(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Action(SlashAction::Init)
 }
 
-fn cmd_model(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_model(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let name = args.trim();
     if name.is_empty() {
         return SlashCommandResult::Message(
@@ -326,7 +103,7 @@ fn cmd_model(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Action(SlashAction::SwitchModel(resolved))
 }
 
-fn cmd_config(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_config(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let text = format!(
         "Current configuration:\n  Model:           {}\n  Permission mode: {}\n  Working dir:     {}\n  Memory dir:      {}",
         ctx.model,
@@ -339,22 +116,22 @@ fn cmd_config(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult 
     SlashCommandResult::Message(text)
 }
 
-fn cmd_permissions(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_permissions(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let text = format!("Permission mode: {}", ctx.permission_mode);
     SlashCommandResult::Message(text)
 }
 
-fn cmd_exit(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_exit(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Action(SlashAction::Exit)
 }
 
-fn cmd_plan(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_plan(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Action(SlashAction::TogglePlanMode)
 }
 
 // ─── Batch 2 command implementations ────────────────────────────
 
-fn cmd_resume(args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_resume(args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let id = args.trim();
     if id.is_empty() {
         return SlashCommandResult::Message(
@@ -365,7 +142,7 @@ fn cmd_resume(args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Action(SlashAction::Resume(id.to_string()))
 }
 
-fn cmd_history(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_history(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let sessions_dir = ctx
         .working_dir
         .parent()
@@ -408,7 +185,7 @@ fn cmd_history(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult
     SlashCommandResult::Message(lines.join("\n"))
 }
 
-fn cmd_export(args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_export(args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let path = args.trim();
     if path.is_empty() {
         let default = format!("session_{}.md", ctx.session_id);
@@ -417,7 +194,7 @@ fn cmd_export(args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Action(SlashAction::Export(path.to_string()))
 }
 
-fn cmd_doctor(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_doctor(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let mut checks = vec!["Health check:".to_string()];
 
     // Working directory exists
@@ -460,7 +237,7 @@ fn cmd_doctor(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult 
     SlashCommandResult::Message(checks.join("\n"))
 }
 
-fn cmd_diff(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_diff(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let output = std::process::Command::new("git")
         .args(["diff", "--stat"])
         .current_dir(ctx.working_dir)
@@ -483,7 +260,7 @@ fn cmd_diff(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     }
 }
 
-fn cmd_review(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_review(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     // Show staged changes as items to review
     let output = std::process::Command::new("git")
         .args(["diff", "--cached", "--stat"])
@@ -507,7 +284,7 @@ fn cmd_review(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult 
     }
 }
 
-fn cmd_effort(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_effort(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let level = args.trim().to_lowercase();
     match level.as_str() {
         "low" | "medium" | "high" | "max" => {
@@ -523,11 +300,11 @@ fn cmd_effort(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult 
     }
 }
 
-fn cmd_fast(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_fast(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Action(SlashAction::ToggleFast)
 }
 
-fn cmd_thinking(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_thinking(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let text = format!(
         "Thinking settings:\n  Model: {}\n  Permission mode: {}",
         ctx.model, ctx.permission_mode,
@@ -535,7 +312,7 @@ fn cmd_thinking(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResul
     SlashCommandResult::Message(text)
 }
 
-fn cmd_skills(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_skills(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     // Skills are loaded via the plugin system; this command shows a placeholder
     // until the full SkillRegistry is wired into the context.
     SlashCommandResult::Message(
@@ -546,7 +323,7 @@ fn cmd_skills(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult
 
 // ─── Batch 3 command implementations ────────────────────────────
 
-fn cmd_add_dir(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_add_dir(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let path = args.trim();
     if path.is_empty() {
         return SlashCommandResult::Message("Usage: /add-dir <path>".into());
@@ -558,7 +335,7 @@ fn cmd_add_dir(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult
     SlashCommandResult::Action(SlashAction::AddDir(dir))
 }
 
-fn cmd_files(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_files(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let output = std::process::Command::new("git")
         .args(["ls-files"])
         .current_dir(ctx.working_dir)
@@ -587,20 +364,20 @@ fn cmd_files(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     }
 }
 
-fn cmd_plugin(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_plugin(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Message(
         "Plugins:\n  No plugins loaded.\n  Use `crab plugin list` to manage plugins.".into(),
     )
 }
 
-fn cmd_mcp(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_mcp(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Message(
         "MCP servers:\n  No MCP servers connected.\n  Configure servers in ~/.crab/settings.json."
             .into(),
     )
 }
 
-fn cmd_branch(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_branch(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let output = std::process::Command::new("git")
         .args(["branch", "--show-current"])
         .current_dir(ctx.working_dir)
@@ -621,7 +398,7 @@ fn cmd_branch(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult 
     }
 }
 
-fn cmd_commit(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_commit(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let output = std::process::Command::new("git")
         .args(["log", "--oneline", "-10"])
         .current_dir(ctx.working_dir)
@@ -642,17 +419,17 @@ fn cmd_commit(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult 
     }
 }
 
-fn cmd_theme(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_theme(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Message("Current theme: default\nTheme customization coming soon.".into())
 }
 
-fn cmd_keybindings(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_keybindings(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Message(
         "Key bindings:\n  Enter        Send message\n  Ctrl+C       Cancel current operation\n  Ctrl+D       Exit session\n  Tab          Autocomplete\n  Up/Down      Navigate history\n  Esc          Clear input".into(),
     )
 }
 
-fn cmd_rename(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_rename(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let name = args.trim();
     if name.is_empty() {
         return SlashCommandResult::Message("Usage: /rename <name>".into());
@@ -661,7 +438,7 @@ fn cmd_rename(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult 
     SlashCommandResult::Message(format!("Session renamed to: {name}"))
 }
 
-fn cmd_copy(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_copy(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     SlashCommandResult::Action(SlashAction::CopyLast)
 }
 
@@ -677,8 +454,9 @@ fn resolve_model_alias(alias: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
+    use super::super::types::SlashCommandRegistry;
     use super::*;
     use crab_core::model::ModelId;
     use crab_core::permission::PermissionMode;
