@@ -4,17 +4,17 @@ use super::category::ErrorCategory;
 
 // ── Recovery strategy ─────────────────────────────────────────────────
 
-/// Action to take when recovering from an error.
+/// Action to take when recovering from an error. Mirrors CCB's minimal set
+/// — CCB does not ship a `Fallback` path (retries exhausted → surface error
+/// to the user), so crab drops that variant too.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecoveryAction {
     /// Retry the operation after a delay.
     Retry { delay: Duration, max_attempts: u32 },
-    /// Fall back to an alternative (e.g., different model, simpler approach).
-    Fallback { reason: String },
-    /// Abort the operation — error is not recoverable.
-    Abort { reason: String },
-    /// Ask the user for guidance.
+    /// Ask the user for guidance (e.g. re-auth, decide whether to keep waiting).
     AskUser { message: String },
+    /// Abort the operation — error is not recoverable, or retries exhausted.
+    Abort { reason: String },
 }
 
 impl std::fmt::Display for RecoveryAction {
@@ -31,9 +31,8 @@ impl std::fmt::Display for RecoveryAction {
                     max_attempts
                 )
             }
-            Self::Fallback { reason } => write!(f, "fallback: {reason}"),
-            Self::Abort { reason } => write!(f, "abort: {reason}"),
             Self::AskUser { message } => write!(f, "ask user: {message}"),
+            Self::Abort { reason } => write!(f, "abort: {reason}"),
         }
     }
 }
@@ -88,11 +87,13 @@ impl RecoveryStrategy {
             ErrorCategory::Auth => RecoveryAction::AskUser {
                 message: "Authentication failed. Please check your API key or credentials.".into(),
             },
-            ErrorCategory::Permanent => RecoveryAction::Abort {
-                reason: "The request is invalid and cannot be retried.".into(),
-            },
-            ErrorCategory::Unknown => RecoveryAction::Fallback {
-                reason: "Unknown error — attempting alternative approach.".into(),
+            ErrorCategory::Permanent | ErrorCategory::Unknown => RecoveryAction::Abort {
+                reason: match category {
+                    ErrorCategory::Permanent => {
+                        "The request is invalid and cannot be retried.".into()
+                    }
+                    _ => "Unknown error — aborting to surface to the user.".into(),
+                },
             },
         }
     }
@@ -100,7 +101,7 @@ impl RecoveryStrategy {
     /// Determine recovery action with attempt context.
     ///
     /// If the maximum retries for a category are exhausted, escalates to
-    /// fallback or abort.
+    /// `AskUser` (rate limit) or `Abort` (transient/timeout).
     #[must_use]
     pub fn recommend_with_attempts(
         &self,
@@ -109,23 +110,14 @@ impl RecoveryStrategy {
     ) -> RecoveryAction {
         let base = self.recommend(category);
         match &base {
-            RecoveryAction::Retry { max_attempts, .. } => {
-                if attempts_so_far >= *max_attempts {
-                    // Escalate: retries exhausted
-                    match category {
-                        ErrorCategory::RateLimit => RecoveryAction::AskUser {
-                            message: "Rate limit persists after retries. Wait or check quota."
-                                .into(),
-                        },
-                        ErrorCategory::Timeout => RecoveryAction::Fallback {
-                            reason: "Timeout persists — trying simpler request.".into(),
-                        },
-                        _ => RecoveryAction::Abort {
-                            reason: format!("Retries exhausted after {attempts_so_far} attempts."),
-                        },
-                    }
-                } else {
-                    base
+            RecoveryAction::Retry { max_attempts, .. } if attempts_so_far >= *max_attempts => {
+                match category {
+                    ErrorCategory::RateLimit => RecoveryAction::AskUser {
+                        message: "Rate limit persists after retries. Wait or check quota.".into(),
+                    },
+                    _ => RecoveryAction::Abort {
+                        reason: format!("Retries exhausted after {attempts_so_far} attempts."),
+                    },
                 }
             }
             _ => base,
@@ -145,11 +137,6 @@ mod tests {
             max_attempts: 3,
         };
         assert!(retry.to_string().contains("retry"));
-
-        let fallback = RecoveryAction::Fallback {
-            reason: "test".into(),
-        };
-        assert!(fallback.to_string().contains("fallback"));
 
         let abort = RecoveryAction::Abort {
             reason: "fatal".into(),
@@ -205,10 +192,10 @@ mod tests {
     }
 
     #[test]
-    fn strategy_unknown_recommends_fallback() {
+    fn strategy_unknown_recommends_abort() {
         let s = RecoveryStrategy::default();
         let action = s.recommend(ErrorCategory::Unknown);
-        assert!(matches!(action, RecoveryAction::Fallback { .. }));
+        assert!(matches!(action, RecoveryAction::Abort { .. }));
     }
 
     #[test]
@@ -219,34 +206,31 @@ mod tests {
     }
 
     #[test]
-    fn strategy_with_attempts_escalates_transient() {
+    fn strategy_with_attempts_escalates_transient_to_abort() {
         let s = RecoveryStrategy::default();
-        // Within limit
         let action = s.recommend_with_attempts(ErrorCategory::Transient, 1);
         assert!(matches!(action, RecoveryAction::Retry { .. }));
-        // Exhausted
         let action = s.recommend_with_attempts(ErrorCategory::Transient, 3);
         assert!(matches!(action, RecoveryAction::Abort { .. }));
     }
 
     #[test]
-    fn strategy_with_attempts_escalates_rate_limit() {
+    fn strategy_with_attempts_escalates_rate_limit_to_ask_user() {
         let s = RecoveryStrategy::default();
         let action = s.recommend_with_attempts(ErrorCategory::RateLimit, 5);
         assert!(matches!(action, RecoveryAction::AskUser { .. }));
     }
 
     #[test]
-    fn strategy_with_attempts_escalates_timeout() {
+    fn strategy_with_attempts_escalates_timeout_to_abort() {
         let s = RecoveryStrategy::default();
         let action = s.recommend_with_attempts(ErrorCategory::Timeout, 2);
-        assert!(matches!(action, RecoveryAction::Fallback { .. }));
+        assert!(matches!(action, RecoveryAction::Abort { .. }));
     }
 
     #[test]
     fn strategy_with_attempts_no_escalation_for_permanent() {
         let s = RecoveryStrategy::default();
-        // Permanent always aborts regardless of attempts
         let action = s.recommend_with_attempts(ErrorCategory::Permanent, 0);
         assert!(matches!(action, RecoveryAction::Abort { .. }));
     }

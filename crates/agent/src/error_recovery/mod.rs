@@ -1,22 +1,21 @@
-//! Error recovery: classification, strategy selection, circuit breaker,
-//! and graceful degradation for resilient agent operation.
+//! Error classification and recovery strategy — aligned with CCB's
+//! `classifyAPIError()` approach from `src/services/api/errors.ts`.
 //!
-//! Builds on the retry module to provide higher-level error handling
-//! that adapts behaviour based on error type and failure patterns.
+//! Two modules:
 //!
-//! ## Sub-modules
+//! - [`category`] — [`ErrorCategory`] + [`ErrorClassifier`] map error text
+//!   or HTTP status to a small enum (`Transient` / `RateLimit` / `Auth` /
+//!   `Timeout` / `Permanent` / `Unknown`).
+//! - [`strategy`] — [`RecoveryAction`] + [`RecoveryStrategy`] pick
+//!   `Retry` / `AskUser` / `Abort` per category.
 //!
-//! - [`category`]    — [`ErrorCategory`] + [`ErrorClassifier`]
-//! - [`strategy`]    — [`RecoveryAction`] + [`RecoveryStrategy`]
-//! - [`circuit`]     — [`CircuitState`] + [`CircuitBreaker`] (+ config)
-//! - [`degradation`] — [`DegradableFeature`] + [`FeaturePriority`] + [`GracefulDegradation`]
+//! The earlier `circuit` (`CircuitBreaker`) and `degradation`
+//! (`GracefulDegradation`) modules were removed in Phase 4.1 — CCB does
+//! not ship equivalent abstractions, and crab's versions were
+//! unintegrated.
 
 pub mod category;
-pub mod circuit;
-pub mod degradation;
 pub mod strategy;
 
 pub use category::{ErrorCategory, ErrorClassifier};
-pub use circuit::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
-pub use degradation::{DegradableFeature, FeaturePriority, GracefulDegradation};
 pub use strategy::{RecoveryAction, RecoveryStrategy};

@@ -13,7 +13,7 @@ use crab_config::crab_md;
 use crab_memory::MemoryFile;
 use crab_tools::registry::ToolRegistry;
 
-use crate::git_context::GitContext;
+use super::git_context::GitContext;
 
 /// Build the complete system prompt.
 pub fn build_system_prompt(

@@ -19,11 +19,11 @@ use tokio_util::sync::CancellationToken;
 
 use crab_engine::QueryConfig;
 
-use crate::task_executor::local_agent::{AgentWorker, WorkerConfig, WorkerResult};
 use crate::teams::bus::{AgentMessage, Envelope, MessageBus};
 use crate::teams::mailbox::MessageRouter;
 use crate::teams::retry::{RetryDecision, RetryPolicy, RetryTracker};
 use crate::teams::roster::{Team, TeamMode};
+use crate::teams::worker::{AgentWorker, WorkerConfig, WorkerResult};
 
 /// Multi-agent orchestrator. Manages the main agent and worker pool.
 ///
