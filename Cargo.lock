@@ -886,12 +886,19 @@ dependencies = [
 name = "crab-mcp"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "crab-common",
  "crab-core",
+ "directories",
+ "fd-lock",
  "futures",
+ "rand 0.10.1",
+ "reqwest 0.13.2",
  "rmcp",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
