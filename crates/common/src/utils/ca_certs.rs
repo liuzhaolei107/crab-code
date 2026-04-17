@@ -274,7 +274,7 @@ mod tests {
 
         let b = load_ca_bundle(std::slice::from_ref(&path)).unwrap();
         assert_eq!(b.len(), 1);
-        assert_eq!(b.sources, vec![path.clone()]);
+        assert_eq!(b.sources, vec![path]);
     }
 
     #[test]

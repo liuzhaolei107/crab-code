@@ -115,6 +115,9 @@ jsonwebtoken = "10"
 # ─── Phase 7-auth：MCP OAuth 打开浏览器 + URL 编码 ───
 webbrowser = "1"
 urlencoding = "2"
+# ─── Phase 7 foundation：binary sniff + shell expand ───
+infer = "0.19"
+shellexpand = "3"
 axum = { version = "0.8", features = ["ws"] }
 croner = "3"
 # Linux-only process sandbox
