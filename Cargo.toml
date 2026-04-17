@@ -112,6 +112,9 @@ nucleo-matcher = "0.3"
 
 # ─── Phase 1 新增：bridge / remote / sandbox 所需 ───
 jsonwebtoken = "10"
+# ─── Phase 7-auth：MCP OAuth 打开浏览器 + URL 编码 ───
+webbrowser = "1"
+urlencoding = "2"
 axum = { version = "0.8", features = ["ws"] }
 croner = "3"
 # Linux-only process sandbox
