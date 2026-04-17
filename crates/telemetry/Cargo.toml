@@ -19,6 +19,9 @@ opentelemetry-otlp = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [features]
 default = ["fmt"]
 fmt = ["tracing-subscriber/fmt"]

@@ -325,16 +325,28 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
+    /// Allocate a hermetic temp directory plus a `costs.json` path inside it.
+    ///
+    /// The returned `TempDir` must be kept alive for the duration of the test —
+    /// dropping it removes the directory and all contents. Use this instead of
+    /// hand-rolling paths from `SystemTime::now().as_nanos()`, which can collide
+    /// under parallel test execution on platforms with coarse clock resolution.
+    fn temp_cost_dir() -> (TempDir, PathBuf) {
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("costs.json");
+        (dir, path)
+    }
+
+    /// Convenience for tests that never touch disk: just a unique path. The
+    /// `TempDir` is dropped immediately, but since no file is written, nothing
+    /// is left behind.
     fn temp_cost_path() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "crab-cost-test-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
-        dir.join("costs.json")
+        let (_guard, path) = temp_cost_dir();
+        // Drop `_guard` at end of scope; path is inside the (now removed)
+        // directory but the tests using this helper never write to it.
+        path
     }
 
     // ── ModelPricing ──────────────────────────────────────────────────
@@ -469,20 +481,18 @@ mod tests {
 
     #[test]
     fn save_and_load_roundtrip() {
-        let path = temp_cost_path();
+        // Hold `_dir` for the lifetime of the test so the temp directory
+        // (and any files we write inside it) are cleaned up on drop rather
+        // than manually — this makes the test hermetic under parallel runs.
+        let (_dir, path) = temp_cost_dir();
         let mut tracker = CostTracker::new(PricingTable::with_defaults(), path.clone());
         tracker.record("anthropic", "claude-sonnet-4-20250514", 1000, 500, None);
         tracker.save().unwrap();
 
-        let mut tracker2 = CostTracker::new(PricingTable::with_defaults(), path.clone());
+        let mut tracker2 = CostTracker::new(PricingTable::with_defaults(), path);
         tracker2.load().unwrap();
         assert_eq!(tracker2.records().len(), 1);
         assert!((tracker2.total_cost() - tracker.total_cost()).abs() < 1e-10);
-
-        let _ = std::fs::remove_file(&path);
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::remove_dir(parent);
-        }
     }
 
     #[test]
@@ -497,15 +507,14 @@ mod tests {
 
     #[test]
     fn save_creates_parent_dirs() {
-        let path = temp_cost_path();
+        // Use a nested path under a TempDir so `save()` must actually
+        // create the intermediate `nested/` directory. The guard ensures
+        // cleanup happens on drop, no matter which assertion fails.
+        let dir = TempDir::new().expect("failed to create temp dir");
+        let path = dir.path().join("nested").join("costs.json");
         let tracker = CostTracker::new(PricingTable::default(), path.clone());
         assert!(tracker.save().is_ok());
         assert!(path.exists());
-
-        let _ = std::fs::remove_file(&path);
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::remove_dir(parent);
-        }
     }
 
     // ── Default path ──────────────────────────────────────────────────

@@ -1076,6 +1076,7 @@ dependencies = [
  "opentelemetry_sdk",
  "serde",
  "serde_json",
+ "tempfile",
  "tracing",
  "tracing-appender",
  "tracing-opentelemetry",
