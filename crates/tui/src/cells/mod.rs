@@ -1,8 +1,10 @@
+pub mod agent_progress;
 pub mod assistant_message;
 pub mod diff;
 pub mod error;
 pub mod plan_approval;
 pub mod progress;
+pub mod rate_limit;
 pub mod thinking;
 pub mod tool_call;
 pub mod tool_rejected;
