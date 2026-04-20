@@ -17,7 +17,7 @@
 
 ---
 
-> **Status: Active Development** -- 46 built-in tools · 33 slash commands · 6 permission modes · three-layer multi-agent architecture · file-history rewinding · extended thinking · TUI with 188 spinner verbs · 3800+ tests · 24 crates · ~129k LOC.
+> **Status: Active Development** -- 46 built-in tools · 33 slash commands · 6 permission modes · three-layer multi-agent architecture · file-history rewinding · extended thinking · TUI with Markdown tables, toast notifications, OSC 8 hyperlinks, and Vim editing · 4500+ tests · 24 crates · ~140k LOC.
 
 ## What is Crab Code?
 
@@ -161,12 +161,16 @@ The REPL intercepts input matching `/<letter>…` and dispatches through `SlashC
 ### Interactive TUI
 
 - `ratatui` + `crossterm` terminal UI, immediate-mode rendering
-- Markdown rendering with syntax highlighting
-- Vim-mode editing
+- Markdown rendering with syntax highlighting and GFM table support (responsive horizontal/vertical layout)
+- OSC 8 clickable hyperlinks in Markdown links and images (with plain-text fallback)
+- Toast notification queue with key-based dedup and auto-expiry
+- OS-level terminal notifications via OSC 9/99/777 (iTerm2, Kitty, WezTerm, Ghostty)
+- Vim-mode editing (normal, insert, visual, with motions, operators, and registers)
 - Autocomplete for slash commands and file paths
-- Permission dialogs
+- Session sidebar with tabbed Recent/Saved views
+- Permission dialogs with allow/deny/always actions
 - Cost tracking status bar
-- 188 spinner verbs mirrored from Claude Code
+- Dark/light theme auto-detection via OSC 11
 
 ## Architecture
 
@@ -231,7 +235,7 @@ Insider toggles (no CLI flag, env only — keeps the surface hidden from `--help
 
 ```bash
 cargo build --workspace                    # Build all
-cargo test --workspace                     # Run all tests (3800+)
+cargo test --workspace                     # Run all tests (4500+)
 cargo clippy --workspace -- -D warnings    # Lint (CI treats warnings as errors)
 cargo fmt --all --check                    # Check formatting
 cargo run --bin crab                       # Run CLI
