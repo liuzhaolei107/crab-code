@@ -14,7 +14,9 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
+use crossterm::event::{
+    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -207,8 +209,27 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
     tracing::debug!(?detection, "terminal background detection");
     crate::theme::init_current(selected_theme);
 
+    // Install a panic hook that restores the terminal before printing the
+    // backtrace. Without this the user would be left in raw-mode on crash.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            io::stdout(),
+            DisableMouseCapture,
+            DisableBracketedPaste,
+            LeaveAlternateScreen
+        );
+        default_hook(info);
+    }));
+
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableBracketedPaste,
+        EnableMouseCapture
+    )?;
     let term_backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(term_backend)?;
 
@@ -320,6 +341,7 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
+        DisableMouseCapture,
         DisableBracketedPaste,
         LeaveAlternateScreen
     )?;
@@ -564,6 +586,7 @@ async fn run_loop(
                 disable_raw_mode().ok();
                 execute!(
                     terminal.backend_mut(),
+                    DisableMouseCapture,
                     DisableBracketedPaste,
                     LeaveAlternateScreen
                 )
@@ -576,7 +599,8 @@ async fn run_loop(
                 execute!(
                     terminal.backend_mut(),
                     EnterAlternateScreen,
-                    EnableBracketedPaste
+                    EnableBracketedPaste,
+                    EnableMouseCapture
                 )
                 .ok();
                 terminal.clear().ok();

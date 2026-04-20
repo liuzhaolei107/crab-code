@@ -1,58 +1,9 @@
-//! Core keybinding types: `Action`, `KeyContext`, `KeyChord`.
+//! Core keybinding types: `KeyContext`, `KeyChord`.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use serde::{Deserialize, Serialize};
 
-/// A discrete UI action that can be bound to a key or chord.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Action {
-    Quit,
-    Submit,
-    NewLine,
-    NewSession,
-    NextSession,
-    PrevSession,
-    ToggleSidebar,
-    Cancel,
-    ScrollUp,
-    ScrollDown,
-    ScrollHome,
-    ScrollEnd,
-    PermissionAllow,
-    PermissionDeny,
-    ToggleFold,
-    FoldOutput,
-    UnfoldOutput,
-    CopyCodeBlock,
-    Search,
-    SearchNext,
-    SearchPrev,
-    TabComplete,
-    TabCompleteNext,
-    TabCompletePrev,
-    HistorySearch,
-    ExternalEditor,
-    Stash,
-    ToggleTodos,
-    ToggleTranscript,
-    Redraw,
-    KillAgents,
-    CycleMode,
-    ModelPicker,
-    ImagePaste,
-    Undo,
-    Redo,
-    OpenTaskList,
-    OpenGlobalSearch,
-    OpenCommandPalette,
-    OpenHelp,
-    EnterSelectionMode,
-    ExitSelectionMode,
-    SelectionCopy,
-    OpenAgentDetail,
-    ClearScreen,
-}
+pub use crate::action::Action;
 
 /// The focus / overlay context a binding applies to.
 ///

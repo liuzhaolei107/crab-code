@@ -17,12 +17,14 @@ pub mod config;
 pub mod defaults;
 pub mod parser;
 pub mod resolver;
+pub mod sequence;
 pub mod types;
 
 pub use config::{UserBindings, apply as apply_user_bindings, apply_from_path};
 pub use defaults::defaults;
 pub use parser::{parse_chord, parse_key_code, parse_sequence};
 pub use resolver::{DEFAULT_CHORD_TIMEOUT, ResolveOutcome, Resolver, grouped_bindings};
+pub use sequence::{KeySequenceParser, SequenceResult};
 pub use types::{Action, KeyChord, KeyCombo, KeyContext, Sequence};
 
 use std::path::Path;

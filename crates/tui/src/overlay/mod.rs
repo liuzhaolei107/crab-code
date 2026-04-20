@@ -3,6 +3,10 @@
 //! Overlays are pushed onto a stack. The topmost overlay receives input first.
 //! If it doesn't consume the input, it falls through to the next layer.
 
+pub mod kind;
+
+pub use kind::{HelpState, OverlayKind, PermissionDialogState, TranscriptState};
+
 use crossterm::event::KeyEvent;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
