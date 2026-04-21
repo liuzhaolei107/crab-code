@@ -800,13 +800,6 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
         coordinator_mode,
     };
 
-    print_banner(
-        env!("CARGO_PKG_VERSION"),
-        &provider,
-        &model_id,
-        &permission_mode,
-    );
-
     // Determine the effective prompt: positional arg, or stdin if -p with no prompt
     let effective_prompt = if let Some(ref prompt) = cli.prompt {
         Some(prompt.clone())
@@ -821,7 +814,13 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
     };
 
     if let Some(prompt) = effective_prompt {
-        // Single-shot mode: check if it's a /command
+        // Single-shot mode
+        print_banner(
+            env!("CARGO_PKG_VERSION"),
+            &provider,
+            &model_id,
+            &permission_mode,
+        );
         let resolved = resolve_slash_command(&prompt, &skill_registry);
         let mut session = AgentSession::new(session_config, backend, registry);
         session
@@ -838,10 +837,18 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
                 skill_dirs,
                 mcp_servers: settings.mcp_servers.clone(),
             };
-            crab_tui::run(tui_config).await
+            let result = crab_tui::run(tui_config).await;
+            print_goodbye();
+            result
         }
         #[cfg(not(feature = "tui"))]
         {
+            print_banner(
+                env!("CARGO_PKG_VERSION"),
+                &provider,
+                &model_id,
+                &permission_mode,
+            );
             let mut session = AgentSession::new(session_config, backend, registry);
             session
                 .executor
@@ -1265,6 +1272,14 @@ async fn print_events(
 }
 
 // ─── Inlined output helpers ──────────────────────────────────────
+
+fn print_goodbye() {
+    const MESSAGES: &[&str] = &["Goodbye!", "See ya!", "Bye!", "Catch you later!"];
+    let idx = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos() as usize % MESSAGES.len());
+    eprintln!("{}", MESSAGES[idx]);
+}
 
 fn print_banner(version: &str, provider: &str, model: &str, permission_mode: &impl fmt::Display) {
     eprintln!(
