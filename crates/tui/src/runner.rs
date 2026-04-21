@@ -38,6 +38,13 @@ use crate::event::spawn_event_loop;
 use crate::event_broker::EventBroker;
 use crate::frame_requester::FrameRequester;
 
+/// Information returned when the TUI exits.
+pub struct ExitInfo {
+    pub session_id: String,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+}
+
 /// Configuration for launching the TUI REPL.
 pub struct TuiConfig {
     pub session_config: SessionConfig,
@@ -55,7 +62,7 @@ pub struct TuiConfig {
 /// happen in a background task. Once ready, the event loop receives
 /// `InitResult` via a oneshot channel and transitions to `Idle`.
 #[allow(clippy::too_many_lines)]
-pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
+pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
     // ── Phase 1: Terminal setup (instant) ────────────────────────────────
 
     enable_raw_mode()?;
@@ -162,6 +169,12 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
     )
     .await;
 
+    let exit_info = ExitInfo {
+        session_id: app.session_id.clone(),
+        total_input_tokens: app.total_input_tokens,
+        total_output_tokens: app.total_output_tokens,
+    };
+
     // Restore terminal
     disable_raw_mode()?;
     execute!(
@@ -171,7 +184,7 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
     )?;
     terminal.show_cursor()?;
 
-    result
+    result.map(|()| exit_info)
 }
 
 /// Static list of built-in slash commands for Tab completion.

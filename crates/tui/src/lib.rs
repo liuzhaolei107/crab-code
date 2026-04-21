@@ -20,4 +20,4 @@ pub mod traits;
 pub mod vim;
 pub mod watcher;
 
-pub use runner::{TuiConfig, run};
+pub use runner::{ExitInfo, TuiConfig, run};

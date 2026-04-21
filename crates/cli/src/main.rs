@@ -837,9 +837,9 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
                 skill_dirs,
                 mcp_servers: settings.mcp_servers.clone(),
             };
-            let result = crab_tui::run(tui_config).await;
-            print_goodbye();
-            result
+            let exit_info = crab_tui::run(tui_config).await?;
+            print_exit_info(&exit_info);
+            Ok(())
         }
         #[cfg(not(feature = "tui"))]
         {
@@ -1273,12 +1273,43 @@ async fn print_events(
 
 // ─── Inlined output helpers ──────────────────────────────────────
 
-fn print_goodbye() {
-    const MESSAGES: &[&str] = &["Goodbye!", "See ya!", "Bye!", "Catch you later!"];
+#[cfg(feature = "tui")]
+pub fn print_exit_info(info: &crab_tui::ExitInfo) {
+    const GOODBYES: &[&str] = &["Goodbye!", "See ya!", "Bye!", "Catch you later!"];
+
+    let total = info.total_input_tokens + info.total_output_tokens;
+    if total > 0 {
+        eprintln!(
+            "{}",
+            format!(
+                "Token usage: total={} input={} output={}",
+                format_tokens(total),
+                format_tokens(info.total_input_tokens),
+                format_tokens(info.total_output_tokens),
+            )
+            .dimmed()
+        );
+    }
+    if !info.session_id.is_empty() {
+        eprintln!(
+            "{}",
+            format!("To resume this session:  crab --resume {}", info.session_id).dimmed()
+        );
+    }
     let idx = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos() as usize % MESSAGES.len());
-    eprintln!("{}", MESSAGES[idx]);
+        .map_or(0, |d| d.as_nanos() as usize % GOODBYES.len());
+    eprintln!("{}", GOODBYES[idx]);
+}
+
+fn format_tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 10_000 {
+        format!("{:.1}k", n as f64 / 1000.0)
+    } else {
+        n.to_string()
+    }
 }
 
 fn print_banner(version: &str, provider: &str, model: &str, permission_mode: &impl fmt::Display) {
