@@ -18,5 +18,6 @@ pub mod terminal_notify;
 pub mod theme;
 pub mod traits;
 pub mod vim;
+pub mod watcher;
 
 pub use runner::{TuiConfig, run};

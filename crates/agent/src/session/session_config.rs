@@ -7,6 +7,7 @@ use crab_core::model::ModelId;
 use crab_core::permission::PermissionPolicy;
 
 /// Session configuration needed to start a query loop.
+#[derive(Clone)]
 pub struct SessionConfig {
     pub session_id: String,
     pub system_prompt: String,

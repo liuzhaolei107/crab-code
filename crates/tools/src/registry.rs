@@ -12,6 +12,14 @@ pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
 }
 
+impl std::fmt::Debug for ToolRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolRegistry")
+            .field("tool_count", &self.tools.len())
+            .finish()
+    }
+}
+
 impl ToolRegistry {
     #[must_use]
     pub fn new() -> Self {

@@ -50,155 +50,18 @@ pub struct TuiConfig {
 
 /// Run the interactive TUI REPL. This is the main entry point for interactive mode.
 ///
-/// Sets up the terminal, creates the agent components, and runs the render+event loop
-/// until the user quits. On exit, auto-saves the session to disk.
+/// Uses a UI-first strategy: the TUI is displayed immediately in an
+/// `Initializing` state while MCP, memory, session, and skill loading
+/// happen in a background task. Once ready, the event loop receives
+/// `InitResult` via a oneshot channel and transitions to `Idle`.
 #[allow(clippy::too_many_lines)]
 pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
-    // Build tool registry and executor
-    let mut registry = create_default_registry();
+    // ── Phase 1: Terminal setup (instant) ────────────────────────────────
 
-    // Connect to MCP servers and register their tools
-    let mut _mcp_manager = if let Some(ref mcp_value) = config.mcp_servers {
-        let mut mgr = crab_mcp::McpManager::new();
-        let failed = mgr.start_all(mcp_value).await.unwrap_or_else(|e| {
-            tracing::warn!("failed to parse MCP config: {e}");
-            Vec::new()
-        });
-        for name in &failed {
-            tracing::warn!("MCP server '{name}' failed to connect");
-        }
-        let count = crab_tools::builtin::mcp_tool::register_mcp_tools(&mgr, &mut registry).await;
-        if count > 0 {
-            tracing::info!("Registered {count} MCP tool(s)");
-        }
-        Some(mgr)
-    } else {
-        None
-    };
-
-    let registry = Arc::new(registry);
-    let tool_schemas = registry.tool_schemas();
-    let registry_for_app = Arc::clone(&registry);
-    let mut executor = ToolExecutor::new(registry);
-
-    let session_id = config.session_config.session_id.clone();
-
-    // Load memories and build conversation with system prompt
-    let memory_store = config
-        .session_config
-        .memory_dir
-        .as_ref()
-        .map(|d| crab_session::MemoryStore::new(d.clone()));
-    let session_history = config
-        .session_config
-        .sessions_dir
-        .as_ref()
-        .map(|d| SessionHistory::new(d.clone()));
-
-    let mut system_prompt = config.session_config.system_prompt.clone();
-
-    // Inject memories into system prompt
-    if let Some(ref store) = memory_store
-        && let Ok(memories) = store.scan()
-        && !memories.is_empty()
-    {
-        system_prompt.push_str("\n\n# Loaded Memories\n\n");
-        for mem in &memories {
-            use std::fmt::Write as _;
-            let _ = writeln!(
-                system_prompt,
-                "## {} (type: {})",
-                mem.metadata.name, mem.metadata.memory_type
-            );
-            if !mem.metadata.description.is_empty() {
-                let _ = writeln!(system_prompt, "> {}", mem.metadata.description);
-                system_prompt.push('\n');
-            }
-            let _ = writeln!(system_prompt, "{}", mem.body);
-            system_prompt.push('\n');
-        }
-    }
-
-    let mut conversation = Conversation::new(
-        session_id.clone(),
-        system_prompt,
-        config.session_config.context_window,
-    );
-
-    // Resume from previous session if requested
-    if let Some(ref resume_id) = config.session_config.resume_session_id
-        && let Some(ref history) = session_history
-        && let Ok(Some(messages)) = history.load(resume_id)
-    {
-        for msg in messages {
-            conversation.push(msg);
-        }
-    }
-
-    let tool_ctx = crab_core::tool::ToolContext {
-        working_dir: config.session_config.working_dir,
-        permission_mode: config.session_config.permission_policy.mode,
-        session_id: session_id.clone(),
-        cancellation_token: tokio_util::sync::CancellationToken::new(),
-        permission_policy: config.session_config.permission_policy,
-        ext: crab_core::tool::ToolContextExt::default(),
-    };
-
-    let loop_config = crab_engine::QueryConfig {
-        model: config.session_config.model.clone(),
-        max_tokens: config.session_config.max_tokens,
-        temperature: config.session_config.temperature,
-        tool_schemas,
-        cache_enabled: false,
-        budget_tokens: None,
-        retry_policy: None,
-        hook_executor: None,
-        session_id: Some(config.session_config.session_id.clone()),
-        effort: None,
-        fallback_model: config
-            .session_config
-            .fallback_model
-            .map(crab_core::model::ModelId::from),
-        source: crab_core::query::QuerySource::Repl,
-    };
-
-    let (event_tx, event_rx) = mpsc::channel::<Event>(256);
-
-    // Permission response channel: TUI event loop → permission handler
-    let (perm_resp_tx, perm_resp_rx) = mpsc::unbounded_channel::<(String, bool)>();
-    executor.set_permission_handler(Arc::new(TuiPermissionHandler {
-        event_tx: event_tx.clone(),
-        response_rx: Arc::new(tokio::sync::Mutex::new(perm_resp_rx)),
-    }));
-    let executor = Arc::new(executor);
-
-    // Discover skills for /command support
-    let skill_registry = SkillRegistry::discover(&config.skill_dirs).unwrap_or_default();
-
-    // Bridge: bounded session events → unbounded TUI channel
-    let (agent_ui_tx, agent_ui_rx) = mpsc::unbounded_channel::<Event>();
-    spawn_event_forwarder(event_rx, agent_ui_tx);
-
-    // EventBroker controls whether crossterm events flow into the TUI loop.
-    // We pause it during the external editor (Ctrl+G) so $EDITOR can own the
-    // terminal, then resume.
-    let event_broker = Arc::new(EventBroker::new());
-
-    // FrameRequester lets background tasks request a redraw without waiting
-    // for the next tick.
-    let frame_requester = FrameRequester::default();
-
-    // Spawn the TUI event loop (merges crossterm + agent events + ticks)
-    let tick_rate = std::time::Duration::from_millis(100);
-    let mut tui_rx = spawn_event_loop(agent_ui_rx, tick_rate, Arc::clone(&event_broker));
-
-    // Set up terminal
     enable_raw_mode()?;
 
     // Probe the terminal background color via OSC 11 while we still own
     // stdout exclusively and before switching to the alternate screen.
-    // On any failure / timeout the probe returns `Unknown` and we fall
-    // back to the default dark theme.
     let detection = crate::theme::detect_background(std::time::Duration::from_millis(80));
     let selected_theme = match detection {
         crate::theme::Detection::Light => crate::theme::Theme::light(),
@@ -207,8 +70,6 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
     tracing::debug!(?detection, "terminal background detection");
     crate::theme::init_current(selected_theme);
 
-    // Install a panic hook that restores the terminal before printing the
-    // backtrace. Without this the user would be left in raw-mode on crash.
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
@@ -221,35 +82,106 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
     let term_backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(term_backend)?;
 
-    let model_name = loop_config.model.as_str().to_string();
+    // ── Phase 2: Create App in Initializing state ────────────────────────
+
+    let model_name = config.session_config.model.as_str().to_string();
     let mut app = App::new(&model_name);
-    app.tool_registry = Some(registry_for_app);
+    app.state = crate::app::AppState::Initializing;
     if let Ok(cwd) = std::env::current_dir() {
         app.set_working_dir(cwd.display().to_string());
         app.set_completion_cwd(cwd);
     }
 
-    // Populate session sidebar from saved sessions
-    if let Some(ref history) = session_history
-        && let Ok(metas) = history.list_sessions_with_metadata()
-    {
-        let entries: Vec<_> = metas
-            .iter()
-            .map(|m| crate::components::session_sidebar::SessionEntry {
-                id: m.session_id.clone(),
-                name: m.name.clone().unwrap_or_else(|| m.session_id.clone()),
-                last_active: m
-                    .modified
-                    .and_then(|t| t.elapsed().ok())
-                    .map_or_else(|| "unknown".into(), |d| format!("{}s ago", d.as_secs())),
-                message_count: m.message_count,
-            })
-            .collect();
-        app.session_sidebar.set_sessions(entries);
+    // Register built-in slash commands for Tab completion
+    app.set_slash_commands(builtin_slash_commands());
+
+    // ── Phase 3: Event infrastructure ────────────────────────────────────
+
+    let (event_tx, event_rx) = mpsc::channel::<Event>(256);
+    let (perm_resp_tx, perm_resp_rx) = mpsc::unbounded_channel::<(String, bool)>();
+
+    let (agent_ui_tx, agent_ui_rx) = mpsc::unbounded_channel::<Event>();
+    spawn_event_forwarder(event_rx, agent_ui_tx);
+
+    let event_broker = Arc::new(EventBroker::new());
+    let frame_requester = FrameRequester::default();
+    let tick_rate = std::time::Duration::from_millis(100);
+    let mut tui_rx = spawn_event_loop(agent_ui_rx, tick_rate, Arc::clone(&event_broker));
+
+    // ── Phase 4a: API preconnect (fire-and-forget TCP+TLS warmup) ──────
+
+    let preconnect_backend = Arc::clone(&config.backend);
+    tokio::spawn(async move {
+        let _ = preconnect_backend.health_check().await;
+    });
+
+    // ── Phase 4b: Spawn background initialization ────────────────────────
+
+    let init_config = BackgroundInitConfig {
+        session_config: config.session_config.clone(),
+        mcp_servers: config.mcp_servers.clone(),
+        skill_dirs: config.skill_dirs.clone(),
+        perm_event_tx: event_tx.clone(),
+        perm_resp_rx,
+    };
+    let (init_tx, init_rx) = tokio::sync::oneshot::channel::<InitResult>();
+    tokio::spawn(async move {
+        let result = background_init(init_config).await;
+        let _ = init_tx.send(result);
+    });
+
+    // ── Phase 4c: Settings & skills filesystem watcher ─────────────────
+
+    let home = crab_common::utils::path::home_dir();
+    let mut settings_watch_paths = vec![home.join(".crab").join("settings.json")];
+    if let Ok(cwd) = std::env::current_dir() {
+        settings_watch_paths.push(cwd.join(".crab").join("settings.json"));
     }
 
-    // Register built-in slash commands for Tab completion
-    app.set_slash_commands(vec![
+    let (watch_tx, watch_rx) = mpsc::unbounded_channel();
+    let _file_watcher = crate::watcher::FileWatcher::new(
+        &settings_watch_paths,
+        &config.skill_dirs,
+        watch_tx,
+    );
+    let mut watch_rx = crate::watcher::debounced_watch(
+        watch_rx,
+        std::time::Duration::from_millis(500),
+    );
+
+    // ── Phase 5: Enter event loop immediately ────────────────────────────
+
+    let session_id = config.session_config.session_id.clone();
+    let result = run_loop(
+        &mut terminal,
+        &mut app,
+        &mut tui_rx,
+        init_rx,
+        &mut watch_rx,
+        config.backend,
+        event_tx,
+        perm_resp_tx,
+        &session_id,
+        Arc::clone(&event_broker),
+        frame_requester.clone(),
+    )
+    .await;
+
+    // Restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        DisableBracketedPaste,
+        LeaveAlternateScreen
+    )?;
+    terminal.show_cursor()?;
+
+    result
+}
+
+/// Static list of built-in slash commands for Tab completion.
+fn builtin_slash_commands() -> Vec<CommandInfo> {
+    vec![
         CommandInfo {
             name: "/help".into(),
             description: "Show available commands".into(),
@@ -322,38 +254,188 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<()> {
             name: "/effort".into(),
             description: "Set effort level".into(),
         },
-    ]);
+    ]
+}
 
-    // Main render + event loop
-    let result = run_loop(
-        &mut terminal,
-        &mut app,
-        &mut tui_rx,
-        conversation,
-        config.backend,
+/// Data needed by the background initialization task.
+struct BackgroundInitConfig {
+    session_config: SessionConfig,
+    mcp_servers: Option<serde_json::Value>,
+    skill_dirs: Vec<PathBuf>,
+    perm_event_tx: mpsc::Sender<Event>,
+    perm_resp_rx: mpsc::UnboundedReceiver<(String, bool)>,
+}
+
+/// Result of background initialization ��� delivered via oneshot to the event loop.
+pub struct InitResult {
+    pub registry: Arc<crab_tools::registry::ToolRegistry>,
+    pub executor: Arc<ToolExecutor>,
+    pub conversation: Conversation,
+    pub tool_ctx: crab_core::tool::ToolContext,
+    pub loop_config: crab_engine::QueryConfig,
+    pub skill_registry: SkillRegistry,
+    pub session_history: Option<SessionHistory>,
+    pub sidebar_entries: Vec<crate::components::session_sidebar::SessionEntry>,
+    pub mcp_failures: Vec<String>,
+}
+
+impl std::fmt::Debug for InitResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InitResult")
+            .field("mcp_failures", &self.mcp_failures)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Perform all heavy initialization in the background.
+async fn background_init(config: BackgroundInitConfig) -> InitResult {
+    // Build tool registry and connect MCP servers
+    let mut registry = create_default_registry();
+
+    let mut mcp_failures = Vec::new();
+    let mut _mcp_manager = if let Some(ref mcp_value) = config.mcp_servers {
+        let mut mgr = crab_mcp::McpManager::new();
+        let failed = mgr.start_all(mcp_value).await.unwrap_or_else(|e| {
+            tracing::warn!("failed to parse MCP config: {e}");
+            Vec::new()
+        });
+        for name in &failed {
+            tracing::warn!("MCP server '{name}' failed to connect");
+        }
+        mcp_failures = failed;
+        let count = crab_tools::builtin::mcp_tool::register_mcp_tools(&mgr, &mut registry).await;
+        if count > 0 {
+            tracing::info!("Registered {count} MCP tool(s)");
+        }
+        Some(mgr)
+    } else {
+        None
+    };
+
+    let registry = Arc::new(registry);
+    let tool_schemas = registry.tool_schemas();
+    let mut executor = ToolExecutor::new(Arc::clone(&registry));
+
+    // Wire up the TUI permission handler
+    executor.set_permission_handler(Arc::new(TuiPermissionHandler {
+        event_tx: config.perm_event_tx,
+        response_rx: Arc::new(tokio::sync::Mutex::new(config.perm_resp_rx)),
+    }));
+    let executor = Arc::new(executor);
+
+    // Load memories and build system prompt
+    let memory_store = config
+        .session_config
+        .memory_dir
+        .as_ref()
+        .map(|d| crab_session::MemoryStore::new(d.clone()));
+    let session_history = config
+        .session_config
+        .sessions_dir
+        .as_ref()
+        .map(|d| SessionHistory::new(d.clone()));
+
+    let mut system_prompt = config.session_config.system_prompt.clone();
+
+    if let Some(ref store) = memory_store
+        && let Ok(memories) = store.scan()
+        && !memories.is_empty()
+    {
+        system_prompt.push_str("\n\n# Loaded Memories\n\n");
+        for mem in &memories {
+            use std::fmt::Write as _;
+            let _ = writeln!(
+                system_prompt,
+                "## {} (type: {})",
+                mem.metadata.name, mem.metadata.memory_type
+            );
+            if !mem.metadata.description.is_empty() {
+                let _ = writeln!(system_prompt, "> {}", mem.metadata.description);
+                system_prompt.push('\n');
+            }
+            let _ = writeln!(system_prompt, "{}", mem.body);
+            system_prompt.push('\n');
+        }
+    }
+
+    let session_id = config.session_config.session_id.clone();
+    let mut conversation = Conversation::new(
+        session_id.clone(),
+        system_prompt,
+        config.session_config.context_window,
+    );
+
+    // Resume from previous session if requested
+    if let Some(ref resume_id) = config.session_config.resume_session_id
+        && let Some(ref history) = session_history
+        && let Ok(Some(messages)) = history.load(resume_id)
+    {
+        for msg in messages {
+            conversation.push(msg);
+        }
+    }
+
+    let tool_ctx = crab_core::tool::ToolContext {
+        working_dir: config.session_config.working_dir,
+        permission_mode: config.session_config.permission_policy.mode,
+        session_id: session_id.clone(),
+        cancellation_token: tokio_util::sync::CancellationToken::new(),
+        permission_policy: config.session_config.permission_policy,
+        ext: crab_core::tool::ToolContextExt::default(),
+    };
+
+    let loop_config = crab_engine::QueryConfig {
+        model: config.session_config.model.clone(),
+        max_tokens: config.session_config.max_tokens,
+        temperature: config.session_config.temperature,
+        tool_schemas,
+        cache_enabled: false,
+        budget_tokens: None,
+        retry_policy: None,
+        hook_executor: None,
+        session_id: Some(session_id),
+        effort: None,
+        fallback_model: config
+            .session_config
+            .fallback_model
+            .map(crab_core::model::ModelId::from),
+        source: crab_core::query::QuerySource::Repl,
+    };
+
+    // Discover skills for /command support
+    let skill_registry = SkillRegistry::discover(&config.skill_dirs).unwrap_or_default();
+
+    // Populate session sidebar entries
+    let sidebar_entries = session_history
+        .as_ref()
+        .and_then(|h| h.list_sessions_with_metadata().ok())
+        .map(|metas| {
+            metas
+                .iter()
+                .map(|m| crate::components::session_sidebar::SessionEntry {
+                    id: m.session_id.clone(),
+                    name: m.name.clone().unwrap_or_else(|| m.session_id.clone()),
+                    last_active: m
+                        .modified
+                        .and_then(|t| t.elapsed().ok())
+                        .map_or_else(|| "unknown".into(), |d| format!("{}s ago", d.as_secs())),
+                    message_count: m.message_count,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    InitResult {
+        registry,
         executor,
+        conversation,
         tool_ctx,
         loop_config,
-        event_tx,
-        perm_resp_tx,
-        &skill_registry,
-        session_history.as_ref(),
-        &session_id,
-        Arc::clone(&event_broker),
-        frame_requester.clone(),
-    )
-    .await;
-
-    // Restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        DisableBracketedPaste,
-        LeaveAlternateScreen
-    )?;
-    terminal.show_cursor()?;
-
-    result
+        skill_registry,
+        session_history,
+        sidebar_entries,
+        mcp_failures,
+    }
 }
 
 /// TUI-based permission handler.
@@ -413,39 +495,48 @@ struct AgentTaskResult {
     result: crab_common::Result<()>,
 }
 
+/// Resources populated by `background_init` and delivered via oneshot.
+///
+/// Before receiving these, the event loop renders the app in
+/// `Initializing` state and rejects user submissions.
+struct RuntimeState {
+    conversation: Conversation,
+    executor: Arc<ToolExecutor>,
+    tool_ctx: crab_core::tool::ToolContext,
+    loop_config: crab_engine::QueryConfig,
+    skill_registry: SkillRegistry,
+    session_history: Option<SessionHistory>,
+}
+
 /// The core render + event loop.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     tui_rx: &mut mpsc::UnboundedReceiver<crate::event::TuiEvent>,
-    mut conversation: Conversation,
+    init_rx: tokio::sync::oneshot::Receiver<InitResult>,
+    watch_rx: &mut mpsc::UnboundedReceiver<crate::watcher::WatchEvent>,
     backend: Arc<LlmBackend>,
-    executor: Arc<ToolExecutor>,
-    mut tool_ctx: crab_core::tool::ToolContext,
-    loop_config: crab_engine::QueryConfig,
     event_tx: mpsc::Sender<Event>,
     perm_resp_tx: mpsc::UnboundedSender<(String, bool)>,
-    skill_registry: &SkillRegistry,
-    session_history: Option<&SessionHistory>,
     session_id: &str,
     event_broker: Arc<EventBroker>,
     frame_requester: FrameRequester,
 ) -> anyhow::Result<()> {
-    // Channel to get conversation back from agent task
-    let mut conv_return: Option<tokio::sync::oneshot::Receiver<AgentTaskResult>> = None;
-    let mut cancel = tool_ctx.cancellation_token.clone();
+    // `state` starts as None (Initializing) and is populated by InitComplete.
+    let mut state: Option<RuntimeState> = None;
+    let mut init_rx = Some(init_rx);
 
-    // Subscribe once — receivers must be live before any send to observe it.
+    let mut conv_return: Option<tokio::sync::oneshot::Receiver<AgentTaskResult>> = None;
+    let mut cancel = tokio_util::sync::CancellationToken::new();
+
     let mut frame_rx = frame_requester.subscribe();
 
     loop {
-        // Render
         terminal.draw(|frame| {
             app.render(frame.area(), frame.buffer_mut());
         })?;
 
-        // Wait for TUI event, agent task completion, or an explicit redraw request
         let event = tokio::select! {
             ev = tui_rx.recv() => {
                 match ev {
@@ -453,11 +544,40 @@ async fn run_loop(
                     None => break,
                 }
             }
-            // A redraw signal alone is enough to loop back and re-render. We use
-            // `recv()`'s `Lagged` variant as benign — drain and re-render.
             _ = frame_rx.recv() => {
                 continue;
             }
+            // Wait for background init to complete
+            result = async {
+                match init_rx.as_mut() {
+                    Some(rx) => rx.await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                init_rx = None;
+                if let Ok(init) = result {
+                    app.tool_registry = Some(init.registry);
+                    app.session_sidebar.set_sessions(init.sidebar_entries);
+                    for name in &init.mcp_failures {
+                        app.notifications.warn(format!("MCP server '{name}' failed to connect"));
+                    }
+                    app.state = crate::app::AppState::Idle;
+                    cancel = init.tool_ctx.cancellation_token.clone();
+                    state = Some(RuntimeState {
+                        conversation: init.conversation,
+                        executor: init.executor,
+                        tool_ctx: init.tool_ctx,
+                        loop_config: init.loop_config,
+                        skill_registry: init.skill_registry,
+                        session_history: init.session_history,
+                    });
+                } else {
+                    app.notifications.warn("Background initialization failed".to_string());
+                    app.state = crate::app::AppState::Idle;
+                }
+                continue;
+            }
+            // Wait for agent task to return conversation
             result = async {
                 match conv_return.as_mut() {
                     Some(rx) => rx.await,
@@ -465,27 +585,42 @@ async fn run_loop(
                 }
             } => {
                 conv_return = None;
-                match result {
-                    Ok(agent_result) => {
-                        conversation = agent_result.conversation;
-                        if let Err(e) = agent_result.result {
-                            let _ = event_tx.send(Event::Error {
-                                message: e.to_string(),
-                            }).await;
+                if let Some(ref mut rt) = state {
+                    match result {
+                        Ok(agent_result) => {
+                            rt.conversation = agent_result.conversation;
+                            if let Err(e) = agent_result.result {
+                                let _ = event_tx.send(Event::Error {
+                                    message: e.to_string(),
+                                }).await;
+                            }
+                            if let Some(ref history) = rt.session_history
+                                && let Err(e) = history.save(session_id, rt.conversation.messages())
+                            {
+                                let _ = event_tx.send(Event::Error {
+                                    message: format!("Session save failed: {e}"),
+                                }).await;
+                            }
                         }
-                        // Auto-save session after each agent turn
-                        if let Some(history) = session_history
-                            && let Err(e) = history.save(session_id, conversation.messages())
-                        {
+                        Err(_) => {
                             let _ = event_tx.send(Event::Error {
-                                message: format!("Session save failed: {e}"),
+                                message: "agent task panicked".into(),
                             }).await;
                         }
                     }
-                    Err(_) => {
-                        let _ = event_tx.send(Event::Error {
-                            message: "agent task panicked".into(),
-                        }).await;
+                }
+                continue;
+            }
+            // Filesystem watch events (settings/skills changed)
+            watch_event = watch_rx.recv() => {
+                if let Some(we) = watch_event {
+                    match we {
+                        crate::watcher::WatchEvent::SettingsChanged => {
+                            app.notifications.info("Settings changed — restart to apply".to_string());
+                        }
+                        crate::watcher::WatchEvent::SkillsChanged => {
+                            app.notifications.info("Skills changed — restart to apply".to_string());
+                        }
                     }
                 }
                 continue;
@@ -498,37 +633,39 @@ async fn run_loop(
         match action {
             AppAction::Quit => {
                 cancel.cancel();
-                if let Some(rx) = conv_return.take() {
-                    // Wait for agent task to return conversation (for clean shutdown)
-                    if let Ok(agent_result) = rx.await {
-                        conversation = agent_result.conversation;
-                    }
+                if let Some(rx) = conv_return.take()
+                    && let Ok(agent_result) = rx.await
+                    && let Some(ref mut rt) = state
+                {
+                    rt.conversation = agent_result.conversation;
                 }
-                // Final session save on exit
-                if let Some(history) = session_history {
-                    let _ = history.save(session_id, conversation.messages());
+                if let Some(ref rt) = state
+                    && let Some(ref history) = rt.session_history
+                {
+                    let _ = history.save(session_id, rt.conversation.messages());
                 }
                 break;
             }
             AppAction::Submit(text) => {
-                // Resolve /commands to skill content
-                let effective_text = resolve_slash_command(&text, skill_registry);
+                let Some(ref mut rt) = state else {
+                    continue;
+                };
 
-                // Fresh cancellation token for this request
+                let effective_text = resolve_slash_command(&text, &rt.skill_registry);
+
                 cancel = tokio_util::sync::CancellationToken::new();
-                tool_ctx.cancellation_token = cancel.clone();
+                rt.tool_ctx.cancellation_token = cancel.clone();
 
-                // Take conversation, push user message, spawn agent task
-                conversation.push(Message::user(&effective_text));
-                let mut task_conversation = std::mem::take(&mut conversation);
+                rt.conversation.push(Message::user(&effective_text));
+                let mut task_conversation = std::mem::take(&mut rt.conversation);
                 let task_backend = backend.clone();
-                let task_executor = executor.clone();
-                let task_ctx = tool_ctx.clone();
-                let task_model = loop_config.model.clone();
-                let task_max_tokens = loop_config.max_tokens;
-                let task_temperature = loop_config.temperature;
-                let task_schemas = loop_config.tool_schemas.clone();
-                let task_cache = loop_config.cache_enabled;
+                let task_executor = rt.executor.clone();
+                let task_ctx = rt.tool_ctx.clone();
+                let task_model = rt.loop_config.model.clone();
+                let task_max_tokens = rt.loop_config.max_tokens;
+                let task_temperature = rt.loop_config.temperature;
+                let task_schemas = rt.loop_config.tool_schemas.clone();
+                let task_cache = rt.loop_config.cache_enabled;
                 let task_event_tx = event_tx.clone();
                 let task_cancel = cancel.clone();
 
@@ -574,43 +711,40 @@ async fn run_loop(
                 request_id,
                 allowed,
             } => {
-                // Send response to the permission handler waiting in the agent task
                 let _ = perm_resp_tx.send((request_id, allowed));
             }
             AppAction::NewSession => {
-                // Save current session
-                if let Some(history) = session_history {
-                    let _ = history.save(session_id, conversation.messages());
+                if let Some(ref mut rt) = state {
+                    if let Some(ref history) = rt.session_history {
+                        let _ = history.save(session_id, rt.conversation.messages());
+                    }
+                    rt.conversation = Conversation::new(
+                        session_id.to_string(),
+                        rt.conversation.system_prompt.clone(),
+                        rt.conversation.context_window,
+                    );
                 }
-                // Reset conversation and app state for a new session
-                conversation = Conversation::new(
-                    session_id.to_string(),
-                    conversation.system_prompt.clone(),
-                    conversation.context_window,
-                );
                 app.reset_for_new_session();
             }
             AppAction::SwitchSession(target_id) => {
-                if let Some(history) = session_history {
-                    // Save current session first
-                    let _ = history.save(session_id, conversation.messages());
-                    // Load target session
+                if let Some(ref mut rt) = state
+                    && let Some(ref history) = rt.session_history
+                {
+                    let _ = history.save(session_id, rt.conversation.messages());
                     if let Ok(Some(messages)) = history.load(&target_id) {
-                        conversation = Conversation::new(
+                        rt.conversation = Conversation::new(
                             target_id.clone(),
-                            conversation.system_prompt.clone(),
-                            conversation.context_window,
+                            rt.conversation.system_prompt.clone(),
+                            rt.conversation.context_window,
                         );
                         for msg in messages {
-                            conversation.push(msg);
+                            rt.conversation.push(msg);
                         }
-                        app.load_session_messages(&conversation);
+                        app.load_session_messages(&rt.conversation);
                     }
                 }
             }
             AppAction::ExternalEditor(initial_text) => {
-                // Hand the terminal off to $EDITOR. We must restore raw mode etc.
-                // before spawning, then re-enter after.
                 disable_raw_mode().ok();
                 execute!(
                     terminal.backend_mut(),
@@ -621,7 +755,6 @@ async fn run_loop(
 
                 let editor_result = run_external_editor(&event_broker, &initial_text, None).await;
 
-                // Always re-enter the alt screen + raw mode, even on error.
                 enable_raw_mode().ok();
                 execute!(
                     terminal.backend_mut(),

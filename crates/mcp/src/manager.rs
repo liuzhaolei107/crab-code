@@ -39,15 +39,18 @@ impl McpManager {
         }
     }
 
-    /// Connect to all configured MCP servers.
+    /// Connect to all configured MCP servers **concurrently**.
     ///
     /// Servers that fail to connect are logged and skipped — a single broken
     /// server should not prevent the rest from working.
     pub async fn connect_all(&mut self, configs: &[McpServerConfig]) -> Vec<String> {
+        use futures::future::join_all;
+
+        let results = join_all(configs.iter().map(connect_server)).await;
         let mut failed = Vec::new();
 
-        for config in configs {
-            match connect_server(config).await {
+        for (config, result) in configs.iter().zip(results) {
+            match result {
                 Ok(client) => {
                     tracing::info!(
                         server = config.name.as_str(),

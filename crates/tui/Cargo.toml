@@ -37,6 +37,7 @@ lru.workspace = true
 schemars.workspace = true
 chrono.workspace = true
 arboard.workspace = true
+notify.workspace = true
 
 [lints]
 workspace = true

@@ -140,6 +140,7 @@ pub enum AppEvent {
     /// Paste image from clipboard.
     ImagePaste,
 
+
     // ── System events (compact, token warning, session save/resume) ──
     /// Compaction started.
     CompactStart { strategy: String },

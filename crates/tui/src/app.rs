@@ -37,6 +37,8 @@ use crate::traits::Renderable;
 /// Application state phases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppState {
+    /// Backend services loading (MCP, memory, skills).
+    Initializing,
     /// Waiting for user input.
     Idle,
     /// User is typing a message.
@@ -485,7 +487,7 @@ impl App {
         let mut focus_chain = self.overlay_stack.active_contexts();
         let state_ctx = match self.state {
             AppState::Confirming => KeyContext::Permission,
-            AppState::Processing => KeyContext::Chat,
+            AppState::Processing | AppState::Initializing => KeyContext::Chat,
             AppState::Idle | AppState::WaitingForInput => KeyContext::Input,
         };
         if !focus_chain.contains(&state_ctx) {
@@ -756,8 +758,7 @@ impl App {
 
         match self.state {
             AppState::Confirming => self.handle_confirming_key(key),
-            AppState::Processing => {
-                // During processing, Esc could cancel (future: send cancel signal)
+            AppState::Initializing | AppState::Processing => {
                 AppAction::None
             }
             AppState::Idle | AppState::WaitingForInput => {
@@ -1388,6 +1389,7 @@ impl App {
             | AppEvent::Undo
             | AppEvent::ToggleTodos
             | AppEvent::ImagePaste => AppAction::None,
+
         }
     }
 
