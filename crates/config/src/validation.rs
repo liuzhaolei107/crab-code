@@ -30,22 +30,52 @@ impl fmt::Display for ValidationError {
 impl std::error::Error for ValidationError {}
 
 /// Known top-level settings fields and their expected types.
+///
+/// Must stay in sync with [`crate::settings::Settings`] (camelCase).
 const KNOWN_FIELDS: &[(&str, &str)] = &[
+    // ── Schema / metadata ──
+    ("$schema", "string"),
+    ("schemaVersion", "number"),
+    // ── Provider / auth ──
     ("apiProvider", "string"),
     ("apiBaseUrl", "string"),
+    ("apiKey", "string"),
+    ("apiKeyHelper", "string"),
+    // ── Model ──
     ("model", "string"),
+    ("smallModel", "string"),
+    ("advisorModel", "string"),
+    ("availableModels", "array"),
+    ("modelOverrides", "object"),
     ("maxTokens", "number"),
+    // ── Permissions ──
+    ("permissions", "object"),
     ("permissionMode", "string"),
-    ("allowedTools", "array"),
-    ("deniedTools", "array"),
-    ("mcpServers", "object"),
-    ("hooks", "object"),
-    ("featureFlags", "object"),
+    // ── Prompts / instructions ──
+    ("systemPrompt", "string"),
+    ("includeGitInstructions", "boolean"),
     ("customInstructions", "string"),
+    // ── MCP ──
+    ("mcpServers", "object"),
+    ("enableAllProjectMcpServers", "boolean"),
+    // ── Hooks ──
+    ("hooks", "object"),
+    ("disableAllHooks", "boolean"),
+    // ── Shell / environment ──
+    ("defaultShell", "string"),
+    ("env", "object"),
+    // ── UI / display ──
     ("theme", "string"),
+    ("language", "string"),
+    ("outputStyle", "string"),
+    // ── Git ──
     ("gitContext", "object"),
+    ("respectGitignore", "boolean"),
+    // ── Memory ──
     ("autoMemoryEnabled", "boolean"),
     ("autoMemoryDirectory", "string"),
+    // ── Misc ──
+    ("cleanupPeriodDays", "number"),
 ];
 
 /// Valid permission mode values.
@@ -98,9 +128,12 @@ pub fn validate_settings(settings: &serde_json::Value) -> Vec<ValidationError> {
         }
     }
 
-    // Type checks for known fields
+    // Type checks for known fields (null is always valid — means "not set")
     for &(field, expected_type) in KNOWN_FIELDS {
         if let Some(value) = obj.get(field) {
+            if value.is_null() {
+                continue;
+            }
             let type_ok = match expected_type {
                 "string" => value.is_string(),
                 "number" => value.is_number(),
@@ -278,6 +311,76 @@ fn validate_hook_entry_inner(trigger: &str, entry: &serde_json::Value) -> Vec<Va
     errors
 }
 
+/// Validate a raw settings file from disk.
+///
+/// Reads the file, parses JSONC, and validates the raw JSON object.
+/// Each error's `field` is prefixed with the source label (e.g. `[global]`).
+/// Returns an empty `Vec` if the file does not exist or is empty.
+pub fn validate_raw_file(path: &std::path::Path, source_label: &str) -> Vec<ValidationError> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => {
+            return vec![ValidationError {
+                field: format!("[{source_label}]"),
+                message: format!("cannot read file: {e}"),
+                suggestion: None,
+            }];
+        }
+    };
+
+    let content = content.trim();
+    if content.is_empty() {
+        return Vec::new();
+    }
+
+    let json = match jsonc_parser::parse_to_serde_value::<serde_json::Value>(
+        content,
+        &jsonc_parser::ParseOptions::default(),
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            return vec![ValidationError {
+                field: format!("[{source_label}]"),
+                message: format!("parse error: {e}"),
+                suggestion: None,
+            }];
+        }
+    };
+
+    validate_settings(&json)
+        .into_iter()
+        .map(|mut e| {
+            e.field = format!("[{source_label}] {}", e.field);
+            e
+        })
+        .collect()
+}
+
+/// Validate all settings files in the merge chain.
+///
+/// Validates each raw file independently so that `Option::None` fields
+/// (absent from the file) never appear as false-positive `null` errors.
+/// Returns warnings with source-prefixed field paths.
+pub fn validate_all_settings_files(
+    project_dir: Option<&std::path::Path>,
+) -> Vec<ValidationError> {
+    let mut warnings = Vec::new();
+
+    let global_path = crate::settings::global_config_dir().join("settings.json");
+    warnings.extend(validate_raw_file(&global_path, "global"));
+
+    if let Some(dir) = project_dir {
+        let project_path = crate::settings::project_config_dir(dir).join("settings.json");
+        warnings.extend(validate_raw_file(&project_path, "project"));
+
+        let local_path = crate::settings::project_config_dir(dir).join("settings.local.json");
+        warnings.extend(validate_raw_file(&local_path, "local"));
+    }
+
+    warnings
+}
+
 /// Get a human-readable type name for a JSON value.
 fn value_type_name(value: &serde_json::Value) -> &'static str {
     match value {
@@ -397,6 +500,24 @@ mod tests {
         let entry = serde_json::json!({"command": ""});
         let errors = validate_hook_entry(&entry);
         assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn validate_null_values_are_valid() {
+        let settings = serde_json::json!({
+            "apiKey": null,
+            "smallModel": null,
+            "maxTokens": null
+        });
+        let errors = validate_settings(&settings);
+        assert!(errors.is_empty(), "null values should be valid: {errors:?}");
+    }
+
+    #[test]
+    fn validate_api_key_is_known_field() {
+        let settings = serde_json::json!({"apiKey": "sk-test"});
+        let errors = validate_settings(&settings);
+        assert!(errors.is_empty(), "apiKey should be a known field: {errors:?}");
     }
 
     #[test]

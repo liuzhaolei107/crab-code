@@ -897,6 +897,7 @@ dependencies = [
 name = "crab-config"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "crab-common",
  "crab-core",
  "directories",

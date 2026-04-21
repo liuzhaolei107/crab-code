@@ -1335,6 +1335,45 @@ impl App {
             // so key bindings can still emit it as a signal.
             AppEvent::Redraw => AppAction::None,
 
+            AppEvent::OnboardingCompleted => {
+                self.overlay_stack.pop();
+                if let Err(e) = persist_onboarding_completed() {
+                    self.notifications
+                        .warn(format!("Failed to save onboarding state: {e}"));
+                }
+                AppAction::None
+            }
+            AppEvent::TrustAccepted { project_path } => {
+                self.overlay_stack.pop();
+                if let Err(e) = persist_trust_accepted(&project_path) {
+                    self.notifications
+                        .warn(format!("Failed to save trust state: {e}"));
+                }
+                AppAction::None
+            }
+            AppEvent::TrustDenied => {
+                self.overlay_stack.pop();
+                self.notifications
+                    .warn("Project settings skipped (bare mode)".to_string());
+                AppAction::None
+            }
+            AppEvent::SettingsReloaded { warnings } => {
+                if warnings.is_empty() {
+                    self.notifications.success("Settings reloaded");
+                } else {
+                    for w in &warnings {
+                        self.notifications.warn(w.clone());
+                    }
+                    self.notifications.info("Settings reloaded with warnings");
+                }
+                AppAction::None
+            }
+            AppEvent::SkillsReloaded { count } => {
+                self.notifications
+                    .info(format!("Skills reloaded ({count} discovered)"));
+                AppAction::None
+            }
+
             // Pending key-event migration: these variants exist in the
             // vocabulary but are NOT yet emitted by any AppEvent producer.
             // The key-event path (`handle_key` / `handle_confirming_key`)
@@ -1659,6 +1698,18 @@ fn render_autocomplete_popup(ac: &AutoComplete, input_area: Rect, buf: &mut Buff
 // components/status_line.rs — see StatusLine.
 
 // Old render_bottom_bar extracted to components/bottom_bar.rs — see BottomBar.
+
+fn persist_onboarding_completed() -> anyhow::Result<()> {
+    let mut state = crab_config::global_state::load();
+    state.has_completed_onboarding = true;
+    crab_config::global_state::save(&state).map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+fn persist_trust_accepted(project_path: &str) -> anyhow::Result<()> {
+    let mut state = crab_config::global_state::load();
+    crab_config::global_state::record_trust(&mut state, std::path::Path::new(project_path));
+    crab_config::global_state::save(&state).map_err(|e| anyhow::anyhow!("{e}"))
+}
 
 #[cfg(test)]
 mod tests {

@@ -212,7 +212,7 @@ impl OnboardingState {
 
 impl Default for OnboardingState {
     fn default() -> Self {
-        Self::new(4)
+        Self::new(3)
     }
 }
 

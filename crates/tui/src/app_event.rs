@@ -175,6 +175,26 @@ pub enum AppEvent {
     ThinkingChanged {
         active: bool,
     },
+
+    // ── Onboarding / Trust ──
+    /// User completed (or skipped) the first-run onboarding wizard.
+    OnboardingCompleted,
+    /// User accepted the project trust dialog.
+    TrustAccepted {
+        project_path: String,
+    },
+    /// User denied the project trust dialog (enter bare mode).
+    TrustDenied,
+
+    // ── Hot-reload ──
+    /// Settings file changed on disk and was reloaded.
+    SettingsReloaded {
+        warnings: Vec<String>,
+    },
+    /// Skills directory changed; skills re-discovered.
+    SkillsReloaded {
+        count: usize,
+    },
 }
 
 #[cfg(test)]

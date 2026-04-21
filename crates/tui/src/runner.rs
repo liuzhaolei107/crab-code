@@ -52,6 +52,8 @@ pub struct TuiConfig {
     pub skill_dirs: Vec<PathBuf>,
     /// MCP server configuration from settings (for dynamic tool registration).
     pub mcp_servers: Option<serde_json::Value>,
+    /// Validation warnings from settings loading (shown as toasts after init).
+    pub settings_warnings: Vec<String>,
 }
 
 /// Run the interactive TUI REPL. This is the main entry point for interactive mode.
@@ -150,9 +152,16 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
     let mut watch_rx =
         crate::watcher::debounced_watch(watch_rx, std::time::Duration::from_millis(500));
 
+    // ── Phase 4d: Queue settings validation warnings as toasts ────────────
+
+    for warning in &config.settings_warnings {
+        app.notifications.warn(warning.clone());
+    }
+
     // ── Phase 5: Enter event loop immediately ────────────────────────────
 
     let session_id = config.session_config.session_id.clone();
+    let skill_dirs = config.skill_dirs.clone();
     let result = run_loop(
         &mut terminal,
         &mut app,
@@ -165,6 +174,7 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
         &session_id,
         Arc::clone(&event_broker),
         frame_requester.clone(),
+        &skill_dirs,
     )
     .await;
 
@@ -263,7 +273,71 @@ fn builtin_slash_commands() -> Vec<CommandInfo> {
     ]
 }
 
+/// Push onboarding and/or trust overlays based on `GlobalState`.
+///
+/// Called once after background init completes. The overlay stack is LIFO, so
+/// we push the trust dialog first (if needed), then onboarding on top — the
+/// user sees onboarding first, then trust dialog after dismissing it.
+fn push_startup_overlays(app: &mut App) {
+    let global_state = crab_config::global_state::load();
+
+    if !app.working_dir.is_empty() {
+        let project_dir = std::path::PathBuf::from(&app.working_dir);
+        if crab_config::global_state::needs_trust_prompt(&global_state, &project_dir) {
+            let has_settings = project_dir.join(".crab").join("settings.json").exists();
+            let has_crab_md = project_dir.join("CRAB.md").exists();
+            let overlay = crate::components::trust_dialog::TrustDialogOverlay::new(
+                app.working_dir.clone(),
+                has_settings,
+                has_crab_md,
+            );
+            app.overlay_stack.push(Box::new(overlay));
+        }
+    }
+
+    if !global_state.has_completed_onboarding {
+        let overlay = crate::components::onboarding::OnboardingOverlay::new();
+        app.overlay_stack.push(Box::new(overlay));
+    }
+}
+
 /// Data needed by the background initialization task.
+/// Reload settings from disk, returning any validation warnings.
+fn reload_settings(app: &mut App) -> Vec<String> {
+    let project_dir = if app.working_dir.is_empty() {
+        None
+    } else {
+        Some(std::path::PathBuf::from(&app.working_dir))
+    };
+
+    match crab_config::settings::load_merged_settings_validated(project_dir.as_ref(), None) {
+        Ok((_settings, errors)) => errors
+            .into_iter()
+            .map(|e| format!("{}: {}", e.field, e.message))
+            .collect(),
+        Err(e) => {
+            app.notifications
+                .warn(format!("Failed to reload settings: {e}"));
+            Vec::new()
+        }
+    }
+}
+
+/// Re-discover skills from disk directories.
+fn reload_skills(skill_registry: &mut SkillRegistry, skill_dirs: &[PathBuf]) -> usize {
+    match SkillRegistry::discover(skill_dirs) {
+        Ok(new_registry) => {
+            let count = new_registry.len();
+            *skill_registry = new_registry;
+            count
+        }
+        Err(e) => {
+            tracing::warn!("failed to reload skills: {e}");
+            skill_registry.len()
+        }
+    }
+}
+
 struct BackgroundInitConfig {
     session_config: SessionConfig,
     mcp_servers: Option<serde_json::Value>,
@@ -528,6 +602,7 @@ async fn run_loop(
     session_id: &str,
     event_broker: Arc<EventBroker>,
     frame_requester: FrameRequester,
+    skill_dirs: &[PathBuf],
 ) -> anyhow::Result<()> {
     // `state` starts as None (Initializing) and is populated by InitComplete.
     let mut state: Option<RuntimeState> = None;
@@ -568,6 +643,11 @@ async fn run_loop(
                         app.notifications.warn(format!("MCP server '{name}' failed to connect"));
                     }
                     app.state = crate::app::AppState::Idle;
+
+                    // Push onboarding / trust overlays (trust first so
+                    // onboarding renders on top and is dismissed first).
+                    push_startup_overlays(app);
+
                     cancel = init.tool_ctx.cancellation_token.clone();
                     state = Some(RuntimeState {
                         conversation: init.conversation,
@@ -622,10 +702,14 @@ async fn run_loop(
                 if let Some(we) = watch_event {
                     match we {
                         crate::watcher::WatchEvent::SettingsChanged => {
-                            app.notifications.info("Settings changed — restart to apply".to_string());
+                            let warnings = reload_settings(app);
+                            app.apply_event(crate::app_event::AppEvent::SettingsReloaded { warnings });
                         }
                         crate::watcher::WatchEvent::SkillsChanged => {
-                            app.notifications.info("Skills changed — restart to apply".to_string());
+                            if let Some(ref mut rt) = state {
+                                let count = reload_skills(&mut rt.skill_registry, skill_dirs);
+                                app.apply_event(crate::app_event::AppEvent::SkillsReloaded { count });
+                            }
                         }
                     }
                 }
@@ -1063,6 +1147,7 @@ mod tests {
             )),
             skill_dirs: vec![],
             mcp_servers: None,
+            settings_warnings: vec![],
         };
         assert_eq!(config.session_config.session_id, "test");
         assert!(config.skill_dirs.is_empty());

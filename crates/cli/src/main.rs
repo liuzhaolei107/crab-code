@@ -361,53 +361,59 @@ fn main() -> anyhow::Result<()> {
         return rt.block_on(acp_mode::run());
     }
 
-    // Handle subcommands
+    // Handle subcommands that don't need LLM/MCP (fast paths).
+    // `Session Resume` validates then falls through to the shared runtime below.
+    let mut subcommand_resume_id: Option<String> = None;
     if let Some(command) = &cli.command {
-        return match command {
-            CliCommand::Config { action } => commands::config::run(action),
-            CliCommand::Serve(args) => {
-                let rt = tokio::runtime::Runtime::new()?;
-                rt.block_on(commands::serve::run(args))
+        match command {
+            CliCommand::Session {
+                action: SessionAction::Resume { id },
+            } => {
+                let _ = commands::session::validate_resume_id(id)?;
+                subcommand_resume_id = Some(id.clone());
+                // fall through to the shared runtime
             }
-            CliCommand::Session { action } => match action {
-                SessionAction::List => commands::session::list_sessions(),
-                SessionAction::Show { id } => commands::session::show_session(id),
-                SessionAction::Resume { id } => {
-                    // Validate, then fall through to run the session
-                    let _ = commands::session::validate_resume_id(id)?;
-                    let rt = tokio::runtime::Runtime::new()?;
-                    rt.block_on(run_with_resume(&cli, Some(id.clone())))
-                }
-                SessionAction::Delete { id } => commands::session::delete_session(id),
-                SessionAction::Search { keyword } => commands::session::search_sessions(keyword),
-                SessionAction::Export { id, format } => {
-                    commands::session::export_session(id, format)
-                }
-                SessionAction::Stats { id } => commands::session::show_stats(id),
-            },
-            CliCommand::Auth { action } => commands::auth::run(action),
-            CliCommand::Doctor => commands::doctor::run(),
-            CliCommand::Update { action } => match action {
-                Some(a) => commands::update::run(a),
-                None => commands::update::run_default(),
-            },
-            CliCommand::Plugin { action } => commands::plugin::run(action),
-            CliCommand::Agents => commands::agents::run(),
-            CliCommand::Completion { shell } => {
-                let mut cmd = <Cli as clap::CommandFactory>::command();
-                clap_complete::generate(*shell, &mut cmd, "crab", &mut std::io::stdout());
-                Ok(())
+            _ => {
+                return match command {
+                    CliCommand::Config { action } => commands::config::run(action),
+                    CliCommand::Serve(args) => {
+                        let rt = tokio::runtime::Runtime::new()?;
+                        rt.block_on(commands::serve::run(args))
+                    }
+                    CliCommand::Session { action } => match action {
+                        SessionAction::List => commands::session::list_sessions(),
+                        SessionAction::Show { id } => commands::session::show_session(id),
+                        SessionAction::Resume { .. } => unreachable!(),
+                        SessionAction::Delete { id } => commands::session::delete_session(id),
+                        SessionAction::Search { keyword } => {
+                            commands::session::search_sessions(keyword)
+                        }
+                        SessionAction::Export { id, format } => {
+                            commands::session::export_session(id, format)
+                        }
+                        SessionAction::Stats { id } => commands::session::show_stats(id),
+                    },
+                    CliCommand::Auth { action } => commands::auth::run(action),
+                    CliCommand::Doctor => commands::doctor::run(),
+                    CliCommand::Update { action } => match action {
+                        Some(a) => commands::update::run(a),
+                        None => commands::update::run_default(),
+                    },
+                    CliCommand::Plugin { action } => commands::plugin::run(action),
+                    CliCommand::Agents => commands::agents::run(),
+                    CliCommand::Completion { shell } => {
+                        let mut cmd = <Cli as clap::CommandFactory>::command();
+                        clap_complete::generate(*shell, &mut cmd, "crab", &mut std::io::stdout());
+                        Ok(())
+                    }
+                };
             }
-        };
+        }
     }
 
+    let resume_id = subcommand_resume_id.or_else(|| cli.resume.clone());
     let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(run(&cli, cli.resume.clone()))
-}
-
-/// Convenience wrapper for `Session resume` subcommand.
-async fn run_with_resume(cli: &Cli, resume_id: Option<String>) -> anyhow::Result<()> {
-    run(cli, resume_id).await
+    rt.block_on(run(&cli, resume_id))
 }
 
 /// Resolve well-known model aliases to their full model IDs.
@@ -571,15 +577,19 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
 
     let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-    // Load merged settings with optional source control
+    // Load merged settings with optional source control + validation
     let sources = cli
         .setting_sources
         .as_ref()
         .map(|s| crab_config::settings::SettingSource::parse_list(s));
-    let mut settings = crab_config::settings::load_merged_settings_with_sources(
-        Some(&working_dir),
-        sources.as_deref(),
-    )?;
+    let (mut settings, validation_warnings) =
+        crab_config::settings::load_merged_settings_validated(
+            Some(&working_dir),
+            sources.as_deref(),
+        )?;
+    for w in &validation_warnings {
+        tracing::warn!("settings validation: {w}");
+    }
 
     // Apply --settings overlay (higher priority than settings files, lower than CLI flags)
     if let Some(ref settings_arg) = cli.settings {
@@ -836,6 +846,10 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
                 backend,
                 skill_dirs,
                 mcp_servers: settings.mcp_servers.clone(),
+                settings_warnings: validation_warnings
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
             };
             let exit_info = crab_tui::run(tui_config).await?;
             print_exit_info(&exit_info);

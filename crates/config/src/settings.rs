@@ -16,21 +16,75 @@ const SETTINGS_FILE: &str = "settings.json";
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
+    // ── Provider / auth ──
     pub api_provider: Option<String>,
     pub api_base_url: Option<String>,
     pub api_key: Option<String>,
+    /// Shell command that prints an API key to stdout.
+    pub api_key_helper: Option<String>,
+
+    // ── Model ──
     pub model: Option<String>,
+    /// Smaller/faster model for auxiliary tasks.
     pub small_model: Option<String>,
+    /// Alias for `small_model` (CC-compatible field name).
+    #[serde(default)]
+    pub advisor_model: Option<String>,
+    pub available_models: Option<Vec<String>>,
+    /// Model alias map, e.g. `{"fast": "claude-haiku"}`.
+    pub model_overrides: Option<HashMap<String, String>>,
     pub max_tokens: Option<u32>,
+
+    // ── Permissions ──
+    /// Structured permission rules: `{allow, deny, defaultMode}`.
+    pub permissions: Option<PermissionsConfig>,
+    /// Flat permission mode shorthand (convenience alias).
     pub permission_mode: Option<String>,
+
+    // ── Prompts / instructions ──
     pub system_prompt: Option<String>,
+    pub include_git_instructions: Option<bool>,
+    pub custom_instructions: Option<String>,
+
+    // ── MCP ──
     pub mcp_servers: Option<serde_json::Value>,
+    pub enable_all_project_mcp_servers: Option<bool>,
+
+    // ── Hooks ──
     pub hooks: Option<serde_json::Value>,
-    pub theme: Option<String>,
-    pub git_context: Option<GitContextConfig>,
-    /// Environment variables to inject into the process.
-    /// CC-compatible: `{"env": {"ANTHROPIC_API_KEY": "sk-ant-xxx"}}`.
+    pub disable_all_hooks: Option<bool>,
+
+    // ── Shell / environment ──
+    pub default_shell: Option<String>,
     pub env: Option<HashMap<String, String>>,
+
+    // ── UI / display ──
+    pub theme: Option<String>,
+    pub language: Option<String>,
+    pub output_style: Option<String>,
+
+    // ── Git ──
+    pub git_context: Option<GitContextConfig>,
+    pub respect_gitignore: Option<bool>,
+
+    // ── Memory ──
+    pub auto_memory_enabled: Option<bool>,
+    pub auto_memory_directory: Option<String>,
+
+    // ── Misc ──
+    pub cleanup_period_days: Option<u32>,
+}
+
+/// Structured permission rules (CCB-compatible).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PermissionsConfig {
+    #[serde(default)]
+    pub allow: Vec<String>,
+    #[serde(default)]
+    pub deny: Vec<String>,
+    pub default_mode: Option<String>,
+    pub additional_directories: Option<Vec<String>>,
 }
 
 /// Configuration for git context injection into system prompts.
@@ -58,29 +112,78 @@ impl Settings {
     #[must_use]
     pub fn merge(self, other: &Self) -> Self {
         Self {
+            // Provider / auth
             api_provider: other.api_provider.clone().or(self.api_provider),
             api_base_url: other.api_base_url.clone().or(self.api_base_url),
             api_key: other.api_key.clone().or(self.api_key),
+            api_key_helper: other.api_key_helper.clone().or(self.api_key_helper),
+            // Model
             model: other.model.clone().or(self.model),
             small_model: other.small_model.clone().or(self.small_model),
+            advisor_model: other.advisor_model.clone().or(self.advisor_model),
+            available_models: other.available_models.clone().or(self.available_models),
+            model_overrides: merge_maps(self.model_overrides.as_ref(), other.model_overrides.as_ref()),
             max_tokens: other.max_tokens.or(self.max_tokens),
+            // Permissions
+            permissions: other.permissions.clone().or(self.permissions),
             permission_mode: other.permission_mode.clone().or(self.permission_mode),
+            // Prompts
             system_prompt: other.system_prompt.clone().or(self.system_prompt),
+            include_git_instructions: other.include_git_instructions.or(self.include_git_instructions),
+            custom_instructions: other.custom_instructions.clone().or(self.custom_instructions),
+            // MCP
             mcp_servers: other.mcp_servers.clone().or(self.mcp_servers),
+            enable_all_project_mcp_servers: other
+                .enable_all_project_mcp_servers
+                .or(self.enable_all_project_mcp_servers),
+            // Hooks
             hooks: other.hooks.clone().or(self.hooks),
+            disable_all_hooks: other.disable_all_hooks.or(self.disable_all_hooks),
+            // Shell / env
+            default_shell: other.default_shell.clone().or(self.default_shell),
+            env: merge_maps(self.env.as_ref(), other.env.as_ref()),
+            // UI
             theme: other.theme.clone().or(self.theme),
+            language: other.language.clone().or(self.language),
+            output_style: other.output_style.clone().or(self.output_style),
+            // Git
             git_context: other.git_context.clone().or(self.git_context),
-            env: match (&self.env, &other.env) {
-                (Some(base), Some(over)) => {
-                    let mut merged = base.clone();
-                    merged.extend(over.iter().map(|(k, v)| (k.clone(), v.clone())));
-                    Some(merged)
-                }
-                (None, Some(over)) => Some(over.clone()),
-                (Some(base), None) => Some(base.clone()),
-                (None, None) => None,
-            },
+            respect_gitignore: other.respect_gitignore.or(self.respect_gitignore),
+            // Memory
+            auto_memory_enabled: other.auto_memory_enabled.or(self.auto_memory_enabled),
+            auto_memory_directory: other
+                .auto_memory_directory
+                .clone()
+                .or(self.auto_memory_directory),
+            // Misc
+            cleanup_period_days: other.cleanup_period_days.or(self.cleanup_period_days),
         }
+    }
+
+    /// Resolve `small_model` / `advisor_model` aliasing.
+    /// Both `smallModel` and `advisorModel` are accepted in settings JSON.
+    #[must_use]
+    pub fn effective_small_model(&self) -> Option<&str> {
+        self.small_model
+            .as_deref()
+            .or(self.advisor_model.as_deref())
+    }
+}
+
+/// Merge two optional `HashMap`s: keys in `other` override keys in `base`.
+fn merge_maps(
+    base: Option<&HashMap<String, String>>,
+    other: Option<&HashMap<String, String>>,
+) -> Option<HashMap<String, String>> {
+    match (base, other) {
+        (Some(b), Some(o)) => {
+            let mut merged = b.clone();
+            merged.extend(o.iter().map(|(k, v)| (k.clone(), v.clone())));
+            Some(merged)
+        }
+        (None, Some(o)) => Some(o.clone()),
+        (Some(b), None) => Some(b.clone()),
+        (None, None) => None,
     }
 }
 
@@ -97,12 +200,16 @@ pub fn project_config_dir(project_dir: &Path) -> PathBuf {
 }
 
 /// Parse JSONC (JSON with comments) into a `Settings`.
+///
+/// Applies schema migrations (if needed) before deserialization so that
+/// older settings files are transparently upgraded.
 fn parse_jsonc(content: &str) -> crab_common::Result<Settings> {
-    let json = jsonc_parser::parse_to_serde_value::<serde_json::Value>(
+    let mut json = jsonc_parser::parse_to_serde_value::<serde_json::Value>(
         content,
         &jsonc_parser::ParseOptions::default(),
     )
     .map_err(|e| crab_common::Error::Config(format!("JSONC parse error: {e}")))?;
+    crate::migration::migrate_settings(&mut json);
     serde_json::from_value(json)
         .map_err(|e| crab_common::Error::Config(format!("settings deserialization error: {e}")))
 }
@@ -197,6 +304,23 @@ pub fn load_merged_settings_with_sources(
     sources: Option<&[SettingSource]>,
 ) -> crab_common::Result<Settings> {
     load_merged_settings_with_env_and_sources(project_dir, |k| std::env::var(k), sources)
+}
+
+/// Load and merge settings with validation.
+///
+/// Validates each raw settings file from disk independently (global,
+/// project, local) so that absent `Option` fields don't produce
+/// false-positive `null` type errors. Validation warnings never block
+/// loading — the `Settings` value is always returned alongside any
+/// warnings found.
+pub fn load_merged_settings_validated(
+    project_dir: Option<&PathBuf>,
+    sources: Option<&[SettingSource]>,
+) -> crab_common::Result<(Settings, Vec<crate::validation::ValidationError>)> {
+    let settings = load_merged_settings_with_sources(project_dir, sources)?;
+    let warnings =
+        crate::validation::validate_all_settings_files(project_dir.map(PathBuf::as_path));
+    Ok((settings, warnings))
 }
 
 /// Inner merge implementation, parameterized over env var lookup for testability.
@@ -513,7 +637,7 @@ mod tests {
                 enabled: true,
                 max_diff_lines: 100,
             }),
-            env: None,
+            ..Default::default()
         };
         let overlay = Settings {
             api_provider: Some("openai".into()),
@@ -531,7 +655,7 @@ mod tests {
                 enabled: false,
                 max_diff_lines: 50,
             }),
-            env: None,
+            ..Default::default()
         };
         let merged = base.merge(&overlay);
         assert_eq!(merged.api_provider.as_deref(), Some("openai"));
@@ -596,6 +720,7 @@ mod tests {
             theme: Some("dark".into()),
             git_context: Some(GitContextConfig::default()),
             env: Some(HashMap::from([("FOO".into(), "bar".into())])),
+            ..Default::default()
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
         let deserialized: Settings = serde_json::from_str(&json).unwrap();
