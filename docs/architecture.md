@@ -1,8 +1,8 @@
 # Crab Code Architecture
 
 
-> Updated: 2026-04-17
-> Changelog: +engine/remote/sandbox/acp/job (5 new crates; bridge merged into remote + claude.ai outbound dropped 2026-04); tui promoted Layer 2 → Layer 3; ide gets its own §6.24; crate count 17 → 24.
+> Updated: 2026-04-22
+> Changelog: Tool trait gains `is_concurrency_safe(input)` for input-dependent parallelism; PermissionMode expanded to 6 variants (+AcceptEdits/DontAsk/Plan); engine query loop adds PTL recovery, max-output-tokens retry, streaming fallback, plan model routing; plugin hooks gain `Stop` trigger and `Retry` action; multi-layer compaction pipeline (microcompact → LLM summary → heuristic fallback → compact boundary).
 
 ---
 
@@ -926,7 +926,7 @@ src/
 ├── lib.rs
 ├── message.rs        // Message, Role, ContentBlock, ToolUse, ToolResult
 ├── conversation.rs   // Conversation, Turn, context window abstraction
-├── tool.rs           // trait Tool { fn name(); fn execute(); fn schema(); }
+├── tool.rs           // trait Tool { fn name(); fn execute(); fn schema(); fn is_concurrency_safe(); }
 ├── model.rs          // ModelId, TokenUsage, CostTracker
 ├── permission.rs     // PermissionMode, PermissionPolicy
 ├── config.rs         // trait ConfigSource, config layered merge logic
@@ -1053,6 +1053,13 @@ pub trait Tool: Send + Sync {
     /// Whether the tool is read-only (read-only tools can skip confirmation)
     fn is_read_only(&self) -> bool {
         false
+    }
+
+    /// Whether the tool can safely run concurrently given specific input.
+    /// Defaults to `is_read_only()`. Override for input-dependent parallelism
+    /// (e.g., Write to different files may be concurrent-safe).
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        self.is_read_only()
     }
 }
 
@@ -1226,6 +1233,12 @@ pub enum PermissionMode {
     TrustProject,
     /// Auto-approve everything (dangerous)
     Dangerously,
+    /// Auto-approve file edits within project, prompt for others
+    AcceptEdits,
+    /// Auto-approve all tools without prompting
+    DontAsk,
+    /// Deny all mutations except ExitPlanMode (plan-only mode)
+    Plan,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3236,6 +3249,12 @@ src/
 └── wasm_runtime.rs       // WASM plugin sandbox (wasmtime, feature = "wasm")
 ```
 
+**Hook Triggers**: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop` (fires when the query loop is about to exit — no tool calls in the response)
+
+**Hook Actions**: `Allow` (default), `Deny` (block execution), `Modify` (alter tool input), `Retry` (request the query loop to continue instead of stopping; used by Stop hooks)
+
+**Action priority**: Deny > Retry > Modify > Allow — when multiple hooks return different actions, the highest-priority action wins.
+
 **External Dependencies**: `crab-common`, `crab-core`, `crab-process`, `crab-skill`, `wasmtime` (optional)
 
 **Feature Flags**
@@ -3667,25 +3686,32 @@ pub struct AppRuntime {
 
 ### 6.20 `crates/engine/` -- Raw Query Loop
 
-**Responsibility**: the pure "conversation + backend + tool executor → streaming events" loop. Corresponds to CC `src/query.ts` + `src/query/{stopHooks,tokenBudget,transitions,config,deps}.ts`. Contains no session persistence, no REPL state, no swarm, no system-prompt assembly. 
+**Responsibility**: the pure "conversation + backend + tool executor → streaming events" loop. Corresponds to CC `src/query.ts` + `src/query/{stopHooks,tokenBudget,transitions,config,deps}.ts`. Contains no session persistence, no REPL state, no swarm, no system-prompt assembly.
 
 **Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── loop.rs                  // run_query() core loop (from agent/query_loop.rs)
-├── streaming.rs             // SSE parsing (from agent/engine/streaming.rs)
-├── tool_orchestration.rs    // Tool dispatch (from agent/engine/tool_orchestration.rs)
-├── stop_hooks.rs            // StopReason + stop conditions (from agent/stop_hooks.rs)
-├── token_budget.rs          // Token budget tracking (from agent/token_budget.rs)
-└── effort.rs                // Reasoning effort levels (from agent/effort.rs)
+├── loop.rs                  // run_query() core loop
+├── streaming.rs             // SSE parsing
+├── tool_orchestration.rs    // Tool dispatch (partition + execute)
+├── stop_hooks.rs            // StopReason + stop conditions
+├── token_budget.rs          // Token budget tracking
+└── effort.rs                // Reasoning effort levels
 ```
 
 **Public API**
 
 ```rust
-pub struct QueryConfig { /* merged from former QueryEngineConfig + QueryLoopConfig */ }
+pub struct QueryConfig {
+    pub model: ModelId,
+    pub max_tokens: u32,
+    pub fallback_model: Option<ModelId>,   // streaming fallback on overload
+    pub plan_model: Option<ModelId>,       // stronger model for plan mode
+    // ...
+}
+
 pub async fn run_query(
     conversation: &mut Conversation,
     backend: &LlmBackend,
@@ -3697,6 +3723,20 @@ pub async fn run_query(
 
 pub enum StopReason { NoToolCalls, ExplicitStop, MaxTurns(u32), TokenBudgetExceeded, UserCancel, Error(String) }
 ```
+
+**Recovery paths** (continue sites within the query loop):
+- **PTL recovery**: API returns prompt-too-long → drop oldest message group → retry (max 3 attempts, circuit breaker)
+- **Max-output-tokens retry**: model output truncated → increase `max_tokens` → retry (max 3 attempts)
+- **Streaming fallback**: SSE error with `fallback_model` configured → switch model and retry
+- **Stop hook retry**: model produces no tool calls → `HookTrigger::Stop` fires → hook returns `Retry` → loop continues
+- **Plan model routing**: when `plan_mode` is active and `plan_model` is set, the stronger model is used automatically
+
+**Tool orchestration**:
+- `partition_tool_calls()` splits tools into concurrent-safe and sequential groups using `Tool::is_concurrency_safe(input)` (input-dependent, not just static read/write)
+- Concurrent-safe tools run in parallel via `futures::future::join_all()`
+- Sequential tools run one-by-one with pre/post hook support
+- Bash errors cancel remaining sibling writes in the batch (child `CancellationToken`)
+- Cancellation hierarchy: query token → batch child token → individual tool
 
 **Internal dependencies**: `core, common, api, session, tools, plugin`.
 
@@ -4186,6 +4226,7 @@ User input
 
 Notes:
 - `engine::run_query` is the pure loop (no session state, no REPL). It emits `Event::QueryPhaseChanged`, `Event::ContentDelta`, `Event::ToolResult`, etc.
+- The loop has built-in recovery: PTL retry (drop oldest messages), max-output-tokens retry (increase limit), streaming fallback (switch model), and stop hook retry (continue on hook request).
 - `agent` wraps `engine` and adds: system-prompt assembly, git/PR context, error recovery, retry, proactive suggestions, auto-dream.
 - `daemon` calls `engine::run_query` directly, skipping `agent`'s REPL-oriented layer.
 
@@ -4370,9 +4411,22 @@ error_recovery::category + error_recovery::strategy    -- classify + recommend R
 teams::retry                                           -- exponential backoff
 file_history                                           -- per-session Edit/Write snapshots, /rewind
 summarizer + session::runtime::compact_conversation    -- /compact and auto-compact at 80% watermark
+microcompact                                           -- truncate stale tool results before full compaction
+llm_summarizer                                         -- LLM-driven summary (falls back to heuristic)
 ```
 
-CircuitBreaker and GracefulDegradation were dropped (CCB has no equivalents).
+**Compaction pipeline** (multi-layer, triggered by context window pressure):
+1. **Microcompaction** — truncate old Bash/Grep/Glob/Read/Web tool results, mark as `[Old tool result content cleared]`
+2. **LLM summarization** — call small model to generate semantic summary preserving decisions and code changes
+3. **Heuristic fallback** — pattern-based extraction (Decision/CodeChange/UnresolvedIssue) when LLM is unavailable
+4. **Compact boundary** — session marks compaction point; API only sees post-boundary messages
+
+**Engine-level recovery** (in `crates/engine`):
+- PTL retry with message group eviction (max 3 attempts)
+- Max-output-tokens retry with increasing limits
+- Streaming fallback model switching
+- Stop hook retry via `HookAction::Retry`
+
 The in-memory `rollback.rs` UndoStack was replaced with the file-backed
 `file_history/` module that mirrors CCB's `src/utils/fileHistory.ts`.
 
