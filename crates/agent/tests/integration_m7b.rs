@@ -551,7 +551,10 @@ fn query_config_is_cloneable() {
         session_id: None,
         effort: None,
         fallback_model: None,
+        plan_model: None,
         source: crab_core::query::QuerySource::Repl,
+        compaction_client: None,
+        compaction_config: crab_session::CompactionConfig::default(),
     };
     let cloned = config;
     assert_eq!(cloned.model.as_str(), "test-model");

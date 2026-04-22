@@ -22,6 +22,9 @@ pub enum HookTrigger {
     PostToolUse,
     /// When the user submits a prompt (before it reaches the LLM).
     UserPromptSubmit,
+    /// When the query loop is about to exit (model produced no tool calls).
+    /// A hook returning `Retry` continues the loop instead of stopping.
+    Stop,
 }
 
 /// A single hook definition from settings.
@@ -76,6 +79,8 @@ pub enum HookAction {
     Deny,
     /// Allow but with modified input.
     Modify,
+    /// Request the query loop to retry the current turn (used by Stop hooks).
+    Retry,
 }
 
 /// Structured result parsed from a hook's JSON stdout.
@@ -169,8 +174,8 @@ impl HookExecutor {
                 if h.trigger != trigger {
                     return false;
                 }
-                // UserPromptSubmit hooks don't filter by tool name
-                if trigger == HookTrigger::UserPromptSubmit {
+                // UserPromptSubmit and Stop hooks don't filter by tool name
+                if trigger == HookTrigger::UserPromptSubmit || trigger == HookTrigger::Stop {
                     return true;
                 }
                 // match_pattern takes precedence over tool_filter
@@ -231,6 +236,7 @@ impl HookExecutor {
                         HookTrigger::PreToolUse => "pre_tool_use".to_string(),
                         HookTrigger::PostToolUse => "post_tool_use".to_string(),
                         HookTrigger::UserPromptSubmit => "user_prompt_submit".to_string(),
+                        HookTrigger::Stop => "stop".to_string(),
                     },
                 ),
             ];
@@ -291,12 +297,19 @@ impl HookExecutor {
 
                     match structured {
                         Some(sr) => {
-                            // Structured result takes priority
+                            // Structured result takes priority.
+                            // Deny wins over everything; Retry wins over Modify/Allow.
                             if sr.action == HookAction::Deny {
                                 resolved_action = HookAction::Deny;
                                 resolved_message = sr.message.or(resolved_message);
+                            } else if sr.action == HookAction::Retry
+                                && resolved_action != HookAction::Deny
+                            {
+                                resolved_action = HookAction::Retry;
+                                resolved_message = sr.message.or(resolved_message);
                             } else if sr.action == HookAction::Modify
                                 && resolved_action != HookAction::Deny
+                                && resolved_action != HookAction::Retry
                             {
                                 resolved_action = HookAction::Modify;
                                 resolved_modified_input = sr.modified_input;
@@ -869,6 +882,95 @@ mod tests {
             session_id: Some("sess-123".into()),
         };
         let result = exec.run(HookTrigger::UserPromptSubmit, &ctx).await.unwrap();
+        assert!(result.is_allowed());
+    }
+
+    // ── Stop hook tests ────────────────────────────────────────────
+
+    #[test]
+    fn hook_trigger_stop_serde() {
+        let json = serde_json::to_string(&HookTrigger::Stop).unwrap();
+        assert_eq!(json, "\"stop\"");
+        let parsed: HookTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, HookTrigger::Stop);
+    }
+
+    #[test]
+    fn hook_action_retry_serde() {
+        let json = serde_json::to_string(&HookAction::Retry).unwrap();
+        assert_eq!(json, "\"retry\"");
+        let parsed: HookAction = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, HookAction::Retry);
+    }
+
+    #[test]
+    fn parse_hook_stdout_retry() {
+        let json = r#"{"action": "retry", "message": "run tests first"}"#;
+        let sr = parse_hook_stdout(json).unwrap();
+        assert_eq!(sr.action, HookAction::Retry);
+        assert_eq!(sr.message.as_deref(), Some("run tests first"));
+    }
+
+    #[tokio::test]
+    async fn run_stop_hook_retry() {
+        let dir = std::env::temp_dir().join("crab-hook-test-stop");
+        let _ = std::fs::create_dir_all(&dir);
+        let (_script_path, cmd) = if cfg!(windows) {
+            let p = dir.join("retry.cmd");
+            std::fs::write(
+                &p,
+                "@echo off\necho {\"action\": \"retry\", \"message\": \"continue\"}",
+            )
+            .unwrap();
+            (p.clone(), format!("cmd /C {}", p.display()))
+        } else {
+            let p = dir.join("retry.sh");
+            std::fs::write(
+                &p,
+                "#!/bin/sh\necho '{\"action\": \"retry\", \"message\": \"continue\"}'",
+            )
+            .unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            (p.clone(), format!("sh {}", p.display()))
+        };
+        let exec = HookExecutor::with_hooks(vec![HookDef {
+            trigger: HookTrigger::Stop,
+            command: cmd,
+            timeout_secs: 10,
+            tool_filter: vec![],
+            match_pattern: None,
+        }]);
+        let ctx = HookContext {
+            tool_name: String::new(),
+            tool_input: String::new(),
+            working_dir: None,
+            tool_output: Some("I'm done".into()),
+            tool_exit_code: None,
+            session_id: None,
+        };
+        let result = exec.run(HookTrigger::Stop, &ctx).await.unwrap();
+        assert_eq!(result.action, HookAction::Retry);
+        assert_eq!(result.message.as_deref(), Some("continue"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn stop_hook_no_match_allows() {
+        let exec = HookExecutor::new();
+        let ctx = HookContext {
+            tool_name: String::new(),
+            tool_input: String::new(),
+            working_dir: None,
+            tool_output: Some("done".into()),
+            tool_exit_code: None,
+            session_id: None,
+        };
+        let result = exec.run(HookTrigger::Stop, &ctx).await.unwrap();
         assert!(result.is_allowed());
     }
 }

@@ -30,8 +30,10 @@ pub fn partition_tool_calls<'a>(
     for block in blocks {
         if let ContentBlock::ToolUse { id, name, input } = block {
             let call = ToolCallRef { id, name, input };
-            let is_read = registry.get(name).is_some_and(|t| t.is_read_only());
-            if is_read {
+            let is_concurrent = registry
+                .get(name)
+                .is_some_and(|t| t.is_concurrency_safe(input));
+            if is_concurrent {
                 reads.push(call);
             } else {
                 writes.push(call);
@@ -61,8 +63,10 @@ pub async fn execute_tool_calls(
 
     let (reads, writes) = partition_tool_calls(&assistant_msg.content, registry);
 
-    // Execute read-only tools concurrently
+    // Execute read-only tools concurrently under a batch child token.
+    // Cancelling the parent (query-level) token cascades to all reads.
     if !reads.is_empty() {
+        let batch_token = cancel.child_token();
         let read_futures: Vec<_> = reads
             .iter()
             .map(|call| {
@@ -70,6 +74,7 @@ pub async fn execute_tool_calls(
                 let name = call.name.to_string();
                 let input = call.input.clone();
                 let event_tx = event_tx.clone();
+                let token = batch_token.clone();
                 async move {
                     let _ = event_tx
                         .send(Event::ToolUseStart {
@@ -78,7 +83,12 @@ pub async fn execute_tool_calls(
                             input: input.clone(),
                         })
                         .await;
-                    let result = executor.execute(&name, input, ctx).await;
+                    let result = tokio::select! {
+                        r = executor.execute(&name, input, ctx) => r,
+                        () = token.cancelled() => {
+                            Err(crab_common::Error::Other("tool cancelled".into()))
+                        }
+                    };
                     let _ = event_tx
                         .send(Event::ToolResult {
                             id: id.clone(),
@@ -97,9 +107,12 @@ pub async fn execute_tool_calls(
         results.extend(read_results);
     }
 
-    // Execute write tools sequentially (with hook support)
+    // Execute write tools sequentially (with hook support).
+    // A child token lets the query-level cancel cascade to writes,
+    // and a Bash error cancels remaining sibling writes in the batch.
+    let write_batch_token = cancel.child_token();
     for call in &writes {
-        if cancel.is_cancelled() {
+        if write_batch_token.is_cancelled() {
             break;
         }
         let id = call.id.to_string();
@@ -226,6 +239,18 @@ pub async fn execute_tool_calls(
             })
             .await;
 
+        // Bash sibling abort: if Bash failed, cancel remaining writes
+        if name == BASH_TOOL_NAME {
+            let is_error = match &result {
+                Ok(o) => o.is_error,
+                Err(_) => true,
+            };
+            if is_error {
+                tracing::debug!("bash tool error, cancelling remaining sibling writes");
+                write_batch_token.cancel();
+            }
+        }
+
         // PostToolUse hook
         if let Some(hooks) = hook_executor {
             let output_text = match &result {
@@ -299,5 +324,44 @@ mod tests {
         let (reads, writes) = partition_tool_calls(&[], &registry);
         assert!(reads.is_empty());
         assert!(writes.is_empty());
+    }
+
+    #[test]
+    fn child_token_cascades_from_parent() {
+        let parent = CancellationToken::new();
+        let child = parent.child_token();
+        assert!(!child.is_cancelled());
+        parent.cancel();
+        assert!(child.is_cancelled());
+    }
+
+    #[test]
+    fn child_cancel_does_not_affect_parent() {
+        let parent = CancellationToken::new();
+        let child = parent.child_token();
+        child.cancel();
+        assert!(!parent.is_cancelled());
+        assert!(child.is_cancelled());
+    }
+
+    #[test]
+    fn sibling_tokens_are_independent() {
+        let parent = CancellationToken::new();
+        let child_a = parent.child_token();
+        let child_b = parent.child_token();
+        child_a.cancel();
+        assert!(!child_b.is_cancelled());
+        assert!(!parent.is_cancelled());
+    }
+
+    #[test]
+    fn write_batch_token_aborts_on_cancel() {
+        let query_cancel = CancellationToken::new();
+        let write_batch = query_cancel.child_token();
+        // Simulates bash error → cancel write batch
+        write_batch.cancel();
+        assert!(write_batch.is_cancelled());
+        // Query-level cancel is NOT affected
+        assert!(!query_cancel.is_cancelled());
     }
 }

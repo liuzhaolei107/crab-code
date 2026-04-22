@@ -22,6 +22,17 @@ pub enum ToolSource {
     AgentSpawn,
 }
 
+/// How a tool responds to an interrupt (Ctrl+C / cancel signal).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterruptBehavior {
+    /// Stop immediately when cancelled (default for most tools).
+    Cancel,
+    /// Let current work finish before acknowledging the interrupt.
+    /// Used for tools where partial execution would leave inconsistent state
+    /// (e.g. a multi-step file operation).
+    Block,
+}
+
 /// Core trait for all tools — built-in, MCP-bridged, and plugin-provided.
 ///
 /// Returns `Pin<Box<dyn Future>>` (not `async fn`) to guarantee object safety
@@ -59,6 +70,23 @@ pub trait Tool: Send + Sync {
     /// Whether this tool is read-only (read-only tools can skip confirmation).
     fn is_read_only(&self) -> bool {
         false
+    }
+
+    /// Whether this tool can safely run concurrently with other tools given specific input.
+    ///
+    /// The default delegates to `is_read_only()`. Tools that are normally write
+    /// tools but operate on independent resources (e.g. writing to different files)
+    /// can override this to inspect the input and return `true`.
+    fn is_concurrency_safe(&self, _input: &Value) -> bool {
+        self.is_read_only()
+    }
+
+    /// How this tool responds to an interrupt signal (default: `Cancel`).
+    ///
+    /// `Cancel` — stop immediately when `cancellation_token` fires.
+    /// `Block`  — finish current work, then acknowledge the interrupt.
+    fn interrupt_behavior(&self) -> InterruptBehavior {
+        InterruptBehavior::Cancel
     }
 
     // ── Rendering hooks (Phase 1.5) ─────────────────────────────────
@@ -507,8 +535,10 @@ mod tests {
         assert_eq!(tool.name(), "mock_read");
         assert_eq!(tool.description(), "A mock tool for testing");
         assert!(tool.is_read_only());
+        assert!(tool.is_concurrency_safe(&json!({})));
         assert!(!tool.requires_confirmation());
         assert!(matches!(tool.source(), ToolSource::BuiltIn));
+        assert_eq!(tool.interrupt_behavior(), InterruptBehavior::Cancel);
     }
 
     #[test]
@@ -532,6 +562,7 @@ mod tests {
         });
         assert_eq!(tool.name(), "boxed");
         assert!(!tool.is_read_only());
+        assert!(!tool.is_concurrency_safe(&json!({})));
     }
 
     #[test]

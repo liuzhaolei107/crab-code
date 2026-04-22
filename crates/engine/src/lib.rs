@@ -17,7 +17,7 @@ use crab_core::model::ModelId;
 use crab_core::query::QuerySource;
 use crab_core::tool::ToolContext;
 use crab_plugin::hook::HookExecutor;
-use crab_session::{Conversation, CostAccumulator};
+use crab_session::{CompactionClient, CompactionConfig, Conversation, CostAccumulator};
 use crab_tools::executor::ToolExecutor;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -65,12 +65,20 @@ pub struct QueryConfig {
     pub retry_policy: Option<RetryPolicy>,
     /// Fallback model when the primary is overloaded (HTTP 529) or rate-limited (429).
     pub fallback_model: Option<ModelId>,
+    /// Model override for plan mode (stronger model for architectural reasoning).
+    /// When set and plan mode is active, this model is used instead of the primary.
+    pub plan_model: Option<ModelId>,
     /// Hook executor for `PreToolUse` / `PostToolUse` / `UserPromptSubmit`.
     pub hook_executor: Option<Arc<HookExecutor>>,
     /// Session ID passed to hooks via `CRAB_SESSION_ID` env var.
     pub session_id: Option<String>,
     /// Query origin — gates post-response behavior (memory extraction etc.).
     pub source: QuerySource,
+    /// Client for LLM-driven compaction (summarization, microcompaction).
+    /// When `None`, compaction falls back to non-LLM strategies (snip/truncate).
+    pub compaction_client: Option<Arc<dyn CompactionClient>>,
+    /// Compaction configuration (mode, trigger thresholds, preservation rules).
+    pub compaction_config: CompactionConfig,
 }
 
 /// Query engine — bundles the immutable handles needed to run the loop.

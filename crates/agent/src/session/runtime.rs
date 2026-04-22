@@ -190,7 +190,10 @@ impl AgentSession {
                 .as_deref()
                 .and_then(|e| e.parse::<crab_engine::EffortLevel>().ok()),
             fallback_model: session_config.fallback_model.map(ModelId::from),
+            plan_model: None,
             source: crab_core::query::QuerySource::Repl,
+            compaction_client: None,
+            compaction_config: crab_session::CompactionConfig::default(),
         };
 
         let (event_tx, event_rx) = mpsc::channel(256);

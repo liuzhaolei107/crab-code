@@ -479,7 +479,10 @@ async fn background_init(config: BackgroundInitConfig) -> InitResult {
             .session_config
             .fallback_model
             .map(crab_core::model::ModelId::from),
+        plan_model: None,
         source: crab_core::query::QuerySource::Repl,
+        compaction_client: None,
+        compaction_config: crab_session::CompactionConfig::default(),
     };
 
     // Discover skills for /command support
@@ -775,7 +778,10 @@ async fn run_loop(
                         session_id: None,
                         effort: None,
                         fallback_model: None,
+                        plan_model: None,
                         source: crab_core::query::QuerySource::Repl,
+                        compaction_client: None,
+                        compaction_config: crab_session::CompactionConfig::default(),
                     };
 
                     let mut task_cost_tracker = crab_session::CostAccumulator::default();

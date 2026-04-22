@@ -11,6 +11,7 @@ pub mod migration;
 pub mod snip_compact;
 pub mod template;
 
+pub use auto_compact::{AutoCompactConfig, AutoCompactState, CompactTrigger, should_auto_compact};
 pub use compaction::{
     CompactionClient, CompactionConfig, CompactionMode, CompactionReport, CompactionStrategy,
     CompactionTrigger, compact, compact_with_config,

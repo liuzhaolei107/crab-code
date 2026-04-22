@@ -11,7 +11,8 @@ use crab_core::model::TokenUsage;
 use crab_core::tool::{ToolContext, ToolOutput};
 use crab_plugin::hook::{HookAction, HookContext, HookExecutor, HookTrigger};
 use crab_session::{
-    CompactionStrategy, ContextAction, ContextManager, Conversation, CostAccumulator,
+    AutoCompactState, CompactionClient, CompactionConfig, CompactionMode, CompactionStrategy,
+    ContextAction, ContextManager, Conversation, CostAccumulator, compact_with_config,
 };
 use crab_tools::builtin::bash::BASH_TOOL_NAME;
 use crab_tools::builtin::plan_mode::{ENTER_PLAN_MODE_TOOL_NAME, EXIT_PLAN_MODE_TOOL_NAME};
@@ -21,6 +22,10 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::QueryConfig;
+
+const MAX_PTL_RETRIES: u32 = 3;
+const MAX_OUTPUT_TOKEN_RETRIES: u32 = 3;
+const OUTPUT_TOKEN_SCALE_FACTOR: f64 = 1.5;
 
 /// Core agent loop: user input -> LLM SSE stream -> parse tool calls ->
 /// execute tools -> serialize results -> next round.
@@ -39,6 +44,10 @@ pub async fn query_loop(
     let mut plan_mode = false;
     let context_mgr = ContextManager::default();
     let retry_policy = config.retry_policy.clone().unwrap_or_default();
+    let mut ptl_retries: u32 = 0;
+    let mut output_token_retries: u32 = 0;
+    let mut effective_max_tokens = config.max_tokens;
+    let mut compact_state = AutoCompactState::default();
 
     loop {
         if cancel.is_cancelled() {
@@ -46,7 +55,15 @@ pub async fn query_loop(
         }
 
         // Check context usage and compact if needed
-        check_and_compact(conversation, &context_mgr, &event_tx).await;
+        check_and_compact(
+            conversation,
+            &context_mgr,
+            &event_tx,
+            config.compaction_client.as_deref(),
+            &config.compaction_config,
+            &mut compact_state,
+        )
+        .await;
 
         // Emit turn start
         let _ = event_tx.send(Event::TurnStart { turn_index }).await;
@@ -59,14 +76,19 @@ pub async fn query_loop(
             vec![]
         };
 
-        let max_tokens = config.max_tokens;
+        // Select model: use plan_model when in plan mode (if configured)
+        let effective_model = if plan_mode {
+            config.plan_model.as_ref().unwrap_or(&config.model).clone()
+        } else {
+            config.model.clone()
+        };
 
         // Build the API request from conversation state
         let req = MessageRequest {
-            model: config.model.clone(),
+            model: effective_model,
             messages: Cow::Borrowed(conversation.messages()),
             system: Some(conversation.system_prompt.clone()),
-            max_tokens,
+            max_tokens: effective_max_tokens,
             tools: config.tool_schemas.clone(),
             temperature: config.temperature,
             cache_breakpoints,
@@ -78,8 +100,8 @@ pub async fn query_loop(
             tool_choice: None,
         };
 
-        // Stream the LLM response with retry support + fallback
-        let (assistant_msg, total_usage, _stop_reason) = match stream_with_retry(
+        // Stream the LLM response with retry support + fallback + PTL recovery
+        let (assistant_msg, total_usage, stop_reason) = match stream_with_retry(
             backend,
             req.clone(),
             &retry_policy,
@@ -89,6 +111,24 @@ pub async fn query_loop(
         .await
         {
             Ok(result) => result,
+            Err(e) if is_prompt_too_long_error(&e) && ptl_retries < MAX_PTL_RETRIES => {
+                ptl_retries += 1;
+                let _ = event_tx
+                    .send(Event::Error {
+                        message: format!(
+                            "Prompt too long, compacting and retrying ({ptl_retries}/{MAX_PTL_RETRIES})"
+                        ),
+                    })
+                    .await;
+                force_compact(
+                    conversation,
+                    &event_tx,
+                    config.compaction_client.as_deref(),
+                    &config.compaction_config,
+                )
+                .await;
+                continue;
+            }
             Err(e) if is_overloaded_error(&e) && config.fallback_model.is_some() => {
                 let fallback = config.fallback_model.as_ref().unwrap();
                 let _ = event_tx
@@ -108,6 +148,9 @@ pub async fn query_loop(
             Err(e) => return Err(e),
         };
 
+        // Reset PTL retry counter on success
+        ptl_retries = 0;
+
         // Record usage
         cost_tracker.add_usage(config.model.as_str(), &total_usage);
         conversation.record_usage(total_usage.clone());
@@ -115,12 +158,51 @@ pub async fn query_loop(
             .send(Event::MessageEnd { usage: total_usage })
             .await;
 
+        // Handle max_tokens truncation: increase output cap and retry
+        if is_max_tokens_stop(stop_reason.as_deref())
+            && output_token_retries < MAX_OUTPUT_TOKEN_RETRIES
+        {
+            output_token_retries += 1;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let new_max = (f64::from(effective_max_tokens) * OUTPUT_TOKEN_SCALE_FACTOR) as u32;
+            let _ = event_tx
+                .send(Event::Error {
+                    message: format!(
+                        "Output truncated (max_tokens), retrying with {new_max} tokens \
+                         ({output_token_retries}/{MAX_OUTPUT_TOKEN_RETRIES})"
+                    ),
+                })
+                .await;
+            effective_max_tokens = new_max;
+            continue;
+        }
+        // Reset on non-truncated success
+        output_token_retries = 0;
+
         // Add assistant message to conversation
         let has_tool_use = assistant_msg.has_tool_use();
         conversation.push(assistant_msg.clone());
 
-        // If no tool use, we're done
+        // If no tool use, run stop hooks — continue if any returns Retry
         if !has_tool_use {
+            if let Some(hooks) = config.hook_executor.as_deref() {
+                let hook_ctx = HookContext {
+                    tool_name: String::new(),
+                    tool_input: String::new(),
+                    working_dir: Some(tool_ctx.working_dir.clone()),
+                    tool_output: Some(assistant_msg.text()),
+                    tool_exit_code: None,
+                    session_id: config.session_id.clone(),
+                };
+                if let Ok(hr) = hooks.run(HookTrigger::Stop, &hook_ctx).await
+                    && hr.action == HookAction::Retry
+                {
+                    if let Some(msg) = hr.message {
+                        conversation.push(Message::user(msg));
+                    }
+                    continue;
+                }
+            }
             return Ok(());
         }
 
@@ -213,6 +295,25 @@ fn is_overloaded_error(err: &crab_common::Error) -> bool {
         || msg.contains("overloaded")
         || msg.contains("rate limit")
         || msg.contains("429")
+}
+
+/// Check if an error indicates the prompt exceeded the model's context window.
+fn is_prompt_too_long_error(err: &crab_common::Error) -> bool {
+    let msg = err.to_string().to_lowercase();
+    msg.contains("prompt is too long")
+        || msg.contains("prompt too long")
+        || msg.contains("too many tokens")
+        || msg.contains("context length exceeded")
+        || msg.contains("maximum context length")
+        || msg.contains("input too long")
+}
+
+/// Check if the stop reason indicates the output was truncated at `max_tokens`.
+fn is_max_tokens_stop(stop_reason: Option<&str>) -> bool {
+    matches!(
+        stop_reason,
+        Some("max_tokens" | "length" | "max_output_tokens")
+    )
 }
 
 /// Stream an LLM response, assembling the assistant message from SSE events.
@@ -343,11 +444,20 @@ async fn stream_response(
 }
 
 /// Check context usage and compact if needed.
+///
+/// When a `CompactionClient` is available, uses the full multi-level
+/// compaction pipeline (`compact_with_config`) which can summarize via
+/// LLM. Falls back to simple truncation when no client is provided.
+/// Respects the `AutoCompactState` circuit breaker to avoid infinite
+/// compaction loops.
 #[allow(clippy::cast_precision_loss)]
 async fn check_and_compact(
     conversation: &mut Conversation,
     context_mgr: &ContextManager,
     event_tx: &mpsc::Sender<Event>,
+    client: Option<&dyn CompactionClient>,
+    compaction_config: &CompactionConfig,
+    compact_state: &mut AutoCompactState,
 ) {
     match context_mgr.check(conversation) {
         ContextAction::NeedsCompaction {
@@ -355,6 +465,18 @@ async fn check_and_compact(
             limit,
             percent,
         } => {
+            if compact_state.is_circuit_broken() {
+                tracing::warn!("auto-compact circuit breaker tripped, skipping compaction");
+                let _ = event_tx
+                    .send(Event::TokenWarning {
+                        usage_pct: used as f32 / limit as f32,
+                        used,
+                        limit,
+                    })
+                    .await;
+                return;
+            }
+
             if let Some(strategy) = CompactionStrategy::for_usage(percent) {
                 let before_tokens = conversation.estimated_tokens();
                 let strategy_name = format!("{strategy:?}");
@@ -365,16 +487,32 @@ async fn check_and_compact(
                     })
                     .await;
 
-                // Use truncation directly (LLM-based compaction needs CompactionClient)
-                let budget = limit * 60 / 100;
-                let removed = conversation.inner.truncate_to_budget(budget);
+                let report =
+                    run_compaction(conversation, client, compaction_config, strategy).await;
 
-                let _ = event_tx
-                    .send(Event::CompactEnd {
-                        after_tokens: conversation.estimated_tokens(),
-                        removed_messages: removed,
-                    })
-                    .await;
+                match report {
+                    Ok(r) => {
+                        compact_state.record_success();
+                        let _ = event_tx
+                            .send(Event::CompactEnd {
+                                after_tokens: r.tokens_after,
+                                removed_messages: r.messages_removed(),
+                            })
+                            .await;
+                    }
+                    Err(e) => {
+                        compact_state.record_failure();
+                        tracing::warn!(error = %e, "compaction failed, falling back to truncation");
+                        let budget = limit * 60 / 100;
+                        let removed = conversation.inner.truncate_to_budget(budget);
+                        let _ = event_tx
+                            .send(Event::CompactEnd {
+                                after_tokens: conversation.estimated_tokens(),
+                                removed_messages: removed,
+                            })
+                            .await;
+                    }
+                }
             } else {
                 let _ = event_tx
                     .send(Event::TokenWarning {
@@ -395,6 +533,107 @@ async fn check_and_compact(
                 .await;
         }
         ContextAction::Ok => {}
+    }
+}
+
+/// Force-compact the conversation for PTL recovery.
+///
+/// Uses the full compaction pipeline with `Truncate` mode to aggressively
+/// free space. Falls back to raw `truncate_to_budget` if compaction fails.
+/// Unlike `check_and_compact`, this always compacts regardless of usage
+/// thresholds — it is only called after a confirmed prompt-too-long error.
+async fn force_compact(
+    conversation: &mut Conversation,
+    event_tx: &mpsc::Sender<Event>,
+    client: Option<&dyn CompactionClient>,
+    compaction_config: &CompactionConfig,
+) {
+    let before_tokens = conversation.estimated_tokens();
+    let _ = event_tx
+        .send(Event::CompactStart {
+            strategy: "ptl_recovery".into(),
+            before_tokens,
+        })
+        .await;
+
+    // Force truncation mode for PTL recovery
+    let ptl_config = CompactionConfig {
+        mode: CompactionMode::Truncate,
+        ..compaction_config.clone()
+    };
+    let report = run_compaction(
+        conversation,
+        client,
+        &ptl_config,
+        CompactionStrategy::Truncate,
+    )
+    .await;
+
+    match report {
+        Ok(r) => {
+            let _ = event_tx
+                .send(Event::CompactEnd {
+                    after_tokens: r.tokens_after,
+                    removed_messages: r.messages_removed(),
+                })
+                .await;
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "PTL compaction failed, using raw truncation");
+            let budget = conversation.context_window * 60 / 100;
+            let removed = conversation.inner.truncate_to_budget(budget);
+            let _ = event_tx
+                .send(Event::CompactEnd {
+                    after_tokens: conversation.estimated_tokens(),
+                    removed_messages: removed,
+                })
+                .await;
+        }
+    }
+}
+
+/// Run the compaction pipeline. Uses `compact_with_config` when an LLM client
+/// is available; otherwise applies a strategy-appropriate non-LLM fallback.
+async fn run_compaction(
+    conversation: &mut Conversation,
+    client: Option<&dyn CompactionClient>,
+    config: &CompactionConfig,
+    strategy: CompactionStrategy,
+) -> crab_common::Result<crab_session::CompactionReport> {
+    if let Some(client) = client {
+        compact_with_config(conversation, config, client).await
+    } else {
+        // No LLM client — apply non-LLM strategies only
+        let tokens_before = conversation.estimated_tokens();
+        let messages_before = conversation.len();
+
+        match strategy {
+            CompactionStrategy::Snip
+            | CompactionStrategy::Microcompact
+            | CompactionStrategy::Summarize
+            | CompactionStrategy::Hybrid { .. } => {
+                // Without an LLM client, snip is the best we can do for
+                // levels 1-4. Levels 2-4 need LLM calls for summarization.
+                let budget = conversation.context_window * 60 / 100;
+                conversation.inner.truncate_to_budget(budget);
+            }
+            CompactionStrategy::Truncate => {
+                let budget = conversation.context_window * 50 / 100;
+                conversation.inner.truncate_to_budget(budget);
+            }
+            CompactionStrategy::SlidingWindow { .. } => {
+                let budget = conversation.context_window * 60 / 100;
+                conversation.inner.truncate_to_budget(budget);
+            }
+        }
+
+        Ok(crab_session::CompactionReport {
+            tokens_before,
+            tokens_after: conversation.estimated_tokens(),
+            messages_before,
+            messages_after: conversation.len(),
+            strategy_used: strategy,
+        })
     }
 }
 
@@ -817,7 +1056,10 @@ mod tests {
             session_id: None,
             effort: None,
             fallback_model: None,
+            plan_model: None,
             source: QuerySource::Repl,
+            compaction_client: None,
+            compaction_config: crab_session::CompactionConfig::default(),
         };
         assert_eq!(config.model.as_str(), "claude-sonnet-4-20250514");
         assert_eq!(config.max_tokens, 4096);
@@ -838,7 +1080,10 @@ mod tests {
             session_id: None,
             effort: None,
             fallback_model: None,
+            plan_model: None,
             source: QuerySource::Repl,
+            compaction_client: None,
+            compaction_config: crab_session::CompactionConfig::default(),
         };
         assert!(config.retry_policy.is_some());
         assert_eq!(config.retry_policy.unwrap().max_retries, 5);
@@ -977,11 +1222,125 @@ mod tests {
             session_id: None,
             effort: None,
             fallback_model: Some(ModelId::from("claude-sonnet-4-20250514")),
+            plan_model: None,
             source: QuerySource::Repl,
+            compaction_client: None,
+            compaction_config: crab_session::CompactionConfig::default(),
         };
         assert_eq!(
             config.fallback_model.as_ref().unwrap().as_str(),
             "claude-sonnet-4-20250514"
         );
+    }
+
+    // ─── is_prompt_too_long_error tests ───
+
+    #[test]
+    fn ptl_error_prompt_is_too_long() {
+        let err = crab_common::Error::Other(
+            "SSE stream error: prompt is too long: 250000 tokens > 200000 maximum".into(),
+        );
+        assert!(is_prompt_too_long_error(&err));
+    }
+
+    #[test]
+    fn ptl_error_context_length_exceeded() {
+        let err = crab_common::Error::Other("This model's maximum context length exceeded".into());
+        assert!(is_prompt_too_long_error(&err));
+    }
+
+    #[test]
+    fn ptl_error_too_many_tokens() {
+        let err = crab_common::Error::Other("too many tokens in the request".into());
+        assert!(is_prompt_too_long_error(&err));
+    }
+
+    #[test]
+    fn ptl_error_input_too_long() {
+        let err = crab_common::Error::Other("input too long for this model".into());
+        assert!(is_prompt_too_long_error(&err));
+    }
+
+    #[test]
+    fn not_ptl_error_other() {
+        let err = crab_common::Error::Other("invalid API key".into());
+        assert!(!is_prompt_too_long_error(&err));
+    }
+
+    #[test]
+    fn not_ptl_error_overloaded() {
+        let err = crab_common::Error::Other("server overloaded".into());
+        assert!(!is_prompt_too_long_error(&err));
+    }
+
+    // ─── is_max_tokens_stop tests ───
+
+    #[test]
+    fn max_tokens_stop_anthropic() {
+        assert!(is_max_tokens_stop(Some("max_tokens")));
+    }
+
+    #[test]
+    fn max_tokens_stop_openai() {
+        assert!(is_max_tokens_stop(Some("length")));
+    }
+
+    #[test]
+    fn max_tokens_stop_max_output() {
+        assert!(is_max_tokens_stop(Some("max_output_tokens")));
+    }
+
+    #[test]
+    fn max_tokens_stop_end_turn() {
+        assert!(!is_max_tokens_stop(Some("end_turn")));
+    }
+
+    #[test]
+    fn max_tokens_stop_tool_use() {
+        assert!(!is_max_tokens_stop(Some("tool_use")));
+    }
+
+    #[test]
+    fn max_tokens_stop_none() {
+        assert!(!is_max_tokens_stop(None));
+    }
+
+    // ─── plan_model config tests ───
+
+    #[test]
+    fn query_config_with_plan_model() {
+        let config = QueryConfig {
+            model: ModelId::from("claude-sonnet-4-20250514"),
+            max_tokens: 4096,
+            temperature: None,
+            tool_schemas: vec![],
+            cache_enabled: false,
+            budget_tokens: None,
+            retry_policy: None,
+            hook_executor: None,
+            session_id: None,
+            effort: None,
+            fallback_model: None,
+            plan_model: Some(ModelId::from("claude-opus-4-20250514")),
+            source: QuerySource::Repl,
+            compaction_client: None,
+            compaction_config: crab_session::CompactionConfig::default(),
+        };
+        assert_eq!(
+            config.plan_model.as_ref().unwrap().as_str(),
+            "claude-opus-4-20250514"
+        );
+    }
+
+    // ─── recovery constants tests ───
+
+    #[test]
+    fn recovery_constants_reasonable() {
+        assert!(MAX_PTL_RETRIES >= 1);
+        assert!(MAX_PTL_RETRIES <= 5);
+        assert!(MAX_OUTPUT_TOKEN_RETRIES >= 1);
+        assert!(MAX_OUTPUT_TOKEN_RETRIES <= 5);
+        assert!(OUTPUT_TOKEN_SCALE_FACTOR > 1.0);
+        assert!(OUTPUT_TOKEN_SCALE_FACTOR <= 3.0);
     }
 }
