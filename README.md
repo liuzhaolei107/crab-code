@@ -33,6 +33,46 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 See `crab --help` for more. Config: `~/.crab/settings.json`
 
+## Environment Variables
+
+Priority: env vars override `settings.json`, which overrides `config.toml` defaults.
+
+**Provider / API**
+| Variable | Purpose |
+|----------|---------|
+| `CRAB_API_PROVIDER` | Override LLM provider (`anthropic`, `openai`, `deepseek`, …) |
+| `CRAB_API_KEY` | Override API key (takes priority over provider-specific keys) |
+| `CRAB_MODEL` | Override model name |
+| `CRAB_API_BASE_URL` | Override base URL (for OpenAI-compatible endpoints) |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | Provider-specific fallbacks when `CRAB_API_KEY` is unset |
+
+**Shell / Tools**
+| Variable | Purpose |
+|----------|---------|
+| `CRAB_CODE_SHELL` | Path to bash/zsh binary (overrides auto-detection for the Bash tool) |
+| `CRAB_CODE_USE_POWERSHELL_TOOL` | Truthy value exposes the `PowerShell` tool on Windows (default: off) |
+
+**Agent Behavior**
+| Variable | Purpose |
+|----------|---------|
+| `CRAB_COORDINATOR_MODE` | `1` enables Agent Teams coordinator mode (multi-agent orchestration) |
+| `CRAB_AUTO_DREAM` | `1` enables background memory consolidation between sessions |
+| `CRAB_AUTO_DREAM_MIN_HOURS` | Minimum hours between consolidations (default: 6) |
+| `CRAB_AUTO_DREAM_MIN_SESSIONS` | Minimum sessions before consolidation triggers (default: 2) |
+
+**TLS / Networking**
+| Variable | Purpose |
+|----------|---------|
+| `CRAB_CA_BUNDLE` | Path to a custom CA certificate bundle (PEM) |
+| `SSL_CERT_FILE` / `SSL_CERT_DIR` | Standard OpenSSL CA overrides |
+
+**Vertex AI (when provider=vertex)**
+| Variable | Purpose |
+|----------|---------|
+| `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT` | GCP project ID |
+| `GOOGLE_CLOUD_REGION` | GCP region (default: `us-central1`) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account key JSON |
+
 ## Comparison
 
 | | Crab Code | Claude Code | OpenCode| Codex CLI |

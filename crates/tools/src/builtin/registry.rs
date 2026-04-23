@@ -17,6 +17,16 @@ use super::{
 #[cfg(target_os = "windows")]
 use super::powershell;
 
+/// Whether to expose the `PowerShell` tool to the model.
+///
+/// Windows-only; opt-in via `CRAB_CODE_USE_POWERSHELL_TOOL` (truthy value).
+/// Mirrors CCB's `isPowerShellToolEnabled` for external users (default off).
+#[cfg(target_os = "windows")]
+fn is_powershell_tool_enabled() -> bool {
+    std::env::var("CRAB_CODE_USE_POWERSHELL_TOOL")
+        .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"))
+}
+
 /// Register all built-in tools with the given registry.
 ///
 /// Accepts an optional shared task store. If `None`, a new one is created.
@@ -82,9 +92,11 @@ pub fn register_all_builtins(
     registry.register(Arc::new(monitor::MonitorTool));
     registry.register(Arc::new(send_user_file::SendUserFileTool));
 
-    // PowerShell tool — registered on Windows only
+    // PowerShell tool — Windows only, opt-in via CRAB_CODE_USE_POWERSHELL_TOOL
     #[cfg(target_os = "windows")]
-    registry.register(Arc::new(powershell::PowerShellTool));
+    if is_powershell_tool_enabled() {
+        registry.register(Arc::new(powershell::PowerShellTool));
+    }
 }
 
 /// Create a `ToolRegistry` pre-populated with all built-in tools.
@@ -148,11 +160,6 @@ mod tests {
         assert!(registry.get("ReadMcpResource").is_some());
         assert!(registry.get("McpAuth").is_some());
 
-        // PowerShell tool — only on Windows
-        if cfg!(windows) {
-            assert!(registry.get("PowerShell").is_some());
-        }
-
         // P2 tools
         assert!(registry.get("WebBrowser").is_some());
         assert!(registry.get("Workflow").is_some());
@@ -163,7 +170,11 @@ mod tests {
     #[test]
     fn default_registry_has_expected_tool_count() {
         let registry = create_default_registry();
-        let expected = if cfg!(windows) { 46 } else { 45 };
+        // PowerShell tool is opt-in on Windows via CRAB_CODE_USE_POWERSHELL_TOOL.
+        let ps_enabled = cfg!(windows)
+            && std::env::var("CRAB_CODE_USE_POWERSHELL_TOOL")
+                .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"));
+        let expected = if ps_enabled { 46 } else { 45 };
         assert_eq!(registry.len(), expected);
     }
 
@@ -171,7 +182,11 @@ mod tests {
     fn all_tools_have_schemas() {
         let registry = create_default_registry();
         let schemas = registry.tool_schemas();
-        let expected = if cfg!(windows) { 46 } else { 45 };
+        // PowerShell tool is opt-in on Windows via CRAB_CODE_USE_POWERSHELL_TOOL.
+        let ps_enabled = cfg!(windows)
+            && std::env::var("CRAB_CODE_USE_POWERSHELL_TOOL")
+                .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"));
+        let expected = if ps_enabled { 46 } else { 45 };
         assert_eq!(schemas.len(), expected);
         for schema in &schemas {
             assert!(schema.get("name").is_some());

@@ -33,6 +33,46 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 更多用法见 `crab --help`。配置文件：`~/.crab/settings.json`
 
+## 环境变量
+
+优先级：环境变量覆盖 `settings.json`，后者覆盖 `config.toml` 默认值。
+
+**Provider / API**
+| 变量 | 用途 |
+|------|------|
+| `CRAB_API_PROVIDER` | 覆盖 LLM 提供商（`anthropic`、`openai`、`deepseek` 等） |
+| `CRAB_API_KEY` | 覆盖 API key（优先级高于 provider 专用 key） |
+| `CRAB_MODEL` | 覆盖模型名 |
+| `CRAB_API_BASE_URL` | 覆盖 base URL（用于 OpenAI 兼容端点） |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | 当 `CRAB_API_KEY` 未设置时作为 provider 专用 fallback |
+
+**Shell / 工具**
+| 变量 | 用途 |
+|------|------|
+| `CRAB_CODE_SHELL` | bash/zsh 路径（覆盖 Bash 工具的自动探测） |
+| `CRAB_CODE_USE_POWERSHELL_TOOL` | 真值在 Windows 上启用 `PowerShell` 工具（默认关闭） |
+
+**Agent 行为**
+| 变量 | 用途 |
+|------|------|
+| `CRAB_COORDINATOR_MODE` | `1` 启用 Agent Teams 协调模式（多 agent 协作） |
+| `CRAB_AUTO_DREAM` | `1` 启用会话间后台记忆整理 |
+| `CRAB_AUTO_DREAM_MIN_HOURS` | 两次整理的最小间隔小时数（默认 6） |
+| `CRAB_AUTO_DREAM_MIN_SESSIONS` | 触发整理的最小会话数（默认 2） |
+
+**TLS / 网络**
+| 变量 | 用途 |
+|------|------|
+| `CRAB_CA_BUNDLE` | 自定义 CA 证书 bundle 路径（PEM 格式） |
+| `SSL_CERT_FILE` / `SSL_CERT_DIR` | 标准 OpenSSL CA 覆盖 |
+
+**Vertex AI（provider=vertex 时）**
+| 变量 | 用途 |
+|------|------|
+| `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT` | GCP project ID |
+| `GOOGLE_CLOUD_REGION` | GCP 区域（默认 `us-central1`） |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Service account key JSON 路径 |
+
 ## 对比
 
 | | Crab Code | Claude Code | OpenCode| Codex CLI |

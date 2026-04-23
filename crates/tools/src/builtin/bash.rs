@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use crab_core::Result;
@@ -14,6 +15,90 @@ use crate::str_utils::truncate_chars;
 /// Shell command execution tool.
 pub const BASH_TOOL_NAME: &str = "Bash";
 
+/// Error message used when no suitable POSIX shell is on the host.
+const NO_SHELL_ERROR: &str = "No suitable shell found. Bash tool requires a \
+POSIX shell (bash or zsh). On Windows, install Git Bash \
+(https://git-scm.com/) or WSL. You can also point `CRAB_CODE_SHELL` at a \
+bash/zsh binary.";
+
+/// Resolved shell binary path (e.g. `/bin/bash`, `C:/Program Files/Git/bin/bash.exe`).
+///
+/// Cached once per process; returns `None` if no suitable shell is found.
+fn resolved_shell() -> Option<&'static String> {
+    static SHELL: OnceLock<Option<String>> = OnceLock::new();
+    SHELL.get_or_init(find_suitable_shell).as_ref()
+}
+
+/// Find bash/zsh in the order: `CRAB_CODE_SHELL` → `$SHELL` → PATH → common paths.
+///
+/// Only bash and zsh are accepted. `sh` (dash/ash) is rejected because it cannot
+/// reliably execute bash syntax.
+fn find_suitable_shell() -> Option<String> {
+    // 1. Explicit override
+    if let Ok(override_path) = std::env::var("CRAB_CODE_SHELL")
+        && is_acceptable(&override_path)
+        && std::path::Path::new(&override_path).is_file()
+    {
+        return Some(override_path);
+    }
+
+    // 2. User's $SHELL (Unix; rarely set on Windows but honor if bash-like)
+    if let Ok(shell) = std::env::var("SHELL")
+        && is_acceptable(&shell)
+        && std::path::Path::new(&shell).is_file()
+    {
+        return Some(shell);
+    }
+
+    // 3. PATH search for bash, then zsh
+    for bin in &["bash", "zsh"] {
+        if let Some(p) = find_on_path(bin) {
+            return Some(p);
+        }
+    }
+
+    // 4. Common Unix install paths (no-op on Windows unless user copied bash there)
+    let fallback_dirs = ["/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"];
+    for dir in fallback_dirs {
+        for bin in &["bash", "zsh"] {
+            let candidate = std::path::Path::new(dir).join(bin);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+    }
+
+    None
+}
+
+/// Path name contains "bash" or "zsh" — same heuristic CCB uses.
+fn is_acceptable(path: &str) -> bool {
+    path.contains("bash") || path.contains("zsh")
+}
+
+/// Walk `PATH` and return the first match for `bin` (with Windows extension handling).
+fn find_on_path(bin: &str) -> Option<String> {
+    let path = std::env::var("PATH").ok()?;
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    let exts: &[&str] = if cfg!(windows) { &[".exe", ""] } else { &[""] };
+    for dir in path.split(sep) {
+        for ext in exts {
+            let candidate = std::path::Path::new(dir).join(format!("{bin}{ext}"));
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+    }
+    None
+}
+
+/// Build `(program, args)` for running `command` via the resolved shell, or
+/// `None` if no shell is available (caller should return `NO_SHELL_ERROR`).
+fn shell_invocation(command: String) -> Option<(String, Vec<String>)> {
+    let shell = resolved_shell()?;
+    Some((shell.clone(), vec!["-c".to_owned(), command]))
+}
+
 pub struct BashTool;
 
 impl Tool for BashTool {
@@ -22,8 +107,10 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &'static str {
-        "Execute a bash command in the shell. Returns stdout and stderr combined. \
-         On non-zero exit the output is marked as an error."
+        "Executes a given bash command with optional timeout. Working directory persists \
+         between commands; shell state does not. Requires bash or zsh — on Windows, Git Bash \
+         is automatically used when available. Returns stdout and stderr combined; non-zero \
+         exit marks the result as an error."
     }
 
     fn input_schema(&self) -> Value {
@@ -65,11 +152,8 @@ impl Tool for BashTool {
                 .map(Duration::from_millis)
                 .or(Some(Duration::from_secs(120)));
 
-            // On Windows run via cmd /C; elsewhere use sh -c
-            let (prog, args) = if cfg!(windows) {
-                ("cmd".to_owned(), vec!["/C".to_owned(), command])
-            } else {
-                ("sh".to_owned(), vec!["-c".to_owned(), command])
+            let Some((prog, args)) = shell_invocation(command) else {
+                return Ok(ToolOutput::error(NO_SHELL_ERROR));
             };
 
             let opts = SpawnOptions {
@@ -263,13 +347,11 @@ impl BashTool {
 
         let timeout = timeout_ms.map_or(Duration::from_secs(120), Duration::from_millis);
 
-        let (prog, args) = if cfg!(windows) {
-            ("cmd", vec!["/C".to_owned(), command])
-        } else {
-            ("sh", vec!["-c".to_owned(), command])
+        let Some((prog, args)) = shell_invocation(command) else {
+            return Ok(ToolOutput::error(NO_SHELL_ERROR));
         };
 
-        let mut child = tokio::process::Command::new(prog)
+        let mut child = tokio::process::Command::new(&prog)
             .args(&args)
             .current_dir(&working_dir)
             .stdout(std::process::Stdio::piped())
@@ -367,7 +449,7 @@ impl BashTool {
 
 #[cfg(feature = "pty")]
 mod pty_support {
-    use super::*;
+    use super::{BashTool, Duration, NO_SHELL_ERROR, Result, ToolOutput, resolved_shell};
 
     /// Configuration for PTY execution.
     pub struct PtyConfig {
@@ -436,14 +518,12 @@ mod pty_support {
             })
             .map_err(|e| crab_core::Error::Other(format!("failed to open PTY: {e}")))?;
 
-        let (shell, flag) = if cfg!(windows) {
-            ("cmd", "/C")
-        } else {
-            ("sh", "-c")
+        let Some(shell) = resolved_shell() else {
+            return Ok(ToolOutput::error(NO_SHELL_ERROR));
         };
 
-        let mut cmd = CommandBuilder::new(shell);
-        cmd.arg(flag);
+        let mut cmd = CommandBuilder::new(shell.clone());
+        cmd.arg("-c");
         cmd.arg(command);
         cmd.cwd(working_dir);
 

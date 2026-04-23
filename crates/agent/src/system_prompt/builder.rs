@@ -76,11 +76,27 @@ fn append_environment_info(prompt: &mut String) {
     let _ = writeln!(prompt, "- Platform: {}", std::env::consts::OS);
     let _ = writeln!(prompt, "- Architecture: {}", std::env::consts::ARCH);
 
-    // Shell
-    let shell = std::env::var("SHELL")
-        .or_else(|_| std::env::var("COMSPEC"))
-        .unwrap_or_else(|_| "unknown".to_string());
-    let _ = writeln!(prompt, "- Shell: {shell}");
+    // Shell. Mirrors CCB's getShellInfoLine: read $SHELL only (never COMSPEC —
+    // that's cmd.exe, which would push the model toward Windows syntax), and
+    // on Windows append explicit Unix-syntax guidance since our Bash tool runs
+    // bash/zsh (Git Bash).
+    let shell_raw = std::env::var("SHELL").unwrap_or_else(|_| "unknown".to_string());
+    let shell_name = if shell_raw.contains("zsh") {
+        "zsh"
+    } else if shell_raw.contains("bash") {
+        "bash"
+    } else {
+        shell_raw.as_str()
+    };
+    if cfg!(windows) {
+        let _ = writeln!(
+            prompt,
+            "- Shell: {shell_name} (use Unix shell syntax, not Windows — \
+             e.g., /dev/null not NUL, forward slashes in paths)"
+        );
+    } else {
+        let _ = writeln!(prompt, "- Shell: {shell_name}");
+    }
 
     // Working directory
     if let Ok(cwd) = std::env::current_dir() {
@@ -245,6 +261,25 @@ mod tests {
         append_environment_info(&mut prompt);
         assert!(prompt.contains("Platform:"));
         assert!(prompt.contains("Shell:"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_shell_line_appends_unix_syntax_hint() {
+        let mut prompt = String::new();
+        append_environment_info(&mut prompt);
+        assert!(
+            prompt.contains("use Unix shell syntax"),
+            "Windows prompt should tell the model to use Unix syntax, got: {prompt}"
+        );
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn non_windows_shell_line_has_no_unix_hint() {
+        let mut prompt = String::new();
+        append_environment_info(&mut prompt);
+        assert!(!prompt.contains("use Unix shell syntax"));
     }
 
     #[test]

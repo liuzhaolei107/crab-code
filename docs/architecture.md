@@ -398,7 +398,7 @@ crab-code/
 │   │       │   ├── monitor.rs         # MonitorTool (file/process monitoring)
 │   │       │   ├── workflow.rs        # WorkflowTool (multi-step workflow)
 │   │       │   ├── send_user_file.rs  # SendUserFileTool
-│   │       │   ├── powershell.rs      # PowerShellTool
+│   │       │   ├── powershell.rs      # PowerShellTool (Windows, opt-in via CRAB_CODE_USE_POWERSHELL_TOOL)
 │   │       │   ├── cron.rs            # CronCreate/Delete/List
 │   │       │   └── remote_trigger.rs  # RemoteTriggerTool
 │   │       ├── permission.rs          # Tool permission checking logic
