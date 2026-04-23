@@ -9,16 +9,19 @@ use ratatui::widgets::Widget;
 use crate::theme::accents::CLAUDE_DARK as CRAB_COLOR;
 use crate::traits::Renderable;
 
-/// Background color for the crab art body.
-const CRAB_BG: Color = Color::Black;
+/// Crab art loaded at compile time; 3 lines, 8 visual cols.
+const LOGO_ART: &str = include_str!("../../assets/header-logo.txt");
 
-/// Header bar: crab ASCII art (left) + info text (right) + separator.
+/// Art column width + trailing padding before info text.
+const ART_WIDTH: u16 = 10;
+
+/// Header bar: crab art (left) + info text (right) + separator.
 ///
 /// Layout (4 lines):
 /// ```text
-///  /| o o |\  Crab Code v0.1.0
-///  \_^^^^^_/  claude-sonnet-4-6
-///   // ||| \\ C:\path\to\project
+///  ╭◉───◉╮  Crab Code v0.1.0
+///  ╰█████╯  claude-sonnet-4-6
+///   ╵╵╵╵╵   C:\path\to\project
 /// ────────────────────────────────
 /// ```
 pub struct HeaderBar<'a> {
@@ -44,19 +47,14 @@ fn render_header(model_name: &str, working_dir: &str, area: Rect, buf: &mut Buff
     }
 
     let fg = Style::default().fg(CRAB_COLOR);
-    let fg_bg = Style::default().fg(CRAB_COLOR).bg(CRAB_BG);
 
-    let art_lines: [Line<'_>; 3] = [
-        Line::from(Span::styled(r" /| o o |\  ", fg)),
-        Line::from(vec![
-            Span::styled(r" \_", fg),
-            Span::styled("^^^^^", fg_bg),
-            Span::styled(r"_/  ", fg),
-        ]),
-        Line::from(Span::styled(r"  // ||| \\  ", fg)),
-    ];
+    let art_lines: Vec<Line<'_>> = LOGO_ART
+        .lines()
+        .take(3)
+        .map(|l| Line::from(Span::styled(l, fg)))
+        .collect();
 
-    let art_width = 13u16;
+    let art_width = ART_WIDTH;
 
     let text_budget = area.width.saturating_sub(art_width) as usize;
     let info_lines: [Line<'_>; 3] = [
