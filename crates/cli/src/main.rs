@@ -352,10 +352,9 @@ fn main() -> anyhow::Result<()> {
 
     // ACP mode: bypass all interactive / print-mode plumbing and run
     // as a JSON-RPC stdio child process for the spawning editor. All
-    // other CLI flags are ignored. `flavor = "current_thread"` because
-    // the upstream SDK requires a LocalSet-compatible runtime.
+    // other CLI flags are ignored.
     if cli.acp {
-        let rt = tokio::runtime::Builder::new_current_thread()
+        let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()?;
         return rt.block_on(acp_mode::run());
