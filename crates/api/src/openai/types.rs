@@ -109,6 +109,13 @@ pub struct ChunkDelta {
     pub content: Option<String>,
     #[serde(default)]
     pub tool_calls: Option<Vec<ToolCallDelta>>,
+    /// Reasoning trace emitted by reasoning models (`deepseek-reasoner`,
+    /// DeepSeek-R1, etc.). Arrives before the normal `content` stream and
+    /// can span tens of seconds; surfacing it as thinking keeps the UI
+    /// from looking frozen. Aliased so we also accept providers that name
+    /// the field `reasoning` (without the `_content` suffix).
+    #[serde(default, alias = "reasoning")]
+    pub reasoning_content: Option<String>,
 }
 
 /// Incremental tool call in a streaming chunk.

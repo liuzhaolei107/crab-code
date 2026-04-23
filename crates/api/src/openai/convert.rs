@@ -255,6 +255,21 @@ pub fn chunk_to_stream_event(chunk: &ChatCompletionChunk) -> Vec<StreamEvent> {
             .as_ref()
             .is_some_and(|tc| !tc.is_empty());
 
+        // Reasoning trace (deepseek-reasoner / DeepSeek-R1): emit as
+        // ThinkingDelta so downstream consumers render the same Thinking
+        // cell they use for Anthropic extended-thinking. Must stream
+        // through as it arrives — reasoning can run for tens of seconds
+        // before any `content` appears and the UI would otherwise look
+        // frozen.
+        if let Some(reasoning) = &choice.delta.reasoning_content
+            && !reasoning.is_empty()
+        {
+            events.push(StreamEvent::ThinkingDelta {
+                index: choice.index,
+                delta: reasoning.clone(),
+            });
+        }
+
         // When tool_calls are present alongside content, the content is
         // redundant tool-parameter JSON (DeepSeek behaviour). Skip it to
         // avoid polluting assistant text with raw JSON.
@@ -523,6 +538,7 @@ mod tests {
                     role: None,
                     content: Some("Hello".into()),
                     tool_calls: None,
+                    reasoning_content: None,
                 },
                 finish_reason: None,
             }],
@@ -545,6 +561,7 @@ mod tests {
                     role: None,
                     content: None,
                     tool_calls: None,
+                    reasoning_content: None,
                 },
                 finish_reason: Some("stop".into()),
             }],
@@ -561,6 +578,80 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, StreamEvent::MessageDelta { .. }))
         );
+    }
+
+    #[test]
+    fn chunk_to_events_reasoning_content_becomes_thinking_delta() {
+        // DeepSeek-reasoner streams `reasoning_content` before normal
+        // content; we translate it into StreamEvent::ThinkingDelta so the
+        // TUI can show "∴ Thinking…" instead of looking frozen while the
+        // model reasons.
+        let chunk = ChatCompletionChunk {
+            id: "chatcmpl-reason".into(),
+            object: "chat.completion.chunk".into(),
+            model: "deepseek-reasoner".into(),
+            choices: vec![super::super::types::ChunkChoice {
+                index: 0,
+                delta: super::super::types::ChunkDelta {
+                    role: None,
+                    content: None,
+                    tool_calls: None,
+                    reasoning_content: Some("Let me consider".into()),
+                },
+                finish_reason: None,
+            }],
+            usage: None,
+        };
+        let events = chunk_to_stream_event(&chunk);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            StreamEvent::ThinkingDelta { delta, .. } if delta == "Let me consider"
+        ));
+    }
+
+    #[test]
+    fn chunk_to_events_reasoning_alias_short_name() {
+        // Providers that shorten the field to `reasoning` still deserialize
+        // into the same ChunkDelta via the serde alias.
+        let raw = r#"{
+            "id":"chatcmpl-1","object":"chat.completion.chunk","model":"r1",
+            "choices":[{"index":0,"delta":{"reasoning":"step"},"finish_reason":null}]
+        }"#;
+        let chunk: ChatCompletionChunk = serde_json::from_str(raw).unwrap();
+        let events = chunk_to_stream_event(&chunk);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            StreamEvent::ThinkingDelta { delta, .. } if delta == "step"
+        ));
+    }
+
+    #[test]
+    fn chunk_to_events_reasoning_and_content_both_emit() {
+        // Rare but possible: some providers may send reasoning_content and
+        // content in the same chunk (e.g. transition frame). Both flow
+        // through as their respective delta events.
+        let chunk = ChatCompletionChunk {
+            id: "chatcmpl-mix".into(),
+            object: "chat.completion.chunk".into(),
+            model: "r1".into(),
+            choices: vec![super::super::types::ChunkChoice {
+                index: 0,
+                delta: super::super::types::ChunkDelta {
+                    role: None,
+                    content: Some("answer".into()),
+                    tool_calls: None,
+                    reasoning_content: Some("thinking".into()),
+                },
+                finish_reason: None,
+            }],
+            usage: None,
+        };
+        let events = chunk_to_stream_event(&chunk);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(&events[0], StreamEvent::ThinkingDelta { .. }));
+        assert!(matches!(&events[1], StreamEvent::ContentDelta { .. }));
     }
 
     #[test]
