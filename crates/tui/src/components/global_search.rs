@@ -66,7 +66,9 @@ impl GlobalSearchOverlay {
             ChatMessage::ToolRejected {
                 tool_name, summary, ..
             } => format!("{tool_name}: {summary}"),
-            ChatMessage::CompactBoundary { .. } | ChatMessage::PlanStep { .. } => String::new(),
+            ChatMessage::CompactBoundary { .. }
+            | ChatMessage::PlanStep { .. }
+            | ChatMessage::Welcome { .. } => String::new(),
         }
     }
 
@@ -203,7 +205,8 @@ impl Renderable for GlobalSearchOverlay {
                 Some(
                     ChatMessage::System { .. }
                     | ChatMessage::CompactBoundary { .. }
-                    | ChatMessage::PlanStep { .. },
+                    | ChatMessage::PlanStep { .. }
+                    | ChatMessage::Welcome { .. },
                 ) => "[sys] ",
                 None => "[???] ",
             };

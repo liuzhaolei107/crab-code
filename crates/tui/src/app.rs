@@ -183,6 +183,23 @@ pub enum ChatMessage {
         /// Elapsed thinking time (set when thinking completes).
         duration: Option<Duration>,
     },
+    /// Welcome panel — ambient info shown at startup when there are
+    /// release notes the user hasn't seen, or on a new project, or when
+    /// forced via `CRAB_FORCE_FULL_LOGO`. Three columns: recent activity,
+    /// what's new, project hint. Not cleared by `/clear`; not included in
+    /// transcript overlay.
+    Welcome {
+        /// Binary version this welcome was generated for — shown in the header.
+        version: String,
+        /// Up to 3 most recent sessions (other than the current one),
+        /// ordered newest-first. Each tuple is `(name_or_id, relative_time)`.
+        recent_sessions: Vec<(String, String)>,
+        /// Release-note bullets pulled from the CHANGELOG for the current
+        /// version. Empty until Phase 2 wires it up.
+        whats_new: Vec<String>,
+        /// When true, the project panel suggests creating `CRAB.md`.
+        show_project_hint: bool,
+    },
 }
 
 /// Info for a tool currently being executed, keyed by `tool_use_id`.
@@ -346,8 +363,12 @@ impl App {
     }
 
     /// Reset app state for a new session (clear messages, input, counters).
+    ///
+    /// Preserves any `Welcome` cell at the front — it's ambient context,
+    /// not conversation content, so `/clear` should not remove it.
     pub fn reset_for_new_session(&mut self) {
-        self.messages.clear();
+        self.messages
+            .retain(|m| matches!(m, ChatMessage::Welcome { .. }));
         self.content_buffer.clear();
         self.input.clear();
         self.state = AppState::Idle;
@@ -1898,7 +1919,9 @@ mod tests {
                 tool_name, summary, ..
             } => tool_name.contains(needle) || summary.contains(needle),
             ChatMessage::Thinking { text, .. } => text.contains(needle),
-            ChatMessage::CompactBoundary { .. } | ChatMessage::PlanStep { .. } => false,
+            ChatMessage::CompactBoundary { .. }
+            | ChatMessage::PlanStep { .. }
+            | ChatMessage::Welcome { .. } => false,
         })
     }
 
@@ -2980,5 +3003,25 @@ mod tests {
         app.command_queue.push("test".into());
         app.reset_for_new_session();
         assert!(app.command_queue.is_empty());
+    }
+
+    #[test]
+    fn reset_for_new_session_preserves_welcome() {
+        let mut app = App::new("test");
+        app.messages.push(ChatMessage::Welcome {
+            version: "0.1.0".into(),
+            recent_sessions: Vec::new(),
+            whats_new: Vec::new(),
+            show_project_hint: false,
+        });
+        app.messages.push(ChatMessage::User {
+            text: "hi".into(),
+        });
+        app.messages.push(ChatMessage::Assistant {
+            text: "hello".into(),
+        });
+        app.reset_for_new_session();
+        assert_eq!(app.messages.len(), 1);
+        assert!(matches!(app.messages[0], ChatMessage::Welcome { .. }));
     }
 }

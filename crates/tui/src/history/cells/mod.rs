@@ -10,6 +10,7 @@ pub mod tool_call;
 pub mod tool_rejected;
 pub mod tool_result;
 pub mod user;
+pub mod welcome;
 
 pub use assistant::AssistantCell;
 pub use collapsed_read_search::CollapsedReadSearchCell;
@@ -21,3 +22,4 @@ pub use tool_call::ToolCallCell;
 pub use tool_rejected::ToolRejectedCell;
 pub use tool_result::ToolResultCell;
 pub use user::UserCell;
+pub use welcome::WelcomeCell;

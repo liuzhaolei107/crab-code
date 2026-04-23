@@ -267,6 +267,81 @@ fn builtin_slash_commands() -> Vec<CommandInfo> {
     ]
 }
 
+/// Build a relative-time label like "2h ago" from a `SystemTime`.
+fn relative_time(ts: std::time::SystemTime) -> String {
+    let Ok(elapsed) = ts.elapsed() else {
+        return "just now".into();
+    };
+    let s = elapsed.as_secs();
+    if s < 60 {
+        "just now".into()
+    } else if s < 3_600 {
+        format!("{}m ago", s / 60)
+    } else if s < 86_400 {
+        format!("{}h ago", s / 3_600)
+    } else {
+        format!("{}d ago", s / 86_400)
+    }
+}
+
+/// Decide whether the welcome panel should display on this start.
+///
+/// Three independent triggers (mirroring CCB's LogoV2):
+///   1. The current binary version differs from `state.last_welcome_version`
+///   2. The project has no `CRAB.md` (new project → show creation hint)
+///   3. `CRAB_FORCE_FULL_LOGO` env var is truthy
+fn welcome_triggers(
+    state: &crab_config::global_state::GlobalState,
+    project_dir: &std::path::Path,
+) -> (bool, bool) {
+    let force = std::env::var("CRAB_FORCE_FULL_LOGO")
+        .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"));
+    let version_new = crab_config::global_state::should_show_welcome(state, env!("CARGO_PKG_VERSION"));
+    let is_new_project = !project_dir.as_os_str().is_empty()
+        && !project_dir.join("CRAB.md").exists();
+    let should_show = force || version_new || is_new_project;
+    (should_show, is_new_project)
+}
+
+/// Push a `ChatMessage::Welcome` at the front of the transcript when
+/// conditions warrant. Also updates `last_welcome_version` so subsequent
+/// starts on the same version stay quiet.
+fn push_welcome_if_needed(app: &mut App, sessions: &[crab_agent::SessionMetadata]) {
+    let mut state = crab_config::global_state::load();
+    let project_dir = std::path::PathBuf::from(&app.working_dir);
+    let (should_show, show_project_hint) = welcome_triggers(&state, &project_dir);
+    if !should_show {
+        return;
+    }
+
+    let recent_sessions: Vec<(String, String)> = sessions
+        .iter()
+        .take(3)
+        .map(|m| {
+            let name = m.name.clone().unwrap_or_else(|| m.session_id.clone());
+            let ago = m.modified.map_or_else(|| "unknown".into(), relative_time);
+            (name, ago)
+        })
+        .collect();
+
+    // What's new stays empty until Phase 2 wires in CHANGELOG parsing.
+    let whats_new: Vec<String> = Vec::new();
+
+    let msg = crate::app::ChatMessage::Welcome {
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        recent_sessions,
+        whats_new,
+        show_project_hint,
+    };
+    app.messages.insert(0, msg);
+
+    crab_config::global_state::record_welcome_seen(&mut state, env!("CARGO_PKG_VERSION"));
+    if let Err(e) = crab_config::global_state::save(&state) {
+        app.notifications
+            .warn(format!("Failed to persist welcome state: {e}"));
+    }
+}
+
 /// Push onboarding and/or trust overlays based on `GlobalState`.
 ///
 /// Called once after background init completes. The overlay stack is LIFO, so
@@ -410,6 +485,7 @@ async fn run_loop(
                     }
                     app.state = crate::app::AppState::Idle;
 
+                    push_welcome_if_needed(app, &meta.sidebar_entries);
                     push_startup_overlays(app);
 
                     cancel = runtime.cancellation_token().clone();

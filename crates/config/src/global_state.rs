@@ -19,6 +19,11 @@ pub struct GlobalState {
     pub has_completed_onboarding: bool,
     /// Per-project trust records keyed by canonical project path.
     pub project_trust: HashMap<String, ProjectTrust>,
+    /// Version string of the last release whose changelog the user saw. When
+    /// this differs from the current binary version, the welcome screen is
+    /// shown and this field is refreshed on dismissal. Mirrors CCB's
+    /// `lastReleaseNotesSeen` in `~/.claude/config.json`.
+    pub last_welcome_version: Option<String>,
 }
 
 /// Trust record for a single project directory.
@@ -133,6 +138,25 @@ pub fn needs_trust_prompt(state: &GlobalState, project_dir: &Path) -> bool {
     let current_hash = compute_project_hash(project_dir);
 
     !matches!(state.project_trust.get(&key), Some(trust) if trust.accepted && trust.settings_hash == current_hash)
+}
+
+/// Whether the welcome screen should be shown for this binary version.
+///
+/// Returns true when `state.last_welcome_version` is absent or differs from
+/// the current binary version. The caller is responsible for refreshing the
+/// field (and calling [`save`]) after showing the welcome so subsequent
+/// starts silently skip it.
+#[must_use]
+pub fn should_show_welcome(state: &GlobalState, current_version: &str) -> bool {
+    match &state.last_welcome_version {
+        Some(seen) => seen != current_version,
+        None => true,
+    }
+}
+
+/// Record that the welcome screen for `version` was shown.
+pub fn record_welcome_seen(state: &mut GlobalState, version: &str) {
+    state.last_welcome_version = Some(version.to_owned());
 }
 
 /// Record that the user accepted trust for a project.
@@ -284,6 +308,35 @@ mod tests {
 
         assert!(needs_trust_prompt(&state, &dir));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn welcome_shown_when_field_absent() {
+        let state = GlobalState::default();
+        assert!(should_show_welcome(&state, "0.1.0"));
+    }
+
+    #[test]
+    fn welcome_skipped_when_version_matches() {
+        let mut state = GlobalState::default();
+        record_welcome_seen(&mut state, "0.1.0");
+        assert!(!should_show_welcome(&state, "0.1.0"));
+    }
+
+    #[test]
+    fn welcome_shown_when_version_differs() {
+        let mut state = GlobalState::default();
+        record_welcome_seen(&mut state, "0.1.0");
+        assert!(should_show_welcome(&state, "0.2.0"));
+    }
+
+    #[test]
+    fn welcome_version_roundtrips_through_serde() {
+        let mut state = GlobalState::default();
+        record_welcome_seen(&mut state, "0.3.1");
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: GlobalState = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.last_welcome_version.as_deref(), Some("0.3.1"));
     }
 
     #[test]

@@ -131,6 +131,17 @@ pub fn cell_from_chat_message(msg: &crate::app::ChatMessage) -> Box<dyn HistoryC
             *collapsed,
             *duration,
         )),
+        ChatMessage::Welcome {
+            version,
+            recent_sessions,
+            whats_new,
+            show_project_hint,
+        } => Box::new(cells::WelcomeCell::new(
+            version.clone(),
+            recent_sessions.clone(),
+            whats_new.clone(),
+            *show_project_hint,
+        )),
     }
 }
 
