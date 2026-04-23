@@ -19,11 +19,11 @@ use super::powershell;
 
 /// Whether to expose the `PowerShell` tool to the model.
 ///
-/// Windows-only; opt-in via `CRAB_CODE_USE_POWERSHELL_TOOL` (truthy value).
+/// Windows-only; opt-in via `CRAB_USE_POWERSHELL_TOOL` (truthy value).
 /// Mirrors CCB's `isPowerShellToolEnabled` for external users (default off).
 #[cfg(target_os = "windows")]
 fn is_powershell_tool_enabled() -> bool {
-    std::env::var("CRAB_CODE_USE_POWERSHELL_TOOL")
+    std::env::var("CRAB_USE_POWERSHELL_TOOL")
         .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"))
 }
 
@@ -92,7 +92,7 @@ pub fn register_all_builtins(
     registry.register(Arc::new(monitor::MonitorTool));
     registry.register(Arc::new(send_user_file::SendUserFileTool));
 
-    // PowerShell tool — Windows only, opt-in via CRAB_CODE_USE_POWERSHELL_TOOL
+    // PowerShell tool — Windows only, opt-in via CRAB_USE_POWERSHELL_TOOL
     #[cfg(target_os = "windows")]
     if is_powershell_tool_enabled() {
         registry.register(Arc::new(powershell::PowerShellTool));
@@ -170,9 +170,9 @@ mod tests {
     #[test]
     fn default_registry_has_expected_tool_count() {
         let registry = create_default_registry();
-        // PowerShell tool is opt-in on Windows via CRAB_CODE_USE_POWERSHELL_TOOL.
+        // PowerShell tool is opt-in on Windows via CRAB_USE_POWERSHELL_TOOL.
         let ps_enabled = cfg!(windows)
-            && std::env::var("CRAB_CODE_USE_POWERSHELL_TOOL")
+            && std::env::var("CRAB_USE_POWERSHELL_TOOL")
                 .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"));
         let expected = if ps_enabled { 46 } else { 45 };
         assert_eq!(registry.len(), expected);
@@ -182,9 +182,9 @@ mod tests {
     fn all_tools_have_schemas() {
         let registry = create_default_registry();
         let schemas = registry.tool_schemas();
-        // PowerShell tool is opt-in on Windows via CRAB_CODE_USE_POWERSHELL_TOOL.
+        // PowerShell tool is opt-in on Windows via CRAB_USE_POWERSHELL_TOOL.
         let ps_enabled = cfg!(windows)
-            && std::env::var("CRAB_CODE_USE_POWERSHELL_TOOL")
+            && std::env::var("CRAB_USE_POWERSHELL_TOOL")
                 .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"));
         let expected = if ps_enabled { 46 } else { 45 };
         assert_eq!(schemas.len(), expected);

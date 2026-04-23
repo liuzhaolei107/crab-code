@@ -37,41 +37,34 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 优先级：环境变量覆盖 `settings.json`，后者覆盖 `config.toml` 默认值。
 
-**Provider / API**
-| 变量 | 用途 |
-|------|------|
-| `CRAB_API_PROVIDER` | 覆盖 LLM 提供商（`anthropic`、`openai`、`deepseek` 等） |
-| `CRAB_API_KEY` | 覆盖 API key（优先级高于 provider 专用 key） |
-| `CRAB_MODEL` | 覆盖模型名 |
-| `CRAB_API_BASE_URL` | 覆盖 base URL（用于 OpenAI 兼容端点） |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | 当 `CRAB_API_KEY` 未设置时作为 provider 专用 fallback |
-
-**Shell / 工具**
-| 变量 | 用途 |
-|------|------|
-| `CRAB_CODE_SHELL` | bash/zsh 路径（覆盖 Bash 工具的自动探测） |
-| `CRAB_CODE_USE_POWERSHELL_TOOL` | 真值在 Windows 上启用 `PowerShell` 工具（默认关闭） |
-
-**Agent 行为**
-| 变量 | 用途 |
-|------|------|
-| `CRAB_COORDINATOR_MODE` | `1` 启用 Agent Teams 协调模式（多 agent 协作） |
-| `CRAB_AUTO_DREAM` | `1` 启用会话间后台记忆整理 |
-| `CRAB_AUTO_DREAM_MIN_HOURS` | 两次整理的最小间隔小时数（默认 6） |
-| `CRAB_AUTO_DREAM_MIN_SESSIONS` | 触发整理的最小会话数（默认 2） |
-
-**TLS / 网络**
-| 变量 | 用途 |
-|------|------|
-| `CRAB_CA_BUNDLE` | 自定义 CA 证书 bundle 路径（PEM 格式） |
-| `SSL_CERT_FILE` / `SSL_CERT_DIR` | 标准 OpenSSL CA 覆盖 |
-
-**Vertex AI（provider=vertex 时）**
-| 变量 | 用途 |
-|------|------|
-| `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT` | GCP project ID |
-| `GOOGLE_CLOUD_REGION` | GCP 区域（默认 `us-central1`） |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Service account key JSON 路径 |
+| 分类 | 变量 | 用途 |
+|------|------|------|
+| Provider | `CRAB_API_PROVIDER` | 覆盖 provider：`anthropic`、`openai`、`deepseek`、`ollama`、`vllm`、`bedrock`、`vertex` |
+| Provider | `CRAB_API_KEY` | 统一 API key（优先级高于下方 provider 专用 key） |
+| Provider | `CRAB_MODEL` | 覆盖模型名 |
+| Provider | `CRAB_API_BASE_URL` | 覆盖 base URL（用于 OpenAI 兼容端点） |
+| Provider | `ANTHROPIC_API_KEY` | Anthropic key（`CRAB_API_KEY` 未设置时使用） |
+| Provider | `OPENAI_API_KEY` | OpenAI / Ollama / vLLM / DeepSeek 兼容端点 key |
+| Provider | `DEEPSEEK_API_KEY` | DeepSeek key |
+| Bedrock | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | 静态凭证 |
+| Bedrock | `AWS_SESSION_TOKEN` | 可选 session token（用于临时凭证） |
+| Bedrock | `AWS_REGION` / `AWS_DEFAULT_REGION` | AWS 区域 |
+| Bedrock | `AWS_ROLE_ARN` | 要扮演的 IAM role ARN |
+| Bedrock | `AWS_WEB_IDENTITY_TOKEN_FILE` | OIDC token 文件（web-identity 扮演角色） |
+| Bedrock | `AWS_EXTERNAL_ID` | 跨账户扮演角色的 External ID |
+| Bedrock | `AWS_ROLE_SESSION_NAME` | 扮演角色时的 session 名 |
+| Vertex | `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT` | GCP project ID |
+| Vertex | `GOOGLE_CLOUD_REGION` | GCP 区域（默认 `us-central1`） |
+| Vertex | `GOOGLE_APPLICATION_CREDENTIALS` | Service account key JSON 路径 |
+| Shell | `CRAB_SHELL` | bash/zsh 路径（覆盖 Bash 工具的自动探测） |
+| Shell | `SHELL` | POSIX 标准变量，`CRAB_SHELL` 未设置时作为 fallback |
+| Shell | `CRAB_USE_POWERSHELL_TOOL` | 真值在 Windows 上启用 `PowerShell` 工具（默认关闭） |
+| Agent | `CRAB_COORDINATOR_MODE` | `1` 启用 Agent Teams 协调模式 |
+| Agent | `CRAB_AUTO_DREAM` | `1` 启用会话间后台记忆整理 |
+| Agent | `CRAB_AUTO_DREAM_MIN_HOURS` | 两次整理的最小间隔小时数（默认 6） |
+| Agent | `CRAB_AUTO_DREAM_MIN_SESSIONS` | 触发整理的最小会话数（默认 2） |
+| TLS | `CRAB_CA_BUNDLE` | 自定义 CA 证书 bundle 路径（PEM 格式） |
+| TLS | `SSL_CERT_FILE` / `SSL_CERT_DIR` | 标准 OpenSSL CA 覆盖 |
 
 ## 对比
 

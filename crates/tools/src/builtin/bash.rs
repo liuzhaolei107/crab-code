@@ -18,7 +18,7 @@ pub const BASH_TOOL_NAME: &str = "Bash";
 /// Error message used when no suitable POSIX shell is on the host.
 const NO_SHELL_ERROR: &str = "No suitable shell found. Bash tool requires a \
 POSIX shell (bash or zsh). On Windows, install Git Bash \
-(https://git-scm.com/) or WSL. You can also point `CRAB_CODE_SHELL` at a \
+(https://git-scm.com/) or WSL. You can also point `CRAB_SHELL` at a \
 bash/zsh binary.";
 
 /// Resolved shell binary path (e.g. `/bin/bash`, `C:/Program Files/Git/bin/bash.exe`).
@@ -29,13 +29,13 @@ fn resolved_shell() -> Option<&'static String> {
     SHELL.get_or_init(find_suitable_shell).as_ref()
 }
 
-/// Find bash/zsh in the order: `CRAB_CODE_SHELL` → `$SHELL` → PATH → common paths.
+/// Find bash/zsh in the order: `CRAB_SHELL` → `$SHELL` → PATH → common paths.
 ///
 /// Only bash and zsh are accepted. `sh` (dash/ash) is rejected because it cannot
 /// reliably execute bash syntax.
 fn find_suitable_shell() -> Option<String> {
     // 1. Explicit override
-    if let Ok(override_path) = std::env::var("CRAB_CODE_SHELL")
+    if let Ok(override_path) = std::env::var("CRAB_SHELL")
         && is_acceptable(&override_path)
         && std::path::Path::new(&override_path).is_file()
     {
