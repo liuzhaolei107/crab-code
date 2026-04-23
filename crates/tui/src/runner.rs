@@ -283,14 +283,14 @@ fn push_startup_overlays(app: &mut App) {
     if !app.working_dir.is_empty() {
         let project_dir = std::path::PathBuf::from(&app.working_dir);
         if crab_config::global_state::needs_trust_prompt(&global_state, &project_dir) {
-            let has_settings = project_dir.join(".crab").join("settings.json").exists();
-            let has_crab_md = project_dir.join("CRAB.md").exists();
-            let overlay = crate::components::trust_dialog::TrustDialogOverlay::new(
-                app.working_dir.clone(),
-                has_settings,
-                has_crab_md,
-            );
-            app.overlay_stack.push(Box::new(overlay));
+            let ctx = crate::components::trust_dialog::TrustContext::from_project(&project_dir);
+            if !ctx.is_empty() {
+                let overlay = crate::components::trust_dialog::TrustDialogOverlay::new(
+                    app.working_dir.clone(),
+                    ctx,
+                );
+                app.overlay_stack.push(Box::new(overlay));
+            }
         }
     }
 

@@ -7,7 +7,7 @@ use crab_api::streaming::StreamingToolParser;
 use crab_api::types::{CacheBreakpoint, MessageRequest, StreamEvent};
 use crab_core::event::Event;
 use crab_core::message::{ContentBlock, Message, Role};
-use crab_core::model::TokenUsage;
+use crab_core::model::{ModelId, TokenUsage};
 use crab_core::tool::{ToolContext, ToolOutput};
 use crab_plugin::hook::{HookAction, HookContext, HookExecutor, HookTrigger};
 use crab_session::{
@@ -48,16 +48,21 @@ pub async fn query_loop(
     let mut output_token_retries: u32 = 0;
     let mut effective_max_tokens = config.max_tokens;
     let mut compact_state = AutoCompactState::default();
+    // Live model — may be swapped to a larger-context variant before compaction.
+    let mut active_model: ModelId = config.model.clone();
 
     loop {
         if cancel.is_cancelled() {
             return Ok(());
         }
 
-        // Check context usage and compact if needed
-        check_and_compact(
+        // Check context usage: first try upgrading to a larger-context model
+        // variant; fall through to compaction if no upgrade is available.
+        try_upgrade_or_compact(
             conversation,
             &context_mgr,
+            backend,
+            &mut active_model,
             &event_tx,
             config.compaction_client.as_deref(),
             &config.compaction_config,
@@ -78,11 +83,12 @@ pub async fn query_loop(
             vec![]
         };
 
-        // Select model: use plan_model when in plan mode (if configured)
+        // Select model: use plan_model when in plan mode (if configured),
+        // otherwise the live `active_model` (possibly upgraded from config.model).
         let effective_model = if plan_mode {
-            config.plan_model.as_ref().unwrap_or(&config.model).clone()
+            config.plan_model.as_ref().unwrap_or(&active_model).clone()
         } else {
-            config.model.clone()
+            active_model.clone()
         };
 
         // Build the API request from conversation state
@@ -155,8 +161,9 @@ pub async fn query_loop(
         // Reset PTL retry counter on success
         ptl_retries = 0;
 
-        // Record usage
-        cost_tracker.add_usage(config.model.as_str(), &total_usage);
+        // Record usage against the active model (may differ from `config.model`
+        // if context was upgraded to a larger-context variant).
+        cost_tracker.add_usage(active_model.as_str(), &total_usage);
         conversation.record_usage(total_usage.clone());
         let _ = event_tx
             .send(Event::MessageEnd { usage: total_usage })
@@ -453,17 +460,23 @@ async fn stream_response(
     Ok((message, total_usage, stop_reason))
 }
 
-/// Check context usage and compact if needed.
+/// Check context usage; try upgrading to a larger-context model variant
+/// first, and only fall through to compaction if no upgrade is available.
 ///
-/// When a `CompactionClient` is available, uses the full multi-level
-/// compaction pipeline (`compact_with_config`) which can summarize via
-/// LLM. Falls back to simple truncation when no client is provided.
-/// Respects the `AutoCompactState` circuit breaker to avoid infinite
-/// compaction loops.
+/// On `NeedsUpgrade`: if `backend.try_upgrade_context(active_model)` returns
+/// `Some(new_id)`, swap `active_model` + `conversation.context_window` and
+/// emit `Event::ContextUpgraded`. If `None`, fall through to compaction as
+/// if the state were `NeedsCompaction`.
+///
+/// On `NeedsCompaction`: unchanged — uses `compact_with_config` when a
+/// client is present; otherwise falls back to truncation. Respects the
+/// `AutoCompactState` circuit breaker.
 #[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
-async fn check_and_compact(
+async fn try_upgrade_or_compact(
     conversation: &mut Conversation,
     context_mgr: &ContextManager,
+    backend: &LlmBackend,
+    active_model: &mut ModelId,
     event_tx: &mpsc::Sender<Event>,
     client: Option<&dyn CompactionClient>,
     compaction_config: &CompactionConfig,
@@ -471,7 +484,45 @@ async fn check_and_compact(
     hook_executor: Option<&std::sync::Arc<HookExecutor>>,
     session_id: Option<&str>,
 ) {
-    match context_mgr.check(conversation) {
+    let action = context_mgr.check(conversation);
+    match action {
+        ContextAction::NeedsUpgrade {
+            used,
+            limit,
+            percent: _,
+        } => {
+            if let Some(new_id) = backend.try_upgrade_context(active_model.as_str()) {
+                let old_window = conversation.context_window;
+                let new_caps = backend.model_capabilities(&new_id);
+                let new_window = u64::from(new_caps.context_window);
+                // Only perform the swap if the new variant actually gives us
+                // more room — otherwise it would not reduce usage percent.
+                if new_window > old_window {
+                    let from = active_model.as_str().to_string();
+                    *active_model = ModelId::from(new_id.clone());
+                    conversation.context_window = new_window;
+                    let _ = event_tx
+                        .send(Event::ContextUpgraded {
+                            from,
+                            to: new_id,
+                            old_window,
+                            new_window,
+                        })
+                        .await;
+                    return;
+                }
+            }
+            // No upgrade path available — emit a warning and let the next
+            // turn either compact (once usage crosses the compact threshold)
+            // or continue as-is.
+            let _ = event_tx
+                .send(Event::TokenWarning {
+                    usage_pct: used as f32 / limit as f32,
+                    used,
+                    limit,
+                })
+                .await;
+        }
         ContextAction::NeedsCompaction {
             used,
             limit,
@@ -1409,5 +1460,96 @@ mod tests {
         assert!(MAX_OUTPUT_TOKEN_RETRIES <= 5);
         assert!(OUTPUT_TOKEN_SCALE_FACTOR > 1.0);
         assert!(OUTPUT_TOKEN_SCALE_FACTOR <= 3.0);
+    }
+
+    // ─── context upgrade tests ───
+
+    /// An `OpenAI`-compatible backend has no upgrade concept — `NeedsUpgrade`
+    /// must fall through to a `TokenWarning` rather than swap the model.
+    #[tokio::test]
+    async fn upgrade_on_openai_backend_emits_warning_not_swap() {
+        use crab_api::openai::OpenAiClient;
+        let backend = LlmBackend::OpenAi(OpenAiClient::new("https://example.invalid", None));
+
+        let mut conv = Conversation::new("s".into(), String::new(), 100);
+        // Force usage into the [upgrade..compact) window.
+        conv.push_user("x".repeat(260)); // ~65 tokens of ~100 = 65%
+        let ctx_mgr = ContextManager {
+            warn_threshold_percent: 30,
+            upgrade_threshold_percent: 50,
+            compact_threshold_percent: 90,
+        };
+
+        let mut active = ModelId::from("gpt-4o");
+        let (tx, mut rx) = mpsc::channel::<Event>(16);
+        let mut state = AutoCompactState::default();
+
+        try_upgrade_or_compact(
+            &mut conv,
+            &ctx_mgr,
+            &backend,
+            &mut active,
+            &tx,
+            None,
+            &CompactionConfig::default(),
+            &mut state,
+            None,
+            None,
+        )
+        .await;
+
+        // Model must not have been swapped, context window unchanged.
+        assert_eq!(active.as_str(), "gpt-4o");
+        assert_eq!(conv.context_window, 100);
+        drop(tx);
+
+        let mut saw_warning = false;
+        let mut saw_upgrade = false;
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                Event::TokenWarning { .. } => saw_warning = true,
+                Event::ContextUpgraded { .. } => saw_upgrade = true,
+                _ => {}
+            }
+        }
+        assert!(saw_warning, "expected TokenWarning for no-upgrade path");
+        assert!(!saw_upgrade, "OpenAI backend must not emit ContextUpgraded");
+    }
+
+    /// Below the upgrade threshold, nothing should happen (no events, no swap).
+    #[tokio::test]
+    async fn upgrade_below_threshold_is_noop() {
+        use crab_api::openai::OpenAiClient;
+        let backend = LlmBackend::OpenAi(OpenAiClient::new("https://example.invalid", None));
+
+        let mut conv = Conversation::new("s".into(), String::new(), 1_000_000);
+        conv.push_user("tiny message");
+        let ctx_mgr = ContextManager::default();
+
+        let mut active = ModelId::from("claude-sonnet-4-5");
+        let (tx, mut rx) = mpsc::channel::<Event>(16);
+        let mut state = AutoCompactState::default();
+
+        try_upgrade_or_compact(
+            &mut conv,
+            &ctx_mgr,
+            &backend,
+            &mut active,
+            &tx,
+            None,
+            &CompactionConfig::default(),
+            &mut state,
+            None,
+            None,
+        )
+        .await;
+
+        drop(tx);
+        assert_eq!(active.as_str(), "claude-sonnet-4-5");
+        assert_eq!(conv.context_window, 1_000_000);
+        assert!(
+            rx.recv().await.is_none(),
+            "no events expected at Ok usage level"
+        );
     }
 }

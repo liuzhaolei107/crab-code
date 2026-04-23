@@ -184,6 +184,39 @@ impl InputBox {
         self.cursor_col = self.lines[self.cursor_row].len();
     }
 
+    /// Bulk-insert `text` at the current cursor position.
+    ///
+    /// Differs from character-by-character `insert_char`: `\r\n` and bare `\r`
+    /// are normalized to `\n`, and embedded newlines split the input into
+    /// additional lines. The cursor lands at the end of the inserted region.
+    pub fn insert_text(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.save_undo();
+        self.exit_history_browse();
+
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+
+        let col = self.cursor_col.min(self.lines[self.cursor_row].len());
+        let tail = self.lines[self.cursor_row].split_off(col);
+        let mut segments = normalized.split('\n');
+
+        // First segment appends onto the current line.
+        let first = segments.next().unwrap_or("");
+        self.lines[self.cursor_row].push_str(first);
+
+        let mut last_len_before_tail = self.lines[self.cursor_row].len();
+        for seg in segments {
+            self.cursor_row += 1;
+            self.lines.insert(self.cursor_row, seg.to_string());
+            last_len_before_tail = seg.len();
+        }
+
+        self.cursor_col = last_len_before_tail;
+        self.lines[self.cursor_row].push_str(&tail);
+    }
+
     // ── Internal helpers ──
 
     fn current_line(&self) -> &str {
@@ -571,6 +604,80 @@ mod tests {
             .collect();
         // InputBox itself no longer renders placeholder
         assert!(!content.contains("Type a message"));
+    }
+
+    #[test]
+    fn insert_text_single_line() {
+        let mut input = InputBox::new();
+        input.insert_text("hello");
+        assert_eq!(input.text(), "hello");
+        assert_eq!(input.cursor(), (0, 5));
+    }
+
+    #[test]
+    fn insert_text_multi_line() {
+        let mut input = InputBox::new();
+        input.insert_text("line1\nline2\nline3");
+        assert_eq!(input.text(), "line1\nline2\nline3");
+        assert_eq!(input.line_count(), 3);
+        assert_eq!(input.cursor(), (2, 5));
+    }
+
+    #[test]
+    fn insert_text_empty_noop() {
+        let mut input = InputBox::new();
+        input.set_text("abc");
+        input.insert_text("");
+        assert_eq!(input.text(), "abc");
+        assert_eq!(input.cursor(), (0, 3));
+    }
+
+    #[test]
+    fn insert_text_normalizes_crlf() {
+        let mut input = InputBox::new();
+        input.insert_text("a\r\nb\r\nc");
+        assert_eq!(input.text(), "a\nb\nc");
+        assert_eq!(input.line_count(), 3);
+        assert_eq!(input.cursor(), (2, 1));
+    }
+
+    #[test]
+    fn insert_text_normalizes_bare_cr() {
+        let mut input = InputBox::new();
+        input.insert_text("a\rb");
+        assert_eq!(input.text(), "a\nb");
+        assert_eq!(input.line_count(), 2);
+    }
+
+    #[test]
+    fn insert_text_preserves_tail_after_cursor() {
+        let mut input = InputBox::new();
+        input.set_text("AB");
+        input.set_cursor_pos(0, 1);
+        input.insert_text("xy");
+        assert_eq!(input.text(), "AxyB");
+        assert_eq!(input.cursor(), (0, 3));
+    }
+
+    #[test]
+    fn insert_text_multi_line_splits_tail() {
+        let mut input = InputBox::new();
+        input.set_text("ABCD");
+        input.set_cursor_pos(0, 2);
+        input.insert_text("x\ny");
+        assert_eq!(input.text(), "ABx\nyCD");
+        assert_eq!(input.cursor(), (1, 1));
+    }
+
+    #[test]
+    fn insert_text_supports_undo() {
+        let mut input = InputBox::new();
+        input.set_text("hi");
+        input.set_cursor_pos(0, 2);
+        input.insert_text(" there");
+        assert_eq!(input.text(), "hi there");
+        input.undo();
+        assert_eq!(input.text(), "hi");
     }
 
     #[test]

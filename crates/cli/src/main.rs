@@ -1528,7 +1528,8 @@ fn event_to_json(event: &Event) -> Option<Value> {
         | Event::SandboxViolation { .. }
         | Event::ProactiveSuggestion(_)
         | Event::QueryPhaseChanged(_)
-        | Event::QueryStopped { .. } => None,
+        | Event::QueryStopped { .. }
+        | Event::ContextUpgraded { .. } => None,
     }
 }
 

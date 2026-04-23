@@ -40,13 +40,17 @@ impl ModelCapabilities {
     /// Create capabilities for a known Anthropic model.
     #[must_use]
     pub fn anthropic(model_id: &str) -> Self {
-        let (max_output, context) = match model_id {
-            s if s.contains("opus") => (32_000, 200_000),
-            s if s.contains("sonnet") => (16_000, 200_000),
-            s if s.contains("haiku") => (8_192, 200_000),
-            _ => (4_096, 200_000),
+        // Extended-context variants use the `[1m]` suffix convention.
+        let is_1m = model_id.ends_with("[1m]");
+        let base = model_id.trim_end_matches("[1m]");
+        let context = if is_1m { 1_000_000 } else { 200_000 };
+        let max_output = match base {
+            s if s.contains("opus") => 32_000,
+            s if s.contains("sonnet") => 16_000,
+            s if s.contains("haiku") => 8_192,
+            _ => 4_096,
         };
-        let supports_computer_use = model_id.contains("sonnet") || model_id.contains("opus");
+        let supports_computer_use = base.contains("sonnet") || base.contains("opus");
         Self {
             model_id: model_id.to_string(),
             vision: true,
@@ -88,6 +92,25 @@ impl ModelCapabilities {
             supports_caching: false,
             supports_computer_use: false,
         }
+    }
+
+    /// Return the extended-context variant for a known Anthropic model,
+    /// if one exists. Returns `None` when no upgrade path is available
+    /// (already at max context, or model family has no extended variant).
+    ///
+    /// The returned id uses the `[1m]` suffix convention to select the
+    /// 1M-token context beta. Non-Anthropic callers should return `None`.
+    #[must_use]
+    pub fn anthropic_upgrade_variant(model_id: &str) -> Option<String> {
+        // Already on the extended variant.
+        if model_id.ends_with("[1m]") {
+            return None;
+        }
+        // Only Sonnet-class models currently expose a 1M-context beta.
+        if model_id.contains("sonnet") {
+            return Some(format!("{model_id}[1m]"));
+        }
+        None
     }
 
     /// Create default/unknown capabilities.
@@ -331,6 +354,41 @@ mod tests {
     fn anthropic_unknown_model() {
         let caps = ModelCapabilities::anthropic("claude-future-99");
         assert_eq!(caps.max_output_tokens, 4_096);
+    }
+
+    #[test]
+    fn anthropic_1m_suffix_bumps_context_window() {
+        let caps = ModelCapabilities::anthropic("claude-sonnet-4-5[1m]");
+        assert_eq!(caps.context_window, 1_000_000);
+        // Max-output still keyed off the base family name.
+        assert_eq!(caps.max_output_tokens, 16_000);
+        // model_id preserves the suffix so it round-trips to the API.
+        assert_eq!(caps.model_id, "claude-sonnet-4-5[1m]");
+    }
+
+    #[test]
+    fn anthropic_upgrade_variant_sonnet() {
+        let id = "claude-sonnet-4-5";
+        let upgrade = ModelCapabilities::anthropic_upgrade_variant(id);
+        assert_eq!(upgrade.as_deref(), Some("claude-sonnet-4-5[1m]"));
+    }
+
+    #[test]
+    fn anthropic_upgrade_variant_opus_returns_none() {
+        let upgrade = ModelCapabilities::anthropic_upgrade_variant("claude-opus-4-6");
+        assert!(upgrade.is_none());
+    }
+
+    #[test]
+    fn anthropic_upgrade_variant_haiku_returns_none() {
+        let upgrade = ModelCapabilities::anthropic_upgrade_variant("claude-haiku-4-5");
+        assert!(upgrade.is_none());
+    }
+
+    #[test]
+    fn anthropic_upgrade_variant_already_upgraded_returns_none() {
+        let upgrade = ModelCapabilities::anthropic_upgrade_variant("claude-sonnet-4-5[1m]");
+        assert!(upgrade.is_none());
     }
 
     #[test]

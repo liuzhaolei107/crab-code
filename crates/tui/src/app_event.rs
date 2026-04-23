@@ -16,6 +16,10 @@ pub enum AppEvent {
     /// Replace the input box contents with `text` (e.g. history search selection,
     /// external editor result). Does NOT submit — user can still edit first.
     InsertInputText(String),
+    /// Bracketed paste from the terminal — insert `text` at the cursor without
+    /// submitting. Distinct from `InsertInputText` (which replaces) because a
+    /// paste appends to what the user was already typing.
+    Paste(String),
 
     // ── Navigation ──
     /// Scroll content up by N lines.

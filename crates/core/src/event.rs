@@ -99,6 +99,19 @@ pub enum Event {
         limit: u64,
     },
 
+    /// The active model was swapped to a larger-context variant to avoid
+    /// compaction. Emitted before the next LLM call uses `to`.
+    ContextUpgraded {
+        /// Previously active model ID.
+        from: String,
+        /// Newly active model ID (extended-context variant).
+        to: String,
+        /// Old context window size in tokens.
+        old_window: u64,
+        /// New context window size in tokens.
+        new_window: u64,
+    },
+
     // ─── Memory ───
     /// Memory files were loaded at session start.
     MemoryLoaded { count: usize },

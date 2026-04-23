@@ -17,6 +17,8 @@ pub enum TuiEvent {
     Resize { width: u16, height: u16 },
     /// Agent domain event (tool use, content delta, etc.).
     Agent(AgentEvent),
+    /// Bracketed paste from the terminal.
+    Paste(String),
     /// Periodic tick for animations (spinner, etc.).
     Tick,
 }
@@ -63,7 +65,8 @@ pub fn spawn_event_loop(
                     width: w,
                     height: h,
                 },
-                // Ignore Key Release/Repeat, mouse, focus, paste events
+                CtEvent::Paste(text) => TuiEvent::Paste(text),
+                // Ignore Key Release/Repeat, mouse, and focus events.
                 _ => continue,
             };
             if ct_tx.send(tui_event).is_err() {

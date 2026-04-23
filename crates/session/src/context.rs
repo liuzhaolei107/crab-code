@@ -1,9 +1,15 @@
 use crate::conversation::Conversation;
 
 /// Manages context window budget and triggers compaction when needed.
+///
+/// Thresholds are ordered: `warn < upgrade < compact`.
+/// `upgrade_threshold_percent` opens a window between warning and compaction
+/// where the engine may try swapping to a larger-context model variant
+/// (see `LlmBackend::try_upgrade_context`) before resorting to compaction.
 #[derive(Debug, Clone)]
 pub struct ContextManager {
     pub warn_threshold_percent: u8,
+    pub upgrade_threshold_percent: u8,
     pub compact_threshold_percent: u8,
 }
 
@@ -11,6 +17,7 @@ impl Default for ContextManager {
     fn default() -> Self {
         Self {
             warn_threshold_percent: 70,
+            upgrade_threshold_percent: 75,
             compact_threshold_percent: 80,
         }
     }
@@ -32,6 +39,12 @@ impl ContextManager {
                 limit,
                 percent,
             }
+        } else if percent >= self.upgrade_threshold_percent {
+            ContextAction::NeedsUpgrade {
+                used,
+                limit,
+                percent,
+            }
         } else if percent >= self.warn_threshold_percent {
             ContextAction::Warning {
                 used,
@@ -47,8 +60,23 @@ impl ContextManager {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContextAction {
     Ok,
-    Warning { used: u64, limit: u64, percent: u8 },
-    NeedsCompaction { used: u64, limit: u64, percent: u8 },
+    Warning {
+        used: u64,
+        limit: u64,
+        percent: u8,
+    },
+    /// Between warning and compaction: try switching to a larger-context model
+    /// variant before falling through to compaction.
+    NeedsUpgrade {
+        used: u64,
+        limit: u64,
+        percent: u8,
+    },
+    NeedsCompaction {
+        used: u64,
+        limit: u64,
+        percent: u8,
+    },
 }
 
 #[cfg(test)]
@@ -60,6 +88,7 @@ mod tests {
     fn default_thresholds() {
         let cm = ContextManager::default();
         assert_eq!(cm.warn_threshold_percent, 70);
+        assert_eq!(cm.upgrade_threshold_percent, 75);
         assert_eq!(cm.compact_threshold_percent, 80);
     }
 
@@ -91,6 +120,7 @@ mod tests {
     fn check_returns_warning_at_threshold() {
         let cm = ContextManager {
             warn_threshold_percent: 50,
+            upgrade_threshold_percent: 70,
             compact_threshold_percent: 80,
         };
         // Create a conversation with a tiny context window to trigger warning
@@ -103,9 +133,11 @@ mod tests {
         assert!(
             matches!(
                 action,
-                ContextAction::Warning { .. } | ContextAction::NeedsCompaction { .. }
+                ContextAction::Warning { .. }
+                    | ContextAction::NeedsUpgrade { .. }
+                    | ContextAction::NeedsCompaction { .. }
             ),
-            "Expected Warning or NeedsCompaction, got {action:?}"
+            "Expected Warning/NeedsUpgrade/NeedsCompaction, got {action:?}"
         );
     }
 
@@ -113,6 +145,7 @@ mod tests {
     fn check_returns_needs_compaction_above_compact_threshold() {
         let cm = ContextManager {
             warn_threshold_percent: 10,
+            upgrade_threshold_percent: 15,
             compact_threshold_percent: 20,
         };
         let mut conv = Conversation::new("s".into(), String::new(), 100);
@@ -122,6 +155,24 @@ mod tests {
         assert!(
             matches!(action, ContextAction::NeedsCompaction { .. }),
             "Expected NeedsCompaction, got {action:?}"
+        );
+    }
+
+    #[test]
+    fn check_returns_needs_upgrade_between_warn_and_compact() {
+        let cm = ContextManager {
+            warn_threshold_percent: 30,
+            upgrade_threshold_percent: 50,
+            compact_threshold_percent: 90,
+        };
+        let mut conv = Conversation::new("s".into(), String::new(), 100);
+        // Aim for ~60-70% usage: above upgrade threshold, below compact threshold.
+        let big_text = "x".repeat(260); // ~65 tokens
+        conv.push_user(&big_text);
+        let action = cm.check(&conv);
+        assert!(
+            matches!(action, ContextAction::NeedsUpgrade { .. }),
+            "Expected NeedsUpgrade, got {action:?}"
         );
     }
 
@@ -142,9 +193,11 @@ mod tests {
     fn custom_thresholds() {
         let cm = ContextManager {
             warn_threshold_percent: 50,
+            upgrade_threshold_percent: 55,
             compact_threshold_percent: 60,
         };
         assert_eq!(cm.warn_threshold_percent, 50);
+        assert_eq!(cm.upgrade_threshold_percent, 55);
         assert_eq!(cm.compact_threshold_percent, 60);
     }
 }

@@ -125,6 +125,30 @@ impl LlmBackend {
             Self::Vertex(_) => capabilities::ModelCapabilities::anthropic(model_id),
         }
     }
+
+    /// Attempt to find a larger-context variant of the given model in the same
+    /// family. Returns `None` when no upgrade path is available, the backend
+    /// has no upgrade concept, or the current model is already the largest
+    /// variant.
+    ///
+    /// Anthropic Sonnet-class models expose a 1M-token context beta under the
+    /// `[1m]` suffix convention; Opus/Haiku and OpenAI-compatible backends
+    /// return `None`.
+    #[must_use]
+    pub fn try_upgrade_context(&self, model_id: &str) -> Option<String> {
+        match self {
+            Self::Anthropic(_) => {
+                capabilities::ModelCapabilities::anthropic_upgrade_variant(model_id)
+            }
+            Self::OpenAi(_) => None,
+            #[cfg(feature = "bedrock")]
+            Self::Bedrock(_) => {
+                capabilities::ModelCapabilities::anthropic_upgrade_variant(model_id)
+            }
+            #[cfg(feature = "vertex")]
+            Self::Vertex(_) => capabilities::ModelCapabilities::anthropic_upgrade_variant(model_id),
+        }
+    }
 }
 
 /// Create an `LlmBackend` from settings.

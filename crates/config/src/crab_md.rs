@@ -20,14 +20,22 @@ pub enum CrabMdSource {
 /// Returns them in order: global first, then user, then project, so the
 /// system prompt builder can append them in that order (project instructions
 /// have the highest effective priority since they come last).
+///
+/// In addition to the top-level `CRAB.md` at each level, any `*.md` files
+/// inside the corresponding `.crab/rules/` directory are loaded and appended
+/// (sorted alphabetically by filename) after the CRAB.md content.
 pub fn collect_crab_md(project_dir: &Path) -> Vec<CrabMd> {
     let mut results = Vec::new();
 
-    // 1. Global: ~/.crab/CRAB.md
+    // 1. Global: ~/.crab/CRAB.md + ~/.crab/rules/*.md
     let global_dir = crate::settings::global_config_dir();
     if let Some(md) = read_crab_md(&global_dir.join("CRAB.md"), CrabMdSource::Global) {
         results.push(md);
     }
+    results.extend(collect_rules_dir(
+        &global_dir.join("rules"),
+        &CrabMdSource::Global,
+    ));
 
     // 2. User: ~/.crab/CRAB.md is the same as global for now
     //    (Claude Code has a separate user dir, but we merge global+user)
@@ -48,7 +56,52 @@ pub fn collect_crab_md(project_dir: &Path) -> Vec<CrabMd> {
         }
     }
 
+    // 5. Project rules: <project_dir>/.crab/rules/*.md
+    results.extend(collect_rules_dir(
+        &project_dir.join(".crab").join("rules"),
+        &CrabMdSource::Project,
+    ));
+
     results
+}
+
+/// Load all `*.md` files from a rules directory, sorted alphabetically by
+/// filename. Missing or unreadable directories return an empty vec.
+fn collect_rules_dir(rules_dir: &Path, source: &CrabMdSource) -> Vec<CrabMd> {
+    let Ok(entries) = std::fs::read_dir(rules_dir) else {
+        return Vec::new();
+    };
+
+    let mut md_files: Vec<_> = entries
+        .filter_map(std::result::Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_file() {
+                return None;
+            }
+            if path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+            {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    md_files.sort_by(|a, b| {
+        a.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .cmp(b.file_name().and_then(|n| n.to_str()).unwrap_or(""))
+    });
+
+    md_files
+        .into_iter()
+        .filter_map(|path| read_crab_md(&path, source.clone()))
+        .collect()
 }
 
 /// Read a single CRAB.md file, returning `None` if it doesn't exist or is empty.
@@ -181,6 +234,113 @@ mod tests {
         fs::write(nested.join("CRAB.md"), "   \n  \t  ").unwrap();
         let results = collect_crab_md(dir.path());
         assert!(!results.iter().any(|md| md.source == CrabMdSource::Project));
+    }
+
+    #[test]
+    fn collect_project_rules_dir_sorted() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules = dir.path().join(".crab").join("rules");
+        fs::create_dir_all(&rules).unwrap();
+        fs::write(rules.join("20-style.md"), "Style rule").unwrap();
+        fs::write(rules.join("10-security.md"), "Security rule").unwrap();
+        fs::write(rules.join("30-testing.md"), "Testing rule").unwrap();
+
+        let results = collect_crab_md(dir.path());
+        let project_mds: Vec<_> = results
+            .iter()
+            .filter(|md| md.source == CrabMdSource::Project)
+            .collect();
+        assert_eq!(project_mds.len(), 3);
+        assert!(project_mds[0].content.contains("Security rule"));
+        assert!(project_mds[1].content.contains("Style rule"));
+        assert!(project_mds[2].content.contains("Testing rule"));
+    }
+
+    #[test]
+    fn rules_dir_appended_after_crab_md() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("CRAB.md"), "Top-level CRAB").unwrap();
+        let rules = dir.path().join(".crab").join("rules");
+        fs::create_dir_all(&rules).unwrap();
+        fs::write(rules.join("a.md"), "A rule").unwrap();
+
+        let results = collect_crab_md(dir.path());
+        let project_mds: Vec<_> = results
+            .iter()
+            .filter(|md| md.source == CrabMdSource::Project)
+            .collect();
+        assert_eq!(project_mds.len(), 2);
+        assert!(project_mds[0].content.contains("Top-level CRAB"));
+        assert!(project_mds[1].content.contains("A rule"));
+    }
+
+    #[test]
+    fn rules_dir_non_md_files_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules = dir.path().join(".crab").join("rules");
+        fs::create_dir_all(&rules).unwrap();
+        fs::write(rules.join("keep.md"), "Kept").unwrap();
+        fs::write(rules.join("skip.txt"), "Skipped text").unwrap();
+        fs::write(rules.join("README"), "Skipped no-ext").unwrap();
+        fs::write(rules.join("notes.MD"), "Uppercase ext").unwrap();
+
+        let results = collect_crab_md(dir.path());
+        let project_mds: Vec<_> = results
+            .iter()
+            .filter(|md| md.source == CrabMdSource::Project)
+            .collect();
+        assert_eq!(project_mds.len(), 2);
+        let contents: Vec<&str> = project_mds.iter().map(|m| m.content.as_str()).collect();
+        assert!(contents.iter().any(|c| c.contains("Kept")));
+        assert!(contents.iter().any(|c| c.contains("Uppercase ext")));
+    }
+
+    #[test]
+    fn rules_dir_empty_files_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules = dir.path().join(".crab").join("rules");
+        fs::create_dir_all(&rules).unwrap();
+        fs::write(rules.join("empty.md"), "   \n\t ").unwrap();
+        fs::write(rules.join("real.md"), "Real content").unwrap();
+
+        let results = collect_crab_md(dir.path());
+        let project_mds: Vec<_> = results
+            .iter()
+            .filter(|md| md.source == CrabMdSource::Project)
+            .collect();
+        assert_eq!(project_mds.len(), 1);
+        assert!(project_mds[0].content.contains("Real content"));
+    }
+
+    #[test]
+    fn rules_dir_missing_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("CRAB.md"), "Just CRAB.md").unwrap();
+        // No .crab/rules/ directory at all
+        let results = collect_crab_md(dir.path());
+        let project_count = results
+            .iter()
+            .filter(|md| md.source == CrabMdSource::Project)
+            .count();
+        assert_eq!(project_count, 1);
+    }
+
+    #[test]
+    fn rules_dir_subdirectories_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules = dir.path().join(".crab").join("rules");
+        let nested = rules.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("inner.md"), "Should not load").unwrap();
+        fs::write(rules.join("top.md"), "Top rule").unwrap();
+
+        let results = collect_crab_md(dir.path());
+        let project_mds: Vec<_> = results
+            .iter()
+            .filter(|md| md.source == CrabMdSource::Project)
+            .collect();
+        assert_eq!(project_mds.len(), 1);
+        assert!(project_mds[0].content.contains("Top rule"));
     }
 
     #[test]

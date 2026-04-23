@@ -1013,6 +1013,7 @@ impl App {
         match event {
             TuiEvent::Tick => vec![AppEvent::Tick],
             TuiEvent::Resize { width, height } => vec![AppEvent::Resize(*width, *height)],
+            TuiEvent::Paste(text) => vec![AppEvent::Paste(text.clone())],
             TuiEvent::Key(_) => {
                 // Key translation is complex (depends on state, search, autocomplete).
                 // For now, key events go through the existing handle_key path.
@@ -1453,6 +1454,12 @@ impl App {
             // editor result) which does not matter at the state-mutation layer.
             AppEvent::InsertInputText(text) | AppEvent::ExternalEditorClosed(text) => {
                 self.input.set_text(&text);
+                AppAction::None
+            }
+            // Bracketed paste: insert at cursor regardless of AppState so the
+            // Processing-state command-queue type-ahead works too.
+            AppEvent::Paste(text) => {
+                self.input.insert_text(&text);
                 AppAction::None
             }
             // Genuine no-op: the renderer always draws on the next frame, so
