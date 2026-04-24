@@ -1,3 +1,8 @@
+// TODO(ccb-align): wire up. Teams mode (`crab_agent::teams`) has a live
+// team tree but no Action / keybinding opens this overlay yet. Expected
+// trigger: dedicated Action::OpenTeamBrowser bound to a chord, populated
+// from the current TeamRegistry snapshot.
+
 //! Agent/Team browser overlay — browse team members and tasks.
 //!
 //! Two tabs: `Members` and `Tasks`, switchable with `Tab`.

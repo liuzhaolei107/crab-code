@@ -16,7 +16,6 @@ pub mod header;
 pub mod history_search;
 pub mod input;
 pub mod input_area;
-pub mod input_history;
 pub mod loading;
 pub mod markdown;
 pub mod mcp_browser;

@@ -1,3 +1,8 @@
+// TODO(ccb-align): wire up. `crab_memory` crate persists memories but no
+// Action / keybinding opens this browser yet. Expected trigger: dedicated
+// Action::OpenMemoryBrowser bound to a chord, populated from
+// MemoryStore::list_all().
+
 //! Memory browser overlay — browse memory files with type-colored badges.
 //!
 //! Two views: `List` (type badge + name + description) and `Detail` (full body).

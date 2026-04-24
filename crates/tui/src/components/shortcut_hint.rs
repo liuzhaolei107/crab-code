@@ -1,3 +1,8 @@
+// TODO(ccb-align): wire up. `Action::OpenHelp` is bound to Ctrl+K Ctrl+H
+// in keybindings/defaults.rs but no handler pushes this bar as an
+// overlay. Expected wiring: App action loop intercepts Action::OpenHelp
+// → construct ShortcutHintBar::from_keybindings() → push overlay.
+
 //! Shortcut hint bar — displays context-sensitive keyboard shortcuts
 //! at the bottom or side of the TUI.
 

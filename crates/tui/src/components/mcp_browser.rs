@@ -1,3 +1,8 @@
+// TODO(ccb-align): wire up. `crab_mcp` clients expose connected servers
+// and their tools but no Action / keybinding opens this browser yet.
+// Expected trigger: dedicated Action::OpenMcpBrowser bound to a chord,
+// populated from the active McpRegistry.
+
 //! MCP server/tool browser overlay — three-level drill-down navigation.
 //!
 //! `ServerList` → `ToolList` → `ToolDetail`.

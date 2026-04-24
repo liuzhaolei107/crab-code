@@ -1,3 +1,9 @@
+// TODO(ccb-align): wire up. `Action::MessageCopy / MessageEdit /
+// MessageDelete / MessageRewind` are all defined in action.rs but have
+// no handlers. Expected trigger: Alt+M on a selected message →
+// MessageActionsMenu as overlay → routes back to the corresponding
+// AppEvent per selection.
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
