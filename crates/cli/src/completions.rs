@@ -7,9 +7,15 @@
 
 use std::io::Write;
 
+use clap::ValueEnum;
+
 /// Supported shells for completion generation.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// This is the canonical argument type for the `crab completion <shell>`
+/// subcommand. It wraps [`clap_complete::Shell`] with accepting-aliases
+/// (pwsh → PowerShell) and a stable lowercase [`Shell::name`] for logging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[allow(clippy::enum_variant_names)]
 pub enum Shell {
     /// GNU Bash.
     Bash,
@@ -18,6 +24,7 @@ pub enum Shell {
     /// Fish shell.
     Fish,
     /// PowerShell (cross-platform).
+    #[clap(name = "powershell", alias = "pwsh")]
     PowerShell,
 }
 
@@ -32,22 +39,7 @@ impl Shell {
         }
     }
 
-    /// Parse a shell name (case-insensitive).
-    ///
-    /// Returns `None` for unrecognised names.
-    #[allow(dead_code)]
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name.to_lowercase().as_str() {
-            "bash" => Some(Self::Bash),
-            "zsh" => Some(Self::Zsh),
-            "fish" => Some(Self::Fish),
-            "powershell" | "pwsh" => Some(Self::PowerShell),
-            _ => None,
-        }
-    }
-
     /// The canonical lowercase name of this shell.
-    #[allow(dead_code)]
     pub fn name(self) -> &'static str {
         match self {
             Self::Bash => "bash",
@@ -55,12 +47,6 @@ impl Shell {
             Self::Fish => "fish",
             Self::PowerShell => "powershell",
         }
-    }
-
-    /// All supported shell variants.
-    #[allow(dead_code)]
-    pub fn all() -> &'static [Shell] {
-        &[Self::Bash, Self::Zsh, Self::Fish, Self::PowerShell]
     }
 }
 
@@ -79,7 +65,6 @@ impl std::fmt::Display for Shell {
 /// # Errors
 ///
 /// Returns an error if writing to the output fails.
-#[allow(dead_code)]
 pub fn generate_completions<W: Write>(
     shell: Shell,
     cmd: &mut clap::Command,
@@ -94,25 +79,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn shell_from_name_known() {
-        assert_eq!(Shell::from_name("bash"), Some(Shell::Bash));
-        assert_eq!(Shell::from_name("ZSH"), Some(Shell::Zsh));
-        assert_eq!(Shell::from_name("Fish"), Some(Shell::Fish));
-        assert_eq!(Shell::from_name("PowerShell"), Some(Shell::PowerShell));
-        assert_eq!(Shell::from_name("pwsh"), Some(Shell::PowerShell));
+    fn shell_name_uses_lowercase() {
+        assert_eq!(Shell::Bash.name(), "bash");
+        assert_eq!(Shell::Zsh.name(), "zsh");
+        assert_eq!(Shell::Fish.name(), "fish");
+        assert_eq!(Shell::PowerShell.name(), "powershell");
     }
 
     #[test]
-    fn shell_from_name_unknown() {
-        assert_eq!(Shell::from_name("nushell"), None);
-        assert_eq!(Shell::from_name(""), None);
-    }
-
-    #[test]
-    fn shell_name_roundtrip() {
-        for shell in Shell::all() {
-            assert_eq!(Shell::from_name(shell.name()), Some(*shell));
-        }
+    fn shell_value_enum_parses_pwsh_alias() {
+        use clap::ValueEnum;
+        let matched = Shell::from_str("pwsh", true).unwrap();
+        assert_eq!(matched, Shell::PowerShell);
     }
 
     #[test]
@@ -137,7 +115,8 @@ mod tests {
 
     #[test]
     fn all_shells_generate_without_error() {
-        for shell in Shell::all() {
+        use clap::ValueEnum;
+        for shell in Shell::value_variants() {
             let mut cmd = clap::Command::new("crab").subcommand(clap::Command::new("test"));
             let mut buf = Vec::new();
             generate_completions(*shell, &mut cmd, &mut buf).unwrap();

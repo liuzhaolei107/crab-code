@@ -414,10 +414,10 @@ fn run_rollback(target: Option<&str>) -> anyhow::Result<()> {
 }
 
 /// Startup version check — called once when the CLI starts.
-/// Integrate this into the main CLI startup path to show update notifications.
-#[allow(dead_code)]
-/// Uses cached result (valid for 24h) to avoid network calls on every invocation.
-/// Returns `Some(latest_version)` if an update is available, `None` otherwise.
+/// Used by the main CLI startup path and by `crab doctor` to show update
+/// notifications. Uses cached result (valid for 24h) to avoid network calls
+/// on every invocation. Returns `Some(latest_version)` if an update is
+/// available, `None` otherwise.
 pub fn startup_version_check() -> Option<String> {
     let cached = read_cache()?;
     let latest = semver::Version::parse(&cached).ok()?;

@@ -39,15 +39,15 @@ impl PackageManager {
     pub fn install_args(self, package_name: &str) -> Vec<String> {
         match self {
             Self::Npm => vec!["install".into(), "-g".into(), package_name.into()],
-            Self::Pip => vec!["install".into(), package_name.into()],
-            Self::Brew => vec!["install".into(), package_name.into()],
+            Self::Pip | Self::Brew | Self::Cargo => {
+                vec!["install".into(), package_name.into()]
+            }
             Self::Apt => vec!["install".into(), "-y".into(), package_name.into()],
-            Self::Cargo => vec!["install".into(), package_name.into()],
         }
     }
 
     /// All known package manager variants.
-    pub fn all() -> &'static [PackageManager] {
+    pub fn all() -> &'static [Self] {
         &[Self::Npm, Self::Pip, Self::Brew, Self::Apt, Self::Cargo]
     }
 }

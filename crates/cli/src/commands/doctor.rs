@@ -26,6 +26,8 @@ pub fn run() -> anyhow::Result<()> {
         check_mcp_config(&settings),
         check_disk_space(&global_dir),
         check_version(),
+        check_package_managers(),
+        check_update_available(),
     ];
 
     let mut pass_count = 0;
@@ -300,6 +302,38 @@ fn check_version() -> Check {
         name: "Version",
         passed: true,
         detail: format!("crab-code v{current}"),
+    }
+}
+
+fn check_package_managers() -> Check {
+    let found = crate::installer::detect_package_managers();
+    if found.is_empty() {
+        return Check {
+            name: "Package managers",
+            passed: true,
+            detail: "none detected (manual upgrade only)".into(),
+        };
+    }
+    let names: Vec<_> = found.iter().map(ToString::to_string).collect();
+    Check {
+        name: "Package managers",
+        passed: true,
+        detail: format!("detected: {}", names.join(", ")),
+    }
+}
+
+fn check_update_available() -> Check {
+    match super::update::startup_version_check() {
+        Some(latest) => Check {
+            name: "Update",
+            passed: true,
+            detail: format!("v{latest} available — run 'crab update' to install"),
+        },
+        None => Check {
+            name: "Update",
+            passed: true,
+            detail: "up to date (or no cache yet; run 'crab update --check')".into(),
+        },
     }
 }
 

@@ -1,6 +1,9 @@
 mod acp_mode;
 #[allow(dead_code, clippy::doc_markdown)]
 mod commands;
+mod completions;
+mod deep_link;
+mod installer;
 #[allow(
     dead_code,
     clippy::let_unit_value,
@@ -292,7 +295,7 @@ enum CliCommand {
     /// Generate shell completion scripts
     Completion {
         /// Shell to generate completions for
-        shell: clap_complete::Shell,
+        shell: crate::completions::Shell,
     },
 }
 
@@ -402,7 +405,11 @@ fn main() -> anyhow::Result<()> {
                     CliCommand::Agents => commands::agents::run(),
                     CliCommand::Completion { shell } => {
                         let mut cmd = <Cli as clap::CommandFactory>::command();
-                        clap_complete::generate(*shell, &mut cmd, "crab", &mut std::io::stdout());
+                        crate::completions::generate_completions(
+                            *shell,
+                            &mut cmd,
+                            &mut std::io::stdout(),
+                        )?;
                         Ok(())
                     }
                 };
@@ -2428,7 +2435,7 @@ mod tests {
         let cli = Cli::try_parse_from(["crab", "completion", "bash"]).unwrap();
         match cli.command {
             Some(CliCommand::Completion { shell }) => {
-                assert_eq!(shell, clap_complete::Shell::Bash);
+                assert_eq!(shell, crate::completions::Shell::Bash);
             }
             _ => panic!("expected Completion"),
         }
@@ -2439,7 +2446,7 @@ mod tests {
         let cli = Cli::try_parse_from(["crab", "completion", "powershell"]).unwrap();
         match cli.command {
             Some(CliCommand::Completion { shell }) => {
-                assert_eq!(shell, clap_complete::Shell::PowerShell);
+                assert_eq!(shell, crate::completions::Shell::PowerShell);
             }
             _ => panic!("expected Completion PowerShell"),
         }
@@ -2475,7 +2482,12 @@ mod tests {
     fn completion_generate_powershell_does_not_panic() {
         let mut cmd = <Cli as clap::CommandFactory>::command();
         let mut buf = Vec::new();
-        clap_complete::generate(clap_complete::Shell::PowerShell, &mut cmd, "crab", &mut buf);
+        crate::completions::generate_completions(
+            crate::completions::Shell::PowerShell,
+            &mut cmd,
+            &mut buf,
+        )
+        .unwrap();
         assert!(!buf.is_empty());
     }
 
