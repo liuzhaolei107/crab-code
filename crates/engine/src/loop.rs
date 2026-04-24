@@ -109,7 +109,7 @@ pub async fn query_loop(
         };
 
         // Stream the LLM response with retry support + fallback + PTL recovery
-        let (assistant_msg, total_usage, stop_reason) = match stream_with_retry(
+        let (mut assistant_msg, total_usage, stop_reason) = match stream_with_retry(
             backend,
             req.clone(),
             &retry_policy,
@@ -189,6 +189,27 @@ pub async fn query_loop(
         }
         // Reset on non-truncated success
         output_token_retries = 0;
+
+        // PostSampling hook: allow hooks to rewrite the assistant text
+        // before it's persisted or seen by downstream consumers. Only the
+        // text is mutable — tool_use blocks stay verbatim so the tool
+        // boundary contract can't be circumvented.
+        if let Some(hooks) = config.hook_executor.as_deref() {
+            let hook_ctx = HookContext {
+                tool_name: String::new(),
+                tool_input: String::new(),
+                working_dir: Some(tool_ctx.working_dir.clone()),
+                tool_output: Some(assistant_msg.text()),
+                tool_exit_code: None,
+                session_id: config.session_id.clone(),
+            };
+            if let Ok(hr) = hooks.run(HookTrigger::PostSampling, &hook_ctx).await
+                && hr.action == crab_plugin::hook::HookAction::Modify
+                && let Some(new_text) = hr.message
+            {
+                rewrite_assistant_text(&mut assistant_msg, &new_text);
+            }
+        }
 
         // Add assistant message to conversation
         let has_tool_use = assistant_msg.has_tool_use();
@@ -326,6 +347,36 @@ fn is_prompt_too_long_error(err: &crab_core::Error) -> bool {
 }
 
 /// Check if the stop reason indicates the output was truncated at `max_tokens`.
+/// Replace the first `Text` block in an assistant message with `new_text`.
+///
+/// `PostSampling` hooks may rewrite the assistant's narrative text but
+/// never `tool_use` blocks or images. If the message has no text block,
+/// one is prepended — otherwise all text blocks are collapsed into the
+/// first, preserving order relative to `tool_use` blocks.
+fn rewrite_assistant_text(msg: &mut crab_core::message::Message, new_text: &str) {
+    use crab_core::message::ContentBlock;
+
+    let mut wrote = false;
+    msg.content.retain_mut(|block| {
+        if let ContentBlock::Text { text } = block {
+            if wrote {
+                return false;
+            }
+            *text = new_text.to_string();
+            wrote = true;
+        }
+        true
+    });
+    if !wrote {
+        msg.content.insert(
+            0,
+            ContentBlock::Text {
+                text: new_text.to_string(),
+            },
+        );
+    }
+}
+
 fn is_max_tokens_stop(stop_reason: Option<&str>) -> bool {
     matches!(
         stop_reason,

@@ -14,6 +14,14 @@ pub enum HookTrigger {
     /// When user submits a prompt (before it reaches the LLM).
     #[serde(alias = "prompt_submit")]
     UserPromptSubmit,
+    /// After the model finishes an assistant message, before it is written
+    /// to the conversation or shown in the UI. The hook may return
+    /// `HookAction::Modify` to rewrite the assistant text.
+    ///
+    /// The hook has no visibility into `tool_use` blocks — those are
+    /// considered part of the tool-boundary contract and belong to
+    /// [`Self::PreToolUse`] / [`Self::PostToolUse`].
+    PostSampling,
     /// When the query loop is about to exit (model produced no tool calls).
     /// A hook returning `Retry` continues the loop instead of stopping.
     Stop,
@@ -23,6 +31,12 @@ pub enum HookTrigger {
     SessionStart,
     /// When a session ends.
     SessionEnd,
+    /// After the user accepts the trust dialog for a project for the
+    /// first time. Fires once per project lifetime; useful for one-shot
+    /// project setup (install hooks, materialize config, ...).
+    Setup,
+    /// When a watched file changes (settings.json, skills dir).
+    FileChanged,
     /// When conversation compaction completes.
     Compact,
 }
@@ -81,10 +95,13 @@ mod tests {
             (HookTrigger::PreToolUse, "pre_tool_use"),
             (HookTrigger::PostToolUse, "post_tool_use"),
             (HookTrigger::UserPromptSubmit, "user_prompt_submit"),
+            (HookTrigger::PostSampling, "post_sampling"),
             (HookTrigger::Stop, "stop"),
             (HookTrigger::Notification, "notification"),
             (HookTrigger::SessionStart, "session_start"),
             (HookTrigger::SessionEnd, "session_end"),
+            (HookTrigger::Setup, "setup"),
+            (HookTrigger::FileChanged, "file_changed"),
             (HookTrigger::Compact, "compact"),
         ];
         for (trigger, expected) in triggers {

@@ -164,10 +164,13 @@ impl HookExecutor {
                 if matches!(
                     trigger,
                     HookTrigger::UserPromptSubmit
+                        | HookTrigger::PostSampling
                         | HookTrigger::Stop
                         | HookTrigger::Notification
                         | HookTrigger::SessionStart
                         | HookTrigger::SessionEnd
+                        | HookTrigger::Setup
+                        | HookTrigger::FileChanged
                         | HookTrigger::Compact
                 ) {
                     return true;
@@ -230,10 +233,13 @@ impl HookExecutor {
                         HookTrigger::PreToolUse => "pre_tool_use",
                         HookTrigger::PostToolUse => "post_tool_use",
                         HookTrigger::UserPromptSubmit => "user_prompt_submit",
+                        HookTrigger::PostSampling => "post_sampling",
                         HookTrigger::Stop => "stop",
                         HookTrigger::Notification => "notification",
                         HookTrigger::SessionStart => "session_start",
                         HookTrigger::SessionEnd => "session_end",
+                        HookTrigger::Setup => "setup",
+                        HookTrigger::FileChanged => "file_changed",
                         HookTrigger::Compact => "compact",
                     }
                     .to_string(),
