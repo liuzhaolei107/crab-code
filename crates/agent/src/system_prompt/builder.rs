@@ -14,6 +14,7 @@ use crab_memory::MemoryFile;
 use crab_tools::registry::ToolRegistry;
 
 use super::git_context::GitContext;
+use super::tips::TipRegistry;
 
 /// Build the complete system prompt.
 pub fn build_system_prompt(
@@ -56,6 +57,9 @@ pub fn build_system_prompt_with_memories(
     // Memory context
     append_memory_context(&mut prompt, memories);
 
+    // One contextual tip for the user (rotates per session).
+    append_tip(&mut prompt);
+
     // Custom instructions from settings
     if let Some(instructions) = custom_instructions
         && !instructions.is_empty()
@@ -66,6 +70,22 @@ pub fn build_system_prompt_with_memories(
     }
 
     prompt
+}
+
+/// Append a single contextual tip that the model may surface to the
+/// user when appropriate. Keeps the registry stateless at the call
+/// site; persistence across sessions is handled elsewhere.
+fn append_tip(prompt: &mut String) {
+    let registry = TipRegistry::default();
+    if let Some(tip) = registry.for_context("", None) {
+        let _ = writeln!(prompt, "# Tip for the user\n");
+        let _ = writeln!(
+            prompt,
+            "When it is natural, surface this hint once: {}",
+            tip.message
+        );
+        let _ = writeln!(prompt);
+    }
 }
 
 /// Append environment information to the prompt.

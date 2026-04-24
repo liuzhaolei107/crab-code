@@ -4,6 +4,7 @@
 //! discoveries made by one agent in a multi-agent session are visible to
 //! its teammates.
 
+use std::fmt::Write;
 use std::path::PathBuf;
 
 use crate::paths;
@@ -17,7 +18,6 @@ use crate::types::{MemoryMetadata, format_frontmatter};
 /// plus a markdown body to a slugified filename.
 pub struct TeamMemoryStore {
     store: MemoryStore,
-    #[allow(dead_code)]
     team_name: String,
 }
 
@@ -63,6 +63,38 @@ impl TeamMemoryStore {
     /// Load every team memory via [`MemoryStore::scan`].
     pub fn load_all(&self) -> crab_common::Result<Vec<MemoryFile>> {
         self.store.scan()
+    }
+
+    /// Name of the team this store belongs to — useful for rendering a
+    /// heading when the memories are injected into a system prompt.
+    #[must_use]
+    pub fn team_name(&self) -> &str {
+        &self.team_name
+    }
+
+    /// Render all team memories as a markdown block prefixed with a
+    /// team-name heading. Returns an empty string when the team has no
+    /// memories yet so callers can splice it into a larger prompt
+    /// without an empty section.
+    pub fn render_prompt_block(&self) -> crab_common::Result<String> {
+        let memories = self.load_all()?;
+        if memories.is_empty() {
+            return Ok(String::new());
+        }
+        let mut out = String::new();
+        let _ = writeln!(out, "# Team Memory — {}\n", self.team_name);
+        for mem in &memories {
+            let _ = writeln!(
+                out,
+                "## {} (type: {})",
+                mem.metadata.name, mem.metadata.memory_type
+            );
+            if !mem.metadata.description.is_empty() {
+                let _ = writeln!(out, "> {}", mem.metadata.description);
+            }
+            let _ = writeln!(out, "\n{}\n", mem.body.trim_start());
+        }
+        Ok(out)
     }
 }
 
@@ -133,5 +165,33 @@ mod tests {
         assert_eq!(slugify("Hello World"), "hello_world");
         assert_eq!(slugify("my-memory"), "my-memory");
         assert_eq!(slugify("test 123!"), "test_123");
+    }
+
+    #[test]
+    fn team_name_accessor_returns_original() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TeamMemoryStore::new_with_dir("crab-dev", tmp.path().to_path_buf());
+        assert_eq!(store.team_name(), "crab-dev");
+    }
+
+    #[test]
+    fn render_prompt_block_is_empty_for_empty_store() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TeamMemoryStore::new_with_dir("alpha", tmp.path().to_path_buf());
+        let rendered = store.render_prompt_block().unwrap();
+        assert!(rendered.is_empty());
+    }
+
+    #[test]
+    fn render_prompt_block_includes_team_name_and_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = TeamMemoryStore::new_with_dir("quality", tmp.path().to_path_buf());
+        let meta = sample_metadata("lint-policy");
+        store.save(&meta, "Always run clippy before push.").unwrap();
+
+        let rendered = store.render_prompt_block().unwrap();
+        assert!(rendered.contains("# Team Memory — quality"));
+        assert!(rendered.contains("## lint-policy (type: project)"));
+        assert!(rendered.contains("Always run clippy before push."));
     }
 }
