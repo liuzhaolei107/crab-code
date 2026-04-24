@@ -400,6 +400,215 @@ fn to_sidebar_entries(
         .collect()
 }
 
+/// What should happen after processing a user-submitted line.
+///
+/// Any builtin slash command handled entirely in the TUI returns
+/// [`SubmitOutcome::Handled`] (no LLM call). Skill expansions and
+/// unrecognized text return [`SubmitOutcome::SpawnQuery`] with the
+/// payload. `/exit` and `/quit` return [`SubmitOutcome::Quit`].
+enum SubmitOutcome {
+    /// Send this (possibly skill-expanded) text to the LLM.
+    SpawnQuery(String),
+    /// Command was fully handled locally; no LLM call.
+    Handled,
+    /// Tear down the session.
+    Quit,
+}
+
+/// Route a user-submitted line through the slash registry and apply any
+/// local-only effects (push system message, open overlay, compact, switch
+/// model, ...). Returns what the caller should do next.
+#[allow(clippy::too_many_lines)]
+fn handle_submit(
+    rt: &mut AgentRuntime,
+    app: &mut App,
+    text: &str,
+    session_id: &str,
+) -> SubmitOutcome {
+    use crab_agent::{SlashCommandResult, SlashDispatch};
+
+    match rt.dispatch_slash(text, session_id) {
+        SlashDispatch::Prompt(prompt) | SlashDispatch::Passthrough(prompt) => {
+            SubmitOutcome::SpawnQuery(prompt)
+        }
+        SlashDispatch::Builtin(result) => match result {
+            SlashCommandResult::Message(msg) => {
+                app.push_system_message(msg);
+                SubmitOutcome::Handled
+            }
+            SlashCommandResult::Silent => SubmitOutcome::Handled,
+            SlashCommandResult::Action(action) => apply_slash_action(rt, app, action, session_id),
+        },
+    }
+}
+
+/// Translate a [`crab_agent::SlashAction`] into concrete state mutations.
+fn apply_slash_action(
+    rt: &mut AgentRuntime,
+    app: &mut App,
+    action: crab_agent::SlashAction,
+    session_id: &str,
+) -> SubmitOutcome {
+    use crab_agent::SlashAction;
+    use crab_core::permission::PermissionMode;
+
+    match action {
+        SlashAction::Exit => SubmitOutcome::Quit,
+
+        SlashAction::Clear => {
+            rt.save_session(session_id);
+            rt.new_session(session_id);
+            app.reset_for_new_session();
+            app.push_system_message("Conversation cleared.");
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::Compact => {
+            let (before, after, removed, _summary) = rt.compact_now();
+            app.messages.push(crate::app::ChatMessage::CompactBoundary {
+                strategy: "heuristic-summarizer".into(),
+                after_tokens: after,
+                removed_messages: removed,
+            });
+            app.total_input_tokens = before;
+            app.total_output_tokens = 0;
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::SwitchModel(name) => {
+            rt.loop_config_mut().model = crab_core::model::ModelId::from(name.as_str());
+            app.model_name.clone_from(&name);
+            app.push_system_message(format!("Switched model to {name}"));
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::TogglePlanMode => {
+            let cur = rt.tool_ctx().permission_mode;
+            let next = if cur == PermissionMode::Plan {
+                PermissionMode::Default
+            } else {
+                PermissionMode::Plan
+            };
+            rt.tool_ctx_mut().permission_mode = next;
+            app.permission_mode = next;
+            app.push_system_message(format!("Permission mode: {next}"));
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::OpenOverlay(kind) => {
+            app.open_overlay_by_kind(kind);
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::Init => {
+            // /init writes a starter AGENTS.md into the working directory.
+            // Keep inline so /init is a no-LLM command — matches the
+            // "no surprises" spirit of slash actions.
+            let path = rt.tool_ctx().working_dir.join("AGENTS.md");
+            if path.exists() {
+                app.push_system_message(format!("AGENTS.md already exists at {}", path.display()));
+            } else {
+                let template = "# Project Instructions\n\n\
+                    Use this file to tell Crab Code how to work in this project:\n\
+                    conventions, required commands, test targets, review rules, etc.\n";
+                match std::fs::write(&path, template) {
+                    Ok(()) => app.push_system_message(format!(
+                        "Wrote AGENTS.md template at {}",
+                        path.display()
+                    )),
+                    Err(e) => {
+                        app.push_system_message(format!("Failed to write AGENTS.md: {e}"));
+                    }
+                }
+            }
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::Resume(id) => {
+            // Defer session switching to the App's existing SwitchSession
+            // path by queueing an AppAction on the next tick — simpler than
+            // plumbing a new path through here.
+            app.push_system_message(format!("Resuming session {id}\u{2026}"));
+            app.apply_event(crate::app_event::AppEvent::SwitchSession(id));
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::Export(path) => {
+            // Dump the conversation as markdown. Lossy — mostly useful for
+            // saving a transcript to share. Images and tool-use details are
+            // collapsed to placeholders.
+            use std::fmt::Write as _;
+            let mut out = String::new();
+            for msg in rt.conversation().messages() {
+                let _ = writeln!(out, "{msg:?}\n");
+            }
+            match std::fs::write(&path, out) {
+                Ok(()) => app.push_system_message(format!("Exported conversation to {path}")),
+                Err(e) => app.push_system_message(format!("Export failed: {e}")),
+            }
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::SetEffort(level) => {
+            if let Ok(effort) = level.parse::<crab_agent::EffortLevel>() {
+                rt.loop_config_mut().effort = Some(effort);
+                app.push_system_message(format!("Effort level set to {level}"));
+            } else {
+                app.push_system_message(format!(
+                    "Unknown effort level '{level}'. Use low|medium|high|max."
+                ));
+            }
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::ToggleFast => {
+            // Fast mode is a provider-side feature (Opus 4.6 only); without
+            // live negotiation we can only record the desired flag.
+            app.push_system_message(
+                "Fast mode toggle is a no-op in this build — set `fast_mode` in settings.json.",
+            );
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::AddDir(dir) => {
+            if dir.exists() && dir.is_dir() {
+                app.push_system_message(format!(
+                    "Additional working dir registered: {}",
+                    dir.display()
+                ));
+            } else {
+                app.push_system_message(format!("Not a directory: {}", dir.display()));
+            }
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::CopyLast => {
+            // Find the most recent assistant message and push it via the
+            // notification channel; the clipboard handle lives on App.
+            let last = app.messages.iter().rev().find_map(|m| match m {
+                crate::app::ChatMessage::Assistant { text } => Some(text.clone()),
+                _ => None,
+            });
+            match last {
+                Some(t) => {
+                    app.push_system_message(format!(
+                        "Copied last assistant message ({} chars)",
+                        t.len()
+                    ));
+                }
+                None => app.push_system_message("No assistant message to copy."),
+            }
+            SubmitOutcome::Handled
+        }
+
+        SlashAction::Rewind(target) => {
+            let desc = target.as_deref().unwrap_or("all recent edits");
+            app.push_system_message(format!("Rewind requested: {desc}"));
+            SubmitOutcome::Handled
+        }
+    }
+}
+
 /// The core render + event loop.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn run_loop(
@@ -505,6 +714,17 @@ async fn run_loop(
                                     message: e.to_string(),
                                 }).await;
                             }
+                            // Intercept any TeamCreate markers the model
+                            // emitted during this turn. The coordinator
+                            // deduplicates by team name so scanning the
+                            // full conversation each turn is safe and
+                            // cheap (only new tool_result content matches).
+                            rt.process_team_markers(0).await;
+                            // Refresh the TUI-side snapshot so /team
+                            // shows the latest teammate roster without
+                            // needing to reach back into the runtime
+                            // from the render thread.
+                            app.team_snapshot = rt.team_snapshot();
                             rt.save_session(session_id);
                         }
                         Err(_) => {
@@ -515,19 +735,47 @@ async fn run_loop(
                     }
 
                     if let Some(queued_text) = app.dequeue_command() {
-                        let effective_text = rt.resolve_slash(&queued_text);
+                        match handle_submit(rt, app, &queued_text, session_id) {
+                            SubmitOutcome::SpawnQuery(prompt) => {
+                                cancel = tokio_util::sync::CancellationToken::new();
+                                rt.tool_ctx_mut().cancellation_token = cancel.clone();
 
-                        cancel = tokio_util::sync::CancellationToken::new();
-                        rt.tool_ctx_mut().cancellation_token = cancel.clone();
+                                let user_msg = rt.expand_input(&prompt);
+                                rt.conversation_mut().push(user_msg);
 
-                        let user_msg = rt.expand_input(&effective_text);
-                        rt.conversation_mut().push(user_msg);
-
-                        conv_return = Some(rt.spawn_query(
-                            &backend,
-                            event_tx.clone(),
-                            cancel.clone(),
-                        ));
+                                conv_return = Some(rt.spawn_query(
+                                    &backend,
+                                    event_tx.clone(),
+                                    cancel.clone(),
+                                ));
+                            }
+                            SubmitOutcome::Handled => {
+                                // Slash command fully handled locally — go
+                                // back to Idle so the user can type again.
+                                app.state = crate::app::AppState::Idle;
+                                app.spinner.stop();
+                            }
+                            SubmitOutcome::Quit => {
+                                // /exit hit from the queued path — mirror
+                                // the AppAction::Quit branch: cancel, fire
+                                // SessionEnd, save, break out of run_loop.
+                                cancel.cancel();
+                                rt.fire_lifecycle_hook(
+                                    crab_agent::HookTrigger::SessionEnd,
+                                    Some(session_id),
+                                    if app.working_dir.is_empty() {
+                                        None
+                                    } else {
+                                        Some(std::path::Path::new(&app.working_dir))
+                                    },
+                                );
+                                rt.save_session(session_id);
+                                app.should_quit = true;
+                            }
+                        }
+                        if app.should_quit {
+                            break;
+                        }
                     }
                 }
                 continue;
@@ -535,15 +783,37 @@ async fn run_loop(
             // Filesystem watch events (settings/skills changed)
             watch_event = watch_rx.recv() => {
                 if let Some(we) = watch_event {
+                    let wd = if app.working_dir.is_empty() {
+                        None
+                    } else {
+                        Some(std::path::PathBuf::from(&app.working_dir))
+                    };
                     match we {
                         crate::watcher::WatchEvent::SettingsChanged => {
                             let warnings = reload_settings(app, state.as_mut());
                             app.apply_event(crate::app_event::AppEvent::SettingsReloaded { warnings });
+                            // FileChanged hook fires after reload so hooks
+                            // observe the already-applied state; the
+                            // virtual path "settings.json" lets glob-based
+                            // filters match without having to know the
+                            // full merged path chain.
+                            if let Some(ref rt) = state {
+                                rt.fire_file_changed_hook(
+                                    std::path::Path::new("settings.json"),
+                                    Some(session_id),
+                                    wd.as_deref(),
+                                );
+                            }
                         }
                         crate::watcher::WatchEvent::SkillsChanged => {
                             if let Some(ref mut rt) = state {
                                 let count = rt.reload_skills(skill_dirs);
                                 app.apply_event(crate::app_event::AppEvent::SkillsReloaded { count });
+                                rt.fire_file_changed_hook(
+                                    std::path::Path::new("skills/"),
+                                    Some(session_id),
+                                    wd.as_deref(),
+                                );
                             }
                         }
                     }
@@ -590,15 +860,36 @@ async fn run_loop(
                     continue;
                 };
 
-                let effective_text = rt.resolve_slash(&text);
+                match handle_submit(rt, app, &text, session_id) {
+                    SubmitOutcome::SpawnQuery(prompt) => {
+                        cancel = tokio_util::sync::CancellationToken::new();
+                        rt.tool_ctx_mut().cancellation_token = cancel.clone();
 
-                cancel = tokio_util::sync::CancellationToken::new();
-                rt.tool_ctx_mut().cancellation_token = cancel.clone();
+                        let user_msg = rt.expand_input(&prompt);
+                        rt.conversation_mut().push(user_msg);
 
-                let user_msg = rt.expand_input(&effective_text);
-                rt.conversation_mut().push(user_msg);
-
-                conv_return = Some(rt.spawn_query(&backend, event_tx.clone(), cancel.clone()));
+                        conv_return =
+                            Some(rt.spawn_query(&backend, event_tx.clone(), cancel.clone()));
+                    }
+                    SubmitOutcome::Handled => {
+                        app.state = crate::app::AppState::Idle;
+                        app.spinner.stop();
+                    }
+                    SubmitOutcome::Quit => {
+                        cancel.cancel();
+                        rt.fire_lifecycle_hook(
+                            crab_agent::HookTrigger::SessionEnd,
+                            Some(session_id),
+                            if app.working_dir.is_empty() {
+                                None
+                            } else {
+                                Some(std::path::Path::new(&app.working_dir))
+                            },
+                        );
+                        rt.save_session(session_id);
+                        break;
+                    }
+                }
             }
             AppAction::PermissionResponse {
                 request_id,
@@ -659,6 +950,15 @@ async fn run_loop(
                     }
                 }
                 frame_requester.request_frame();
+            }
+            AppAction::FireSetupHook { project_path } => {
+                if let Some(ref rt) = state {
+                    rt.fire_lifecycle_hook(
+                        crab_agent::HookTrigger::Setup,
+                        Some(session_id),
+                        Some(std::path::Path::new(&project_path)),
+                    );
+                }
             }
             AppAction::None => {}
         }

@@ -120,6 +120,11 @@ pub enum AppAction {
     /// Runner pauses the event loop, spawns `$EDITOR`, then injects
     /// `AppEvent::ExternalEditorClosed(text)` once the editor exits.
     ExternalEditor(String),
+    /// User accepted the project trust dialog for the first time. The
+    /// runner fires the [`HookTrigger::Setup`] lifecycle hook so projects
+    /// can run one-shot setup (install dependencies, materialize config,
+    /// …) the first time Crab Code is trusted there.
+    FireSetupHook { project_path: String },
 }
 
 /// Which key initiated the current double-press exit window.
@@ -291,6 +296,10 @@ pub struct App {
     /// Memory store directory (populated from `SessionConfig.memory_dir`).
     /// Used on demand by the memory browser overlay.
     pub memory_dir: Option<std::path::PathBuf>,
+    /// Snapshot of the agent runtime's team coordinator, refreshed by the
+    /// runner after every query. `/team` reads this instead of hitting
+    /// the runtime synchronously from the render thread.
+    pub team_snapshot: crab_agent::TeamSnapshot,
     /// Current LLM thinking state (extended thinking / chain-of-thought).
     pub thinking: ThinkingState,
     /// Scroll anchor: when the user scrolls up, this holds the line index
@@ -364,6 +373,7 @@ impl App {
             output_styles: OutputStyles::default_styles(),
             working_dir: String::new(),
             memory_dir: None,
+            team_snapshot: crab_agent::TeamSnapshot::default(),
             thinking: ThinkingState::Idle,
             scroll_anchor: None,
             unseen_message_count: 0,
@@ -430,6 +440,127 @@ impl App {
             }
         }
         None
+    }
+
+    /// Push a system-level message cell (used for slash command output,
+    /// lifecycle announcements, and similar non-conversational text).
+    pub fn push_system_message(&mut self, text: impl Into<String>) {
+        self.messages
+            .push(ChatMessage::System { text: text.into() });
+    }
+
+    /// Open the overlay corresponding to a slash command's requested kind.
+    ///
+    /// Refuses while a permission dialog is pending (`AppState::Confirming`);
+    /// users must answer the dialog first. Overlays whose data source is not
+    /// yet available (no memory dir, no MCP registry, no diff in recent tool
+    /// output, …) emit a toast instead of pushing an empty overlay.
+    pub fn open_overlay_by_kind(&mut self, kind: crab_agent::OverlayKind) {
+        use crab_agent::OverlayKind;
+        if self.state == AppState::Confirming {
+            self.notifications
+                .warn("Resolve the pending permission prompt first");
+            return;
+        }
+        match kind {
+            OverlayKind::Help => {
+                let overlay = crate::components::shortcut_hint::HelpOverlay::new();
+                self.overlay_stack.push(Box::new(overlay));
+            }
+            OverlayKind::Model => {
+                // Model list is currently a static set matching what the
+                // backend selectors know about. Enumerating every provider's
+                // catalogue belongs in a future /model discovery path.
+                let models = vec![
+                    "claude-opus-4-6".to_string(),
+                    "claude-sonnet-4-6".to_string(),
+                    "claude-haiku-4-5-20251001".to_string(),
+                    "gpt-4o".to_string(),
+                    "deepseek-chat".to_string(),
+                ];
+                let overlay = crate::components::model_picker::ModelPickerOverlay::new(
+                    models,
+                    self.model_name.clone(),
+                );
+                self.overlay_stack.push(Box::new(overlay));
+            }
+            OverlayKind::Memory => {
+                let Some(dir) = self.memory_dir.clone() else {
+                    self.notifications.warn("Memory directory not configured");
+                    return;
+                };
+                let entries = crate::components::memory_browser::load_memories(&dir);
+                let overlay = crate::components::memory_browser::MemoryBrowserOverlay::new(entries);
+                self.overlay_stack.push(Box::new(overlay));
+            }
+            OverlayKind::Mcp => {
+                let Some(registry) = self.tool_registry.clone() else {
+                    self.notifications.warn("Tool registry not yet initialized");
+                    return;
+                };
+                let servers = crate::components::mcp_browser::load_mcp_servers(&registry);
+                let overlay = crate::components::mcp_browser::McpBrowserOverlay::new(servers);
+                self.overlay_stack.push(Box::new(overlay));
+            }
+            OverlayKind::Team => {
+                // Pull the latest snapshot the runner stashed on App
+                // after the last query. Converting the runtime-side
+                // struct to the overlay's view-model keeps the overlay
+                // decoupled from crab_agent types.
+                let members = self
+                    .team_snapshot
+                    .members
+                    .iter()
+                    .map(|m| crate::components::team_browser::MemberInfo {
+                        name: m.name.clone(),
+                        model: m.state.clone(),
+                        is_leader: m.role == "lead",
+                        capabilities: vec![m.role.clone()],
+                    })
+                    .collect();
+                let snapshot = crate::components::team_browser::TeamSnapshot {
+                    members,
+                    tasks: Vec::new(),
+                };
+                let overlay = crate::components::team_browser::TeamBrowserOverlay::new(snapshot);
+                self.overlay_stack.push(Box::new(overlay));
+            }
+            OverlayKind::Diff => {
+                let Some(diff_text) = self.latest_diff_text() else {
+                    self.notifications.warn("No diff in recent tool output");
+                    return;
+                };
+                let overlay = crate::components::diff_viewer::DiffViewerOverlay::from_unified_diff(
+                    &diff_text,
+                );
+                self.overlay_stack.push(Box::new(overlay));
+            }
+            OverlayKind::Config => {
+                let overlay = crate::components::config_browser::ConfigBrowserOverlay::new(
+                    self.model_name.clone(),
+                    self.permission_mode,
+                    self.working_dir.clone(),
+                    self.memory_dir.clone(),
+                );
+                self.overlay_stack.push(Box::new(overlay));
+            }
+            OverlayKind::Permissions => {
+                let overlay =
+                    crate::components::permissions_browser::PermissionsBrowserOverlay::new(
+                        self.permission_mode,
+                        self.session_grants.iter().cloned().collect(),
+                    );
+                self.overlay_stack.push(Box::new(overlay));
+            }
+            OverlayKind::Resume => {
+                let sessions = self.session_sidebar.sessions.clone();
+                let overlay = crate::components::resume_browser::ResumeBrowserOverlay::new(
+                    sessions,
+                    self.session_id.clone(),
+                );
+                self.overlay_stack.push(Box::new(overlay));
+            }
+        }
     }
 
     /// Reset app state for a new session (clear messages, input, counters).
@@ -1649,9 +1780,17 @@ impl App {
 
             AppEvent::TrustAccepted { project_path } => {
                 self.overlay_stack.pop();
-                if let Err(e) = persist_trust_accepted(&project_path) {
-                    self.notifications
-                        .warn(format!("Failed to save trust state: {e}"));
+                match persist_trust_accepted(&project_path) {
+                    Ok(is_first_time) => {
+                        if is_first_time {
+                            // Signal runner to fire the Setup hook so
+                            // project-level one-shot setup can run.
+                            return AppAction::FireSetupHook { project_path };
+                        }
+                    }
+                    Err(e) => self
+                        .notifications
+                        .warn(format!("Failed to save trust state: {e}")),
                 }
                 AppAction::None
             }
@@ -2053,10 +2192,20 @@ fn render_autocomplete_popup(ac: &AutoComplete, input_area: Rect, buf: &mut Buff
 
 // Old render_bottom_bar extracted to components/bottom_bar.rs — see BottomBar.
 
-fn persist_trust_accepted(project_path: &str) -> anyhow::Result<()> {
+/// Returns `Ok(true)` if this is the first time trust was recorded for
+/// `project_path` (caller should fire the [`HookTrigger::Setup`] hook),
+/// `Ok(false)` if the project was already trusted.
+fn persist_trust_accepted(project_path: &str) -> anyhow::Result<bool> {
     let mut state = crab_config::global_state::load();
+    let canonical = std::path::Path::new(project_path)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(project_path));
+    let key = canonical.to_string_lossy().to_string();
+    let was_trusted_before = state.project_trust.get(&key).is_some_and(|r| r.accepted);
+
     crab_config::global_state::record_trust(&mut state, std::path::Path::new(project_path));
-    crab_config::global_state::save(&state).map_err(|e| anyhow::anyhow!("{e}"))
+    crab_config::global_state::save(&state).map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(!was_trusted_before)
 }
 
 #[cfg(test)]
