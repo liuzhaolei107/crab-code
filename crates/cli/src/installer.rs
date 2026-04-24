@@ -112,10 +112,7 @@ pub fn install_dependency(name: &str, pm: PackageManager) -> InstallResult {
     let binary = pm.binary();
     let args = pm.install_args(name);
 
-    match std::process::Command::new(binary)
-        .args(&args)
-        .output()
-    {
+    match std::process::Command::new(binary).args(&args).output() {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);

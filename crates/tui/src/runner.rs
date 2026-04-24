@@ -282,9 +282,10 @@ fn welcome_triggers(
 ) -> (bool, bool) {
     let force = std::env::var("CRAB_FORCE_FULL_LOGO")
         .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"));
-    let version_new = crab_config::global_state::should_show_welcome(state, env!("CARGO_PKG_VERSION"));
-    let is_new_project = !project_dir.as_os_str().is_empty()
-        && !project_dir.join("AGENTS.md").exists();
+    let version_new =
+        crab_config::global_state::should_show_welcome(state, env!("CARGO_PKG_VERSION"));
+    let is_new_project =
+        !project_dir.as_os_str().is_empty() && !project_dir.join("AGENTS.md").exists();
     let should_show = force || version_new || is_new_project;
     (should_show, is_new_project)
 }

@@ -24,9 +24,7 @@ pub mod task_lock;
 pub mod worker;
 pub mod worker_pool;
 
-pub use backend::{
-    InProcessBackend, SwarmBackend, Teammate, TeammateConfig, TeammateState,
-};
+pub use backend::{InProcessBackend, SwarmBackend, Teammate, TeammateConfig, TeammateState};
 pub use bus::{AgentMessage, AgentStatus, Envelope, MessageBus, event_channel};
 pub use coordinator::{TEAM_CREATED_ACTION, TeamCoordinator};
 pub use mailbox::MessageRouter;

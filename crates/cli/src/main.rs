@@ -1681,30 +1681,21 @@ mod tests {
 
     #[test]
     fn deep_link_rewrite_open_session_maps_to_resume() {
-        let argv = vec![
-            "crab".into(),
-            "crab-cli://open-session/my-sess-42".into(),
-        ];
+        let argv = vec!["crab".into(), "crab-cli://open-session/my-sess-42".into()];
         let out = rewrite_deep_link_argv(argv).unwrap().unwrap();
         assert_eq!(out, vec!["crab", "session", "resume", "my-sess-42"]);
     }
 
     #[test]
     fn deep_link_rewrite_install_plugin_maps_to_plugin_install() {
-        let argv = vec![
-            "crab".into(),
-            "crab-cli://install-plugin/my-plugin".into(),
-        ];
+        let argv = vec!["crab".into(), "crab-cli://install-plugin/my-plugin".into()];
         let out = rewrite_deep_link_argv(argv).unwrap().unwrap();
         assert_eq!(out, vec!["crab", "plugin", "install", "my-plugin"]);
     }
 
     #[test]
     fn deep_link_rewrite_run_command_prepends_dash_dash() {
-        let argv = vec![
-            "crab".into(),
-            "crab-cli://run/hello%20world".into(),
-        ];
+        let argv = vec!["crab".into(), "crab-cli://run/hello%20world".into()];
         let out = rewrite_deep_link_argv(argv).unwrap().unwrap();
         assert_eq!(out, vec!["crab", "--", "hello world"]);
     }

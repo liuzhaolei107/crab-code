@@ -623,10 +623,7 @@ mod tests {
     #[test]
     fn extract_summary_falls_back_to_non_user_text() {
         let msgs = vec![Message::assistant("only assistant text here")];
-        assert_eq!(
-            extract_summary(&msgs).unwrap(),
-            "only assistant text here"
-        );
+        assert_eq!(extract_summary(&msgs).unwrap(), "only assistant text here");
     }
 
     #[test]

@@ -1,6 +1,6 @@
+pub mod agents_md;
 pub mod change_detector;
 pub mod config_toml;
-pub mod agents_md;
 pub mod feature_flag;
 pub mod global_state;
 pub mod hooks;

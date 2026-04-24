@@ -166,7 +166,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("AGENTS.md"), "   ").unwrap();
         let results = collect_agents_md(dir.path());
-        assert!(!results.iter().any(|md| md.source == AgentsMdSource::Project));
+        assert!(
+            !results
+                .iter()
+                .any(|md| md.source == AgentsMdSource::Project)
+        );
     }
 
     #[test]
@@ -233,7 +237,11 @@ mod tests {
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("AGENTS.md"), "   \n  \t  ").unwrap();
         let results = collect_agents_md(dir.path());
-        assert!(!results.iter().any(|md| md.source == AgentsMdSource::Project));
+        assert!(
+            !results
+                .iter()
+                .any(|md| md.source == AgentsMdSource::Project)
+        );
     }
 
     #[test]

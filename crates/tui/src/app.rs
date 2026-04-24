@@ -755,8 +755,7 @@ impl App {
                         return AppAction::None;
                     };
                     let servers = crate::components::mcp_browser::load_mcp_servers(registry);
-                    let overlay =
-                        crate::components::mcp_browser::McpBrowserOverlay::new(servers);
+                    let overlay = crate::components::mcp_browser::McpBrowserOverlay::new(servers);
                     self.overlay_stack.push(Box::new(overlay));
                     return AppAction::None;
                 }
@@ -3143,9 +3142,7 @@ mod tests {
             whats_new: Vec::new(),
             show_project_hint: false,
         });
-        app.messages.push(ChatMessage::User {
-            text: "hi".into(),
-        });
+        app.messages.push(ChatMessage::User { text: "hi".into() });
         app.messages.push(ChatMessage::Assistant {
             text: "hello".into(),
         });

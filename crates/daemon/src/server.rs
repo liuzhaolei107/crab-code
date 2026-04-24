@@ -232,7 +232,8 @@ async fn handle_connection(
             crate::protocol::decode_message::<DaemonRequest>(&read_buf)?
         {
             read_buf.drain(..consumed);
-            let response = dispatch_request(request, &pool, &status, started_at, max_sessions).await;
+            let response =
+                dispatch_request(request, &pool, &status, started_at, max_sessions).await;
             let encoded = encode_message(&response)?;
             stream
                 .write_all(&encoded)

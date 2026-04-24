@@ -219,5 +219,4 @@ mod tests {
         let result = backend.send_message("no-such-id", "hello").await;
         assert!(result.is_err());
     }
-
 }

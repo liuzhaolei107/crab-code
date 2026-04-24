@@ -100,12 +100,20 @@ impl CollapsedReadSearchCell {
             } else {
                 "read"
             };
-            let noun = if self.read_count == 1 { "file" } else { "files" };
+            let noun = if self.read_count == 1 {
+                "file"
+            } else {
+                "files"
+            };
             parts.push(format!("{verb} {} {noun}", self.read_count));
         }
         if self.grep_count > 0 {
             let verb = if parts.is_empty() {
-                if active { "Searching for" } else { "Searched for" }
+                if active {
+                    "Searching for"
+                } else {
+                    "Searched for"
+                }
             } else if active {
                 "searching for"
             } else {
@@ -156,7 +164,11 @@ impl CollapsedReadSearchCell {
             } else {
                 "ran"
             };
-            let noun = if self.other_count == 1 { "call" } else { "calls" };
+            let noun = if self.other_count == 1 {
+                "call"
+            } else {
+                "calls"
+            };
             parts.push(format!("{verb} {} other {noun}", self.other_count));
         }
 
@@ -253,7 +265,12 @@ mod tests {
 
     #[test]
     fn summary_past_tense_when_complete() {
-        let msgs = vec![read_use("a.rs"), read_use("b.rs"), read_result(""), read_result("")];
+        let msgs = vec![
+            read_use("a.rs"),
+            read_use("b.rs"),
+            read_result(""),
+            read_result(""),
+        ];
         let cell = CollapsedReadSearchCell::from_messages(&msgs);
         assert_eq!(cell.summary(), "Read 2 files");
     }
@@ -308,7 +325,12 @@ mod tests {
 
     #[test]
     fn display_produces_summary_line() {
-        let msgs = vec![read_use("a.rs"), read_use("b.rs"), read_result(""), read_result("")];
+        let msgs = vec![
+            read_use("a.rs"),
+            read_use("b.rs"),
+            read_result(""),
+            read_result(""),
+        ];
         let cell = CollapsedReadSearchCell::from_messages(&msgs);
         let lines = cell.display_lines(80);
         // summary line + trailing blank

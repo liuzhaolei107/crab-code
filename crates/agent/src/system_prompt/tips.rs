@@ -118,8 +118,7 @@ fn default_tips() -> Vec<Tip> {
     vec![
         Tip {
             id: "bash",
-            message: "Use Unix shell syntax even on Windows — the Bash tool runs Git Bash."
-                .into(),
+            message: "Use Unix shell syntax even on Windows — the Bash tool runs Git Bash.".into(),
             shown: false,
         },
         Tip {

@@ -113,9 +113,7 @@ fn render_wide(cell: &WelcomeCell) -> Vec<Line<'static>> {
     if !cell.whats_new.is_empty() {
         out.push(Line::from(Span::styled(
             "What's new",
-            Style::default()
-                .fg(CRAB_COLOR)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(CRAB_COLOR).add_modifier(Modifier::BOLD),
         )));
         for bullet in cell.whats_new.iter().take(MAX_BULLETS) {
             out.push(Line::from(vec![
@@ -249,13 +247,7 @@ mod tests {
     fn caps_bullets_at_three() {
         let cell = WelcomeCell::new(
             "0.1.0".into(),
-            vec![
-                "a".into(),
-                "b".into(),
-                "c".into(),
-                "d".into(),
-                "e".into(),
-            ],
+            vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()],
             false,
         );
         let text = flatten(&cell.display_lines(120));
