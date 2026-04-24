@@ -107,6 +107,9 @@ pub enum AppAction {
     /// Ctrl+C during `Confirming` — reject all queued permission requests
     /// and interrupt the engine loop.
     InterruptPermissions { rejected_ids: Vec<String> },
+    /// First Ctrl-C during Processing state: signal runner to cancel the
+    /// in-flight turn without quitting the app.
+    InterruptProcessing,
     /// User requested quit (Ctrl+C / Ctrl+D).
     Quit,
     /// User wants to create a new session.
@@ -610,6 +613,7 @@ impl App {
                         self.spinner.stop();
                         self.state = AppState::Idle;
                         let _ = writeln!(self.content_buffer, "\n[interrupted]");
+                        return AppAction::InterruptProcessing;
                     }
                     return AppAction::None;
                 }
@@ -2116,6 +2120,39 @@ mod tests {
         // Second press within 800ms: quit
         let action = app.handle_event(ctrl_key('c'));
         assert_eq!(action, AppAction::Quit);
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn ctrl_c_during_processing_returns_interrupt_processing() {
+        let mut app = App::new("test");
+        app.state = AppState::Processing;
+        app.spinner.start("Thinking...");
+
+        let action = app.handle_event(ctrl_key('c'));
+
+        // First Ctrl-C during Processing must signal runner to cancel the
+        // in-flight turn so backend SSE stops streaming into an Idle UI.
+        assert_eq!(action, AppAction::InterruptProcessing);
+        assert_eq!(app.state, AppState::Idle);
+        assert!(!app.spinner.is_active());
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn ctrl_c_double_press_during_processing_still_quits() {
+        let mut app = App::new("test");
+        app.state = AppState::Processing;
+        app.spinner.start("Thinking...");
+
+        // First press interrupts the turn but keeps the app alive.
+        let first = app.handle_event(ctrl_key('c'));
+        assert_eq!(first, AppAction::InterruptProcessing);
+        assert!(!app.should_quit);
+
+        // Second press within 800ms exits the app.
+        let second = app.handle_event(ctrl_key('c'));
+        assert_eq!(second, AppAction::Quit);
         assert!(app.should_quit);
     }
 

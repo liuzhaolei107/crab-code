@@ -606,6 +606,9 @@ async fn run_loop(
                 }
                 cancel.cancel();
             }
+            AppAction::InterruptProcessing => {
+                cancel.cancel();
+            }
             AppAction::NewSession => {
                 if let Some(ref mut rt) = state {
                     rt.save_session(session_id);
