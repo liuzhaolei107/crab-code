@@ -576,6 +576,30 @@ mod tests {
         assert!(reg.execute("nonexistent", "", &ctx).is_none());
     }
 
+    #[test]
+    fn quit_is_alias_of_exit() {
+        let reg = SlashCommandRegistry::new();
+        let (model, cost, dir) = make_ctx();
+        let ctx = ctx_from(&model, &cost, &dir);
+
+        // `/quit` executes through the same handler as `/exit`.
+        let result = reg.execute("quit", "", &ctx).unwrap();
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::Exit)
+        ));
+
+        // `find("quit")` returns the primary entry's name ("exit"), so the
+        // alias never leaks as a duplicate in lookups.
+        let (name, _) = reg.find("quit").unwrap();
+        assert_eq!(name, "exit");
+
+        // Aliases do not show up in `list()` — the primary entry is listed once.
+        let names: Vec<&str> = reg.list().iter().map(|(n, _)| *n).collect();
+        assert!(!names.contains(&"quit"));
+        assert_eq!(names.iter().filter(|n| **n == "exit").count(), 1);
+    }
+
     // ─── Command output tests ───
 
     #[test]

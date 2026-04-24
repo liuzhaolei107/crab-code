@@ -86,6 +86,9 @@ pub struct SlashCommandRegistry {
     commands: HashMap<&'static str, CommandEntry>,
     /// Insertion-ordered list of command names for /help display.
     order: Vec<&'static str>,
+    /// Alias → primary name mapping. Aliases share the primary's handler and
+    /// description but do not appear in `list()` output.
+    aliases: HashMap<&'static str, &'static str>,
 }
 
 impl SlashCommandRegistry {
@@ -103,6 +106,7 @@ impl SlashCommandRegistry {
         let mut reg = Self {
             commands: HashMap::new(),
             order: Vec::new(),
+            aliases: HashMap::new(),
         };
         reg.register("help", "List all available commands", cmd_help);
         reg.register("clear", "Clear conversation history", cmd_clear);
@@ -127,6 +131,7 @@ impl SlashCommandRegistry {
             cmd_permissions,
         );
         reg.register("exit", "Exit the session", cmd_exit);
+        reg.register_alias("quit", "exit");
         reg.register("plan", "Toggle plan mode", cmd_plan);
         // ─── Batch 2 ───
         reg.register(
@@ -199,6 +204,25 @@ impl SlashCommandRegistry {
         self.order.push(name);
     }
 
+    /// Register `alias` as another name for the already-registered `target`.
+    /// Aliases share the target's handler and description; they do not
+    /// appear in `list()` output and do not introduce duplicate entries.
+    fn register_alias(&mut self, alias: &'static str, target: &'static str) {
+        debug_assert!(
+            self.commands.contains_key(target),
+            "alias target `{target}` must be registered first"
+        );
+        self.aliases.insert(alias, target);
+    }
+
+    /// Resolve `name` to its primary command name, following aliases.
+    fn resolve<'a>(&'a self, name: &'a str) -> Option<&'a str> {
+        if self.commands.contains_key(name) {
+            return Some(name);
+        }
+        self.aliases.get(name).copied()
+    }
+
     /// Execute a slash command by name.
     ///
     /// Returns `None` if the command is not found.
@@ -208,14 +232,16 @@ impl SlashCommandRegistry {
         args: &str,
         ctx: &SlashCommandContext<'_>,
     ) -> Option<SlashCommandResult> {
-        self.commands
-            .get(name)
+        self.resolve(name)
+            .and_then(|primary| self.commands.get(primary))
             .map(|entry| (entry.handler)(args, ctx))
     }
 
-    /// Look up a command by name.
+    /// Look up a command by name. Aliases resolve to the primary's entry.
     pub fn find(&self, name: &str) -> Option<(&str, &str)> {
-        self.commands.get(name).map(|e| (e.name, e.description))
+        self.resolve(name)
+            .and_then(|primary| self.commands.get(primary))
+            .map(|e| (e.name, e.description))
     }
 
     /// List all commands in registration order as `(name, description)` pairs.
