@@ -17,7 +17,6 @@ use crate::teams::backend::teammate::{Teammate, TeammateConfig, TeammateState};
 ///
 /// Implementations manage the lifecycle of teammate sub-agents: spawning,
 /// messaging, listing, and killing.
-#[allow(dead_code)]
 pub trait SwarmBackend: Send {
     /// Spawn a new teammate and return its unique ID.
     fn spawn_teammate(
@@ -56,13 +55,11 @@ struct InProcessEntry {
 ///
 /// Each teammate runs as a spawned tokio task that reads from its own
 /// mpsc channel. The task loops until cancelled or the channel closes.
-#[allow(dead_code)]
 pub struct InProcessBackend {
     entries: HashMap<String, InProcessEntry>,
     next_id: u64,
 }
 
-#[allow(dead_code)]
 impl InProcessBackend {
     /// Create a new empty in-process backend.
     #[must_use]

@@ -80,9 +80,17 @@ impl Tool for TeamCreateTool {
                 "team_name": team_name,
                 "description": description,
             });
+            // Emit both a Json block (structured consumers) and a Text
+            // block carrying the same payload verbatim — the agent layer
+            // scans conversation text for the `team_created` marker and
+            // ToolOutput::text() drops Json blocks.
+            let text = serde_json::to_string(&action).unwrap_or_default();
 
             Ok(ToolOutput::with_content(
-                vec![ToolOutputContent::Json { value: action }],
+                vec![
+                    ToolOutputContent::Json { value: action },
+                    ToolOutputContent::Text { text },
+                ],
                 false,
             ))
         })

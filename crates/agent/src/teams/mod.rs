@@ -15,6 +15,7 @@
 
 pub mod backend;
 pub mod bus;
+pub mod coordinator;
 pub mod mailbox;
 pub mod retry;
 pub mod roster;
@@ -27,6 +28,7 @@ pub use backend::{
     InProcessBackend, SwarmBackend, Teammate, TeammateConfig, TeammateState,
 };
 pub use bus::{AgentMessage, AgentStatus, Envelope, MessageBus, event_channel};
+pub use coordinator::{TEAM_CREATED_ACTION, TeamCoordinator};
 pub use mailbox::MessageRouter;
 pub use retry::{BackoffStrategy, RetryDecision, RetryPolicy, RetryTracker};
 pub use roster::{Capability, Team, TeamMember, TeamMode};

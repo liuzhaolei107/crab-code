@@ -55,6 +55,9 @@ pub struct AgentSession {
     /// Coordinator Mode state, `Some` only when `SessionConfig::coordinator_mode`
     /// was set at construction.
     pub coordinator_ctx: Option<CoordinatorContext>,
+    /// Tracks teams the model creates via `TeamCreateTool` and spawns
+    /// teammates through the in-process backend.
+    pub team_coordinator: crate::teams::coordinator::TeamCoordinator,
 }
 
 impl AgentSession {
@@ -212,6 +215,7 @@ impl AgentSession {
             cost: CostAccumulator::default(),
             engine: None,
             coordinator_ctx,
+            team_coordinator: crate::teams::coordinator::TeamCoordinator::new(),
         }
     }
 
@@ -228,6 +232,8 @@ impl AgentSession {
         let user_msg = crab_session::expand_at_mentions(input, &self.tool_ctx.working_dir);
         self.conversation.push(user_msg);
 
+        let starting_len = self.conversation.messages().len();
+
         let result = query_loop::query_loop(
             &mut self.conversation,
             &self.backend,
@@ -240,10 +246,37 @@ impl AgentSession {
         )
         .await;
 
+        // Intercept `team_created` markers in freshly appended tool results
+        // so the teammate backend can spawn before the next turn needs them.
+        self.process_team_markers(starting_len).await;
+
         // Auto-save session after each interaction
         self.auto_save_session().await;
 
         result
+    }
+
+    /// Walk conversation messages appended during the last turn, looking
+    /// for tool-result text that carries the `team_created` marker, and
+    /// hand each hit to [`TeamCoordinator::process_tool_result`].
+    async fn process_team_markers(&mut self, starting_len: usize) {
+        use crab_core::message::ContentBlock;
+        let tail: Vec<String> = self
+            .conversation
+            .messages()
+            .iter()
+            .skip(starting_len)
+            .flat_map(|m| m.content.iter())
+            .filter_map(|block| match block {
+                ContentBlock::ToolResult { content, .. } => Some(content.clone()),
+                _ => None,
+            })
+            .collect();
+        for payload in tail {
+            if let Err(e) = self.team_coordinator.process_tool_result(&payload).await {
+                tracing::warn!(error = %e, "team coordinator failed to spawn teammate");
+            }
+        }
     }
 
     /// Replace the conversation message history with a single summary

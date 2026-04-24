@@ -11,7 +11,6 @@ use tokio::sync::broadcast;
 
 /// A permission decision event broadcast across teammates.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct PermissionDecisionEvent {
     /// The tool name the decision applies to (e.g. `"Bash"`, `"Edit"`).
     pub tool_name: String,
@@ -23,7 +22,6 @@ pub struct PermissionDecisionEvent {
     pub timestamp: Instant,
 }
 
-#[allow(dead_code)]
 impl PermissionDecisionEvent {
     /// Create a new permission decision event stamped at the current instant.
     #[must_use]
@@ -46,12 +44,10 @@ impl PermissionDecisionEvent {
 /// Backed by a [`tokio::sync::broadcast`] channel so that every subscriber
 /// receives every event. Subscribers that fall behind will skip older events
 /// (lagged messages are silently dropped by the broadcast channel).
-#[allow(dead_code)]
 pub struct PermissionSyncManager {
     tx: broadcast::Sender<PermissionDecisionEvent>,
 }
 
-#[allow(dead_code)]
 impl PermissionSyncManager {
     /// Create a new manager with the given channel capacity.
     ///
