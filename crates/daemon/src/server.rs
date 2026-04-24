@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -81,6 +81,7 @@ pub struct DaemonServer {
     config: DaemonConfig,
     pool: Arc<Mutex<SessionPool>>,
     status: Arc<Mutex<DaemonStatus>>,
+    started_at: Instant,
 }
 
 impl DaemonServer {
@@ -92,19 +93,24 @@ impl DaemonServer {
             config,
             pool: Arc::new(Mutex::new(pool)),
             status: Arc::new(Mutex::new(DaemonStatus::Starting)),
+            started_at: Instant::now(),
         }
     }
 
     /// Get the current daemon status.
-    #[allow(dead_code)]
     pub async fn status(&self) -> DaemonStatus {
         *self.status.lock().await
     }
 
     /// Get the number of active sessions.
-    #[allow(dead_code)]
     pub async fn session_count(&self) -> usize {
         self.pool.lock().await.len()
+    }
+
+    /// Wall-clock seconds since the server was constructed.
+    #[must_use]
+    pub fn uptime(&self) -> Duration {
+        self.started_at.elapsed()
     }
 
     /// Write the PID file for single-instance checking.
@@ -154,6 +160,8 @@ impl DaemonServer {
         });
 
         // Accept loop
+        let max_sessions = self.config.max_sessions;
+        let started_at = self.started_at;
         loop {
             if *self.status.lock().await == DaemonStatus::ShuttingDown {
                 break;
@@ -167,7 +175,10 @@ impl DaemonServer {
                             let pool = Arc::clone(&self.pool);
                             let status = Arc::clone(&self.status);
                             tokio::spawn(async move {
-                                if let Err(e) = handle_connection(stream, pool, status).await {
+                                if let Err(e) =
+                                    handle_connection(stream, pool, status, started_at, max_sessions)
+                                        .await
+                                {
                                     error!("connection handler error: {e}");
                                 }
                             });
@@ -197,6 +208,8 @@ async fn handle_connection(
     mut stream: tokio::net::TcpStream,
     pool: Arc<Mutex<SessionPool>>,
     status: Arc<Mutex<DaemonStatus>>,
+    started_at: Instant,
+    max_sessions: usize,
 ) -> crab_core::Result<()> {
     let mut buf = vec![0u8; 65536];
     let mut read_buf = Vec::new();
@@ -219,7 +232,7 @@ async fn handle_connection(
             crate::protocol::decode_message::<DaemonRequest>(&read_buf)?
         {
             read_buf.drain(..consumed);
-            let response = dispatch_request(request, &pool, &status).await;
+            let response = dispatch_request(request, &pool, &status, started_at, max_sessions).await;
             let encoded = encode_message(&response)?;
             stream
                 .write_all(&encoded)
@@ -241,9 +254,29 @@ async fn dispatch_request(
     request: DaemonRequest,
     pool: &Arc<Mutex<SessionPool>>,
     status: &Arc<Mutex<DaemonStatus>>,
+    started_at: Instant,
+    max_sessions: usize,
 ) -> DaemonResponse {
     match request {
         DaemonRequest::Ping => DaemonResponse::Pong,
+
+        DaemonRequest::Status => {
+            let current_status = *status.lock().await;
+            let session_count = {
+                let pool_ref = pool.lock().await;
+                if pool_ref.is_empty() {
+                    0
+                } else {
+                    pool_ref.list_all().len()
+                }
+            };
+            DaemonResponse::Status {
+                status: current_status.to_string(),
+                session_count,
+                max_sessions,
+                uptime_secs: started_at.elapsed().as_secs(),
+            }
+        }
 
         DaemonRequest::ListSessions => {
             let pool = pool.lock().await;
@@ -378,6 +411,15 @@ fn process_is_alive(pid: u32) -> bool {
 mod tests {
     use super::*;
 
+    /// Test helper: dispatch a request with default `started_at` / `max_sessions`.
+    async fn test_dispatch(
+        req: DaemonRequest,
+        pool: &Arc<Mutex<SessionPool>>,
+        status: &Arc<Mutex<DaemonStatus>>,
+    ) -> DaemonResponse {
+        dispatch_request(req, pool, status, Instant::now(), 8).await
+    }
+
     #[test]
     fn daemon_config_default() {
         let config = DaemonConfig::default();
@@ -415,6 +457,34 @@ mod tests {
         let server = DaemonServer::new(config);
         assert_eq!(server.status().await, DaemonStatus::Starting);
         assert_eq!(server.session_count().await, 0);
+        // uptime() ticks forward monotonically from construction.
+        let first = server.uptime();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        assert!(server.uptime() >= first);
+    }
+
+    #[tokio::test]
+    async fn dispatch_status_reports_running_and_counts() {
+        let pool = Arc::new(Mutex::new(SessionPool::new()));
+        let status = Arc::new(Mutex::new(DaemonStatus::Running));
+        pool.lock()
+            .await
+            .create_session(PathBuf::from("/tmp"))
+            .unwrap();
+        let resp = test_dispatch(DaemonRequest::Status, &pool, &status).await;
+        match resp {
+            DaemonResponse::Status {
+                status,
+                session_count,
+                max_sessions,
+                uptime_secs: _,
+            } => {
+                assert_eq!(status, "running");
+                assert_eq!(session_count, 1);
+                assert_eq!(max_sessions, 8);
+            }
+            other => panic!("expected Status, got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -429,7 +499,7 @@ mod tests {
     async fn dispatch_ping() {
         let pool = Arc::new(Mutex::new(SessionPool::new()));
         let status = Arc::new(Mutex::new(DaemonStatus::Running));
-        let resp = dispatch_request(DaemonRequest::Ping, &pool, &status).await;
+        let resp = test_dispatch(DaemonRequest::Ping, &pool, &status).await;
         assert!(matches!(resp, DaemonResponse::Pong));
     }
 
@@ -437,7 +507,7 @@ mod tests {
     async fn dispatch_list_sessions_empty() {
         let pool = Arc::new(Mutex::new(SessionPool::new()));
         let status = Arc::new(Mutex::new(DaemonStatus::Running));
-        let resp = dispatch_request(DaemonRequest::ListSessions, &pool, &status).await;
+        let resp = test_dispatch(DaemonRequest::ListSessions, &pool, &status).await;
         match resp {
             DaemonResponse::Sessions { list } => assert!(list.is_empty()),
             _ => panic!("expected Sessions"),
@@ -448,7 +518,7 @@ mod tests {
     async fn dispatch_attach_new_session() {
         let pool = Arc::new(Mutex::new(SessionPool::new()));
         let status = Arc::new(Mutex::new(DaemonStatus::Running));
-        let resp = dispatch_request(
+        let resp = test_dispatch(
             DaemonRequest::Attach {
                 session_id: None,
                 working_dir: PathBuf::from("/tmp"),
@@ -480,7 +550,7 @@ mod tests {
             .create_session(PathBuf::from("/tmp"))
             .unwrap();
 
-        let resp = dispatch_request(
+        let resp = test_dispatch(
             DaemonRequest::Attach {
                 session_id: Some(id.clone()),
                 working_dir: PathBuf::from("/tmp"),
@@ -499,7 +569,7 @@ mod tests {
     async fn dispatch_attach_nonexistent() {
         let pool = Arc::new(Mutex::new(SessionPool::new()));
         let status = Arc::new(Mutex::new(DaemonStatus::Running));
-        let resp = dispatch_request(
+        let resp = test_dispatch(
             DaemonRequest::Attach {
                 session_id: Some("nonexistent".into()),
                 working_dir: PathBuf::from("/tmp"),
@@ -522,7 +592,7 @@ mod tests {
             .unwrap();
         pool.lock().await.attach(&id);
 
-        let resp = dispatch_request(
+        let resp = test_dispatch(
             DaemonRequest::Detach {
                 session_id: id.clone(),
             },
@@ -544,7 +614,7 @@ mod tests {
             .create_session(PathBuf::from("/tmp"))
             .unwrap();
 
-        let resp = dispatch_request(
+        let resp = test_dispatch(
             DaemonRequest::KillSession {
                 session_id: id.clone(),
             },
@@ -569,7 +639,7 @@ mod tests {
             .create_session(PathBuf::from("/tmp"))
             .unwrap();
 
-        let resp = dispatch_request(
+        let resp = test_dispatch(
             DaemonRequest::UserInput {
                 session_id: id,
                 content: "hello".into(),
@@ -585,7 +655,7 @@ mod tests {
     async fn dispatch_shutdown() {
         let pool = Arc::new(Mutex::new(SessionPool::new()));
         let status = Arc::new(Mutex::new(DaemonStatus::Running));
-        let resp = dispatch_request(DaemonRequest::Shutdown, &pool, &status).await;
+        let resp = test_dispatch(DaemonRequest::Shutdown, &pool, &status).await;
         assert!(matches!(resp, DaemonResponse::ShuttingDown));
         assert_eq!(*status.lock().await, DaemonStatus::ShuttingDown);
     }
@@ -594,7 +664,7 @@ mod tests {
     async fn dispatch_kill_nonexistent() {
         let pool = Arc::new(Mutex::new(SessionPool::new()));
         let status = Arc::new(Mutex::new(DaemonStatus::Running));
-        let resp = dispatch_request(
+        let resp = test_dispatch(
             DaemonRequest::KillSession {
                 session_id: "nope".into(),
             },
@@ -609,7 +679,7 @@ mod tests {
     async fn dispatch_user_input_nonexistent() {
         let pool = Arc::new(Mutex::new(SessionPool::new()));
         let status = Arc::new(Mutex::new(DaemonStatus::Running));
-        let resp = dispatch_request(
+        let resp = test_dispatch(
             DaemonRequest::UserInput {
                 session_id: "nope".into(),
                 content: "hello".into(),

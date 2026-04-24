@@ -1,8 +1,4 @@
-mod protocol;
-mod server;
-mod session_pool;
-
-use server::{DaemonConfig, DaemonServer};
+use crab_daemon::server::{DaemonConfig, DaemonServer};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -24,6 +20,12 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let server = DaemonServer::new(config);
+    eprintln!(
+        "status={} sessions={} uptime={}s",
+        server.status().await,
+        server.session_count().await,
+        server.uptime().as_secs(),
+    );
 
     // Graceful shutdown on Ctrl+C
     let server_handle = &server;
@@ -35,7 +37,11 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         _ = tokio::signal::ctrl_c() => {
-            eprintln!("\nshutting down...");
+            eprintln!(
+                "\nshutting down (uptime {}s, {} sessions)...",
+                server_handle.uptime().as_secs(),
+                server_handle.session_count().await,
+            );
             server_handle.shutdown().await;
         }
     }

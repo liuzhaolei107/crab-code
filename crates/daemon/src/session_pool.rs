@@ -101,7 +101,6 @@ impl SessionPool {
     }
 
     /// Get a mutable reference to a session handle.
-    #[allow(dead_code)]
     pub fn get_mut(&mut self, session_id: &str) -> Option<&mut SessionHandle> {
         self.sessions.get_mut(session_id)
     }
@@ -136,23 +135,29 @@ impl SessionPool {
         self.sessions.remove(session_id).is_some()
     }
 
-    /// List all active sessions.
+    /// List all active sessions as protocol-facing [`SessionInfo`].
     #[must_use]
     pub fn list(&self) -> Vec<SessionInfo> {
         let now = Instant::now();
         self.sessions.values().map(|h| h.to_info(now)).collect()
     }
 
+    /// List every [`SessionHandle`] in the pool, attached or detached.
+    /// Used by the `Status` IPC path and by diagnostics callers that
+    /// need richer state than [`SessionInfo`] exposes.
+    #[must_use]
+    pub fn list_all(&self) -> Vec<&SessionHandle> {
+        self.sessions.values().collect()
+    }
+
     /// Number of active sessions.
     #[must_use]
-    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.sessions.len()
     }
 
     /// Whether the pool is empty.
     #[must_use]
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.sessions.is_empty()
     }
@@ -176,7 +181,6 @@ impl SessionPool {
 
     /// Check if a session exists.
     #[must_use]
-    #[allow(dead_code)]
     pub fn contains(&self, session_id: &str) -> bool {
         self.sessions.contains_key(session_id)
     }
@@ -338,5 +342,28 @@ mod tests {
         let id1 = pool.create_session(PathBuf::from("/a")).unwrap();
         let id2 = pool.create_session(PathBuf::from("/b")).unwrap();
         assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn get_mut_allows_mutation() {
+        let mut pool = SessionPool::new();
+        let id = pool.create_session(PathBuf::from("/tmp")).unwrap();
+        {
+            let handle = pool.get_mut(&id).unwrap();
+            handle.attached = true;
+        }
+        assert!(pool.get(&id).unwrap().attached);
+    }
+
+    #[test]
+    fn list_all_returns_every_handle() {
+        let mut pool = SessionPool::new();
+        let id_a = pool.create_session(PathBuf::from("/a")).unwrap();
+        let id_b = pool.create_session(PathBuf::from("/b")).unwrap();
+        let mut ids: Vec<&str> = pool.list_all().iter().map(|h| h.id.as_str()).collect();
+        ids.sort_unstable();
+        let mut expected = vec![id_a.as_str(), id_b.as_str()];
+        expected.sort_unstable();
+        assert_eq!(ids, expected);
     }
 }

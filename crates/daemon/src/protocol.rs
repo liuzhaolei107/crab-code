@@ -24,6 +24,8 @@ pub enum DaemonRequest {
     UserInput { session_id: String, content: String },
     /// Health check.
     Ping,
+    /// Request daemon-wide diagnostics (status, session count, uptime).
+    Status,
     /// Request graceful shutdown.
     Shutdown,
 }
@@ -52,6 +54,17 @@ pub enum DaemonResponse {
     Error { message: String },
     /// Health check reply.
     Pong,
+    /// Daemon status snapshot in reply to [`DaemonRequest::Status`].
+    Status {
+        /// Current daemon status (e.g. "running").
+        status: String,
+        /// Number of active sessions in the pool.
+        session_count: usize,
+        /// Configured max session count.
+        max_sessions: usize,
+        /// Seconds since the daemon started accepting connections.
+        uptime_secs: u64,
+    },
     /// Shutdown acknowledgement.
     ShuttingDown,
 }
@@ -172,6 +185,7 @@ mod tests {
     fn encode_decode_all_request_variants() {
         let variants: Vec<DaemonRequest> = vec![
             DaemonRequest::Ping,
+            DaemonRequest::Status,
             DaemonRequest::Shutdown,
             DaemonRequest::ListSessions,
             DaemonRequest::Detach {
@@ -196,6 +210,12 @@ mod tests {
     fn encode_decode_all_response_variants() {
         let variants: Vec<DaemonResponse> = vec![
             DaemonResponse::Pong,
+            DaemonResponse::Status {
+                status: "running".into(),
+                session_count: 2,
+                max_sessions: 8,
+                uptime_secs: 123,
+            },
             DaemonResponse::ShuttingDown,
             DaemonResponse::Attached {
                 session_id: "s1".into(),
@@ -212,6 +232,32 @@ mod tests {
             let encoded = encode_message(&resp).unwrap();
             let decoded: Option<(DaemonResponse, usize)> = decode_message(&encoded).unwrap();
             assert!(decoded.is_some());
+        }
+    }
+
+    #[test]
+    fn encode_decode_status_response_preserves_fields() {
+        let resp = DaemonResponse::Status {
+            status: "running".into(),
+            session_count: 3,
+            max_sessions: 16,
+            uptime_secs: 42,
+        };
+        let encoded = encode_message(&resp).unwrap();
+        let (decoded, _): (DaemonResponse, usize) = decode_message(&encoded).unwrap().unwrap();
+        match decoded {
+            DaemonResponse::Status {
+                status,
+                session_count,
+                max_sessions,
+                uptime_secs,
+            } => {
+                assert_eq!(status, "running");
+                assert_eq!(session_count, 3);
+                assert_eq!(max_sessions, 16);
+                assert_eq!(uptime_secs, 42);
+            }
+            other => panic!("expected Status, got {other:?}"),
         }
     }
 
