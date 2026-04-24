@@ -773,6 +773,19 @@ impl App {
                     self.overlay_stack.push(Box::new(overlay));
                     return AppAction::None;
                 }
+                Action::OpenTeamBrowser if self.state != AppState::Confirming => {
+                    // Empty snapshot for now — a future batch intercepts the
+                    // TeamCreateTool JSON marker from the agent loop and
+                    // populates this from the live TeamRegistry.
+                    let snapshot = crate::components::team_browser::TeamSnapshot {
+                        members: Vec::new(),
+                        tasks: Vec::new(),
+                    };
+                    let overlay =
+                        crate::components::team_browser::TeamBrowserOverlay::new(snapshot);
+                    self.overlay_stack.push(Box::new(overlay));
+                    return AppAction::None;
+                }
                 Action::OpenMessageActions if self.state != AppState::Confirming => {
                     // Target the most recent user message; Copy / Edit /
                     // Delete / Rewind all operate on that index.
