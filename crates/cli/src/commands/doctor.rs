@@ -28,6 +28,7 @@ pub fn run() -> anyhow::Result<()> {
         check_version(),
         check_package_managers(),
         check_update_available(),
+        check_deep_link_support(),
     ];
 
     let mut pass_count = 0;
@@ -319,6 +320,29 @@ fn check_package_managers() -> Check {
         name: "Package managers",
         passed: true,
         detail: format!("detected: {}", names.join(", ")),
+    }
+}
+
+fn check_deep_link_support() -> Check {
+    // Report the platform-specific registration steps so users know how
+    // to make `crab-cli://` links launch this binary. We can't actually
+    // test whether the OS has the scheme registered without touching the
+    // registry / Launch Services / xdg, so we always pass and surface the
+    // instructions as informational detail.
+    let platform = if cfg!(target_os = "windows") {
+        "Windows"
+    } else if cfg!(target_os = "macos") {
+        "macOS"
+    } else {
+        "Linux"
+    };
+    // Keep the raw instructions available via `--help` style rendering
+    // in the UI later; the doctor line stays terse.
+    let _instructions = crate::deep_link::register_url_scheme();
+    Check {
+        name: "Deep link scheme",
+        passed: true,
+        detail: format!("crab-cli:// ({platform}: see docs for registration)"),
     }
 }
 

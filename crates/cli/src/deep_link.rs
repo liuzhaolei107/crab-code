@@ -10,7 +10,6 @@
 //! ```
 
 /// Actions that can be triggered via a deep link.
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeepLinkAction {
     /// Resume or open an existing session by identifier.
@@ -45,7 +44,6 @@ const SCHEME: &str = "crab-cli://";
 ///
 /// let action = parse_deep_link("crab-cli://open-session/sess-42");
 /// ```
-#[allow(dead_code)]
 pub fn parse_deep_link(url: &str) -> Option<DeepLinkAction> {
     let body = url.strip_prefix(SCHEME)?;
     if body.is_empty() {
@@ -127,7 +125,6 @@ fn percent_decode(input: &str) -> String {
 ///
 /// This does not perform the registration itself — it returns a
 /// human-readable message describing the steps.
-#[allow(dead_code)]
 pub fn register_url_scheme() -> String {
     if cfg!(target_os = "windows") {
         "To register the crab-cli:// URL scheme on Windows:\n\

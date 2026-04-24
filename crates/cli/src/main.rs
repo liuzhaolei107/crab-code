@@ -350,8 +350,86 @@ impl Cli {
     }
 }
 
+/// If `argv[1]` is a `crab-cli://` deep-link URL, rewrite it into an
+/// equivalent set of CLI arguments that clap can parse. Returns `None`
+/// if the first argument is not a deep link (so the caller should use
+/// the normal argv).
+///
+/// Errors when a recognisable deep link is malformed or carries an
+/// unsafe identifier — preferring an explicit failure over silent
+/// fall-through prevents user confusion when an OS hands us garbage.
+fn rewrite_deep_link_argv(argv: Vec<String>) -> anyhow::Result<Option<Vec<String>>> {
+    let mut iter = argv.into_iter();
+    let Some(program) = iter.next() else {
+        return Ok(None);
+    };
+    let Some(first) = iter.next() else {
+        return Ok(None);
+    };
+    if !first.starts_with("crab-cli://") {
+        return Ok(None);
+    }
+    let action = crate::deep_link::parse_deep_link(&first)
+        .ok_or_else(|| anyhow::anyhow!("invalid crab-cli:// URL: {first}"))?;
+    Ok(Some(deep_link_to_argv(program, action)?))
+}
+
+/// Convert a parsed [`DeepLinkAction`] into a clap-friendly argv vector.
+/// Identifier arguments (`session_id`, `plugin_name`) are validated to
+/// contain only safe characters; free-form text is passed after `--` so
+/// clap will not interpret leading dashes as flags.
+fn deep_link_to_argv(
+    program: String,
+    action: crate::deep_link::DeepLinkAction,
+) -> anyhow::Result<Vec<String>> {
+    use crate::deep_link::DeepLinkAction;
+    match action {
+        DeepLinkAction::OpenSession { session_id } => {
+            ensure_safe_id(&session_id, "session id")?;
+            Ok(vec![program, "session".into(), "resume".into(), session_id])
+        }
+        DeepLinkAction::InstallPlugin { plugin_name } => {
+            ensure_safe_id(&plugin_name, "plugin name")?;
+            Ok(vec![
+                program,
+                "plugin".into(),
+                "install".into(),
+                plugin_name,
+            ])
+        }
+        DeepLinkAction::RunCommand { command } => {
+            if command.chars().any(char::is_control) {
+                anyhow::bail!("deep-link command contains control characters");
+            }
+            Ok(vec![program, "--".into(), command])
+        }
+    }
+}
+
+/// Lexically validate an identifier from a deep link. Accepts ASCII
+/// alphanumerics, `-`, `_`, and `.` up to 128 chars; rejects anything
+/// that could encode shell metacharacters or path traversal.
+fn ensure_safe_id(id: &str, kind: &str) -> anyhow::Result<()> {
+    if id.is_empty() {
+        anyhow::bail!("deep-link {kind} is empty");
+    }
+    if id.len() > 128 {
+        anyhow::bail!("deep-link {kind} is too long");
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        anyhow::bail!("deep-link {kind} contains invalid characters: {id}");
+    }
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+    let cli = match rewrite_deep_link_argv(std::env::args().collect())? {
+        Some(rewritten) => Cli::parse_from(rewritten),
+        None => Cli::parse(),
+    };
 
     // ACP mode: bypass all interactive / print-mode plumbing and run
     // as a JSON-RPC stdio child process for the spawning editor. All
@@ -847,15 +925,21 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
         // Interactive mode: TUI if available, else line-based REPL
         #[cfg(feature = "tui")]
         {
+            let mut settings_warnings: Vec<String> = validation_warnings
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
+            if let Some(latest) = commands::update::startup_version_check() {
+                settings_warnings.push(format!(
+                    "Update available: v{latest} — run `crab update` to install"
+                ));
+            }
             let tui_config = crab_tui::TuiConfig {
                 session_config,
                 backend,
                 skill_dirs,
                 mcp_servers: settings.mcp_servers.clone(),
-                settings_warnings: validation_warnings
-                    .iter()
-                    .map(std::string::ToString::to_string)
-                    .collect(),
+                settings_warnings,
             };
             let exit_info = crab_tui::run(tui_config).await?;
             print_exit_info(&exit_info);
@@ -1573,6 +1657,74 @@ mod tests {
                 "value {v:?} should not enable coordinator"
             );
         }
+    }
+
+    #[test]
+    fn deep_link_rewrite_ignores_regular_argv() {
+        let argv = vec!["crab".into(), "hello".into()];
+        let out = rewrite_deep_link_argv(argv).unwrap();
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn deep_link_rewrite_passes_through_without_args() {
+        let argv = vec!["crab".into()];
+        let out = rewrite_deep_link_argv(argv).unwrap();
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn deep_link_rewrite_open_session_maps_to_resume() {
+        let argv = vec![
+            "crab".into(),
+            "crab-cli://open-session/my-sess-42".into(),
+        ];
+        let out = rewrite_deep_link_argv(argv).unwrap().unwrap();
+        assert_eq!(out, vec!["crab", "session", "resume", "my-sess-42"]);
+    }
+
+    #[test]
+    fn deep_link_rewrite_install_plugin_maps_to_plugin_install() {
+        let argv = vec![
+            "crab".into(),
+            "crab-cli://install-plugin/my-plugin".into(),
+        ];
+        let out = rewrite_deep_link_argv(argv).unwrap().unwrap();
+        assert_eq!(out, vec!["crab", "plugin", "install", "my-plugin"]);
+    }
+
+    #[test]
+    fn deep_link_rewrite_run_command_prepends_dash_dash() {
+        let argv = vec![
+            "crab".into(),
+            "crab-cli://run/hello%20world".into(),
+        ];
+        let out = rewrite_deep_link_argv(argv).unwrap().unwrap();
+        assert_eq!(out, vec!["crab", "--", "hello world"]);
+    }
+
+    #[test]
+    fn deep_link_rewrite_rejects_shell_metacharacters_in_id() {
+        let argv = vec![
+            "crab".into(),
+            "crab-cli://open-session/%3Brm%20-rf%20%2F".into(),
+        ];
+        let err = rewrite_deep_link_argv(argv).unwrap_err();
+        assert!(err.to_string().contains("invalid characters"));
+    }
+
+    #[test]
+    fn deep_link_rewrite_rejects_malformed_url() {
+        let argv = vec!["crab".into(), "crab-cli://nonsense".into()];
+        let err = rewrite_deep_link_argv(argv).unwrap_err();
+        assert!(err.to_string().contains("invalid crab-cli"));
+    }
+
+    #[test]
+    fn deep_link_rewrite_rejects_control_chars_in_command() {
+        let argv = vec!["crab".into(), "crab-cli://run/bad%00cmd".into()];
+        let err = rewrite_deep_link_argv(argv).unwrap_err();
+        assert!(err.to_string().contains("control"));
     }
 
     #[test]
