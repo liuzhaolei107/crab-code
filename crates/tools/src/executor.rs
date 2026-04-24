@@ -179,9 +179,7 @@ impl ToolExecutor {
                     if let Some(handler) = &permission_handler
                         && !handler.ask_permission(&tool_name, &prompt).await
                     {
-                        return Ok(ToolOutput::error(format!(
-                            "User denied permission for '{tool_name}'"
-                        )));
+                        return Ok(ToolOutput::error(REJECT_MESSAGE.to_string()));
                     }
                 }
             }
@@ -458,6 +456,21 @@ mod tests {
             .execute("mutating", serde_json::json!({}), &ctx)
             .await
             .unwrap();
+
+        assert!(output.is_error);
+        assert_eq!(output.text(), REJECT_MESSAGE);
+    }
+
+    #[tokio::test]
+    async fn execute_streaming_ask_user_denied_returns_canonical_reject_message() {
+        let mut reg = ToolRegistry::new();
+        reg.register(Arc::new(MutatingTool));
+        let mut executor = ToolExecutor::new(Arc::new(reg));
+        executor.set_permission_handler(Arc::new(DenyAll));
+
+        let ctx = make_ctx(PermissionMode::Default);
+        let (_rx, handle) = executor.execute_streaming("mutating", serde_json::json!({}), &ctx);
+        let output = handle.await.unwrap().unwrap();
 
         assert!(output.is_error);
         assert_eq!(output.text(), REJECT_MESSAGE);
