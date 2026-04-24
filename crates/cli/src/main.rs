@@ -292,6 +292,11 @@ enum CliCommand {
     },
     /// List configured agent definitions
     Agents,
+    /// Inspect the permission rule store and audit log
+    Permissions {
+        #[command(subcommand)]
+        action: commands::permissions::PermissionsAction,
+    },
     /// Generate shell completion scripts
     Completion {
         /// Shell to generate completions for
@@ -481,6 +486,7 @@ fn main() -> anyhow::Result<()> {
                     },
                     CliCommand::Plugin { action } => commands::plugin::run(action),
                     CliCommand::Agents => commands::agents::run(),
+                    CliCommand::Permissions { action } => commands::permissions::run(action),
                     CliCommand::Completion { shell } => {
                         let mut cmd = <Cli as clap::CommandFactory>::command();
                         crate::completions::generate_completions(
