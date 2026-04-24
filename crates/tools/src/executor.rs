@@ -10,6 +10,9 @@ use tokio::task::JoinHandle;
 use crate::permission::check_permission;
 use crate::registry::ToolRegistry;
 
+/// Canonical reject text. Fixed phrasing primes the model to stop and wait for instructions.
+const REJECT_MESSAGE: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
+
 /// A channel sender for streaming incremental tool output (e.g. bash stdout lines).
 #[derive(Clone)]
 pub struct StreamingOutput {
@@ -121,9 +124,7 @@ impl ToolExecutor {
                     if allowed {
                         tool.execute(input, ctx).await
                     } else {
-                        Ok(ToolOutput::error(format!(
-                            "User denied permission for '{tool_name}'"
-                        )))
+                        Ok(ToolOutput::error(REJECT_MESSAGE.to_string()))
                     }
                 } else {
                     // No handler installed — auto-allow (development fallback)
@@ -417,5 +418,48 @@ mod tests {
             .unwrap();
         // Read-only tool is always allowed, so handler is not called
         assert!(!output.is_error);
+    }
+
+    struct MutatingTool;
+
+    impl Tool for MutatingTool {
+        #[allow(clippy::unnecessary_literal_bound)]
+        fn name(&self) -> &str {
+            "mutating"
+        }
+        #[allow(clippy::unnecessary_literal_bound)]
+        fn description(&self) -> &str {
+            "a non-read-only tool used to force an AskUser permission decision"
+        }
+        fn input_schema(&self) -> Value {
+            serde_json::json!({"type": "object"})
+        }
+        fn execute(
+            &self,
+            _input: Value,
+            _ctx: &ToolContext,
+        ) -> Pin<Box<dyn Future<Output = crab_core::Result<ToolOutput>> + Send + '_>> {
+            Box::pin(async move { Ok(ToolOutput::success("mutated")) })
+        }
+        fn is_read_only(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn ask_user_denied_returns_canonical_reject_message() {
+        let mut reg = ToolRegistry::new();
+        reg.register(Arc::new(MutatingTool));
+        let mut executor = ToolExecutor::new(Arc::new(reg));
+        executor.set_permission_handler(Arc::new(DenyAll));
+
+        let ctx = make_ctx(PermissionMode::Default);
+        let output = executor
+            .execute("mutating", serde_json::json!({}), &ctx)
+            .await
+            .unwrap();
+
+        assert!(output.is_error);
+        assert_eq!(output.text(), REJECT_MESSAGE);
     }
 }
