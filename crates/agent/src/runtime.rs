@@ -65,9 +65,53 @@ pub struct AgentRuntime {
     tool_ctx: ToolContext,
     loop_config: QueryConfig,
     skill_registry: SkillRegistry,
+    slash_registry: crate::slash_commands::SlashCommandRegistry,
     session_history: Option<SessionHistory>,
     _mcp_manager: Option<McpManager>,
     cost: CostAccumulator,
+    memory_dir: Option<PathBuf>,
+    team_coordinator: crate::teams::coordinator::TeamCoordinator,
+}
+
+/// Snapshot of the current team state — rendered by the TUI team browser.
+///
+/// The runtime owns the coordinator; the TUI reads a snapshot on demand
+/// each time the overlay opens (no live broadcast needed because team
+/// state changes only at tool-result boundaries).
+#[derive(Debug, Clone, Default)]
+pub struct TeamSnapshot {
+    /// All teammates currently tracked by the in-process backend.
+    pub members: Vec<TeamMemberSnapshot>,
+}
+
+/// One row in [`TeamSnapshot::members`].
+#[derive(Debug, Clone)]
+pub struct TeamMemberSnapshot {
+    /// Human-readable teammate name.
+    pub name: String,
+    /// Role / specialty.
+    pub role: String,
+    /// Lifecycle state rendered as a string (Idle / Running / Done / Failed).
+    pub state: String,
+}
+
+/// Outcome of dispatching a `/command` typed in the prompt.
+///
+/// The TUI matches on this to decide whether to short-circuit (builtin
+/// command handled locally) or forward the text to the LLM (skill-expanded
+/// prompt or unrecognized passthrough).
+#[derive(Debug, Clone)]
+pub enum SlashDispatch {
+    /// A built-in slash command produced a result. The caller must not
+    /// forward anything to the model — the result itself is the user-visible
+    /// effect (a message, an action like "open overlay", etc.).
+    Builtin(crate::slash_commands::SlashCommandResult),
+    /// A skill command expanded to a prompt. Send the payload to the LLM as
+    /// a regular user message.
+    Prompt(String),
+    /// Not a recognized slash command (or not a slash at all). Send the
+    /// input through unchanged.
+    Passthrough(String),
 }
 
 impl AgentRuntime {
@@ -194,15 +238,20 @@ impl AgentRuntime {
             .and_then(|h| h.list_sessions_with_metadata().ok())
             .unwrap_or_default();
 
+        let memory_dir = config.session_config.memory_dir.clone();
+
         let runtime = Self {
             conversation,
             executor,
             tool_ctx,
             loop_config,
             skill_registry,
+            slash_registry: crate::slash_commands::SlashCommandRegistry::new(),
             session_history,
             _mcp_manager: mcp_manager,
             cost: CostAccumulator::default(),
+            memory_dir,
+            team_coordinator: crate::teams::coordinator::TeamCoordinator::new(),
         };
 
         let meta = RuntimeInitMeta {
@@ -283,40 +332,154 @@ impl AgentRuntime {
         return_rx
     }
 
-    // ── Skill resolution ────────────────────────────────────────────────
+    // ── Team coordinator ────────────────────────────────────────────────
 
-    /// Resolve a `/command` to its skill prompt, or pass through as-is.
-    pub fn resolve_slash(&self, input: &str) -> String {
+    /// Scan conversation tool results for the `team_created` marker and
+    /// spawn any newly-seen teams. Call after every completed query so the
+    /// team browser reflects the latest model decisions.
+    ///
+    /// `starting_len` is the conversation length *before* the query ran —
+    /// only messages added during that query are inspected, so repeated
+    /// calls are idempotent.
+    pub async fn process_team_markers(&mut self, starting_len: usize) {
+        use crab_core::message::ContentBlock;
+        let tail: Vec<String> = self
+            .conversation
+            .messages()
+            .iter()
+            .skip(starting_len)
+            .flat_map(|m| m.content.iter())
+            .filter_map(|block| match block {
+                ContentBlock::ToolResult { content, .. } => Some(content.clone()),
+                _ => None,
+            })
+            .collect();
+        for payload in tail {
+            if let Err(e) = self.team_coordinator.process_tool_result(&payload).await {
+                tracing::warn!(error = %e, "team coordinator failed to spawn teammate");
+            }
+        }
+    }
+
+    /// Snapshot of the current team for the TUI team browser.
+    ///
+    /// Reads from the in-process backend's live teammate list; this is a
+    /// pull-on-open design, so callers just call it when opening the
+    /// overlay.
+    #[must_use]
+    pub fn team_snapshot(&self) -> TeamSnapshot {
+        use crate::teams::backend::SwarmBackend as _;
+        let members = self
+            .team_coordinator
+            .backend()
+            .list_teammates()
+            .into_iter()
+            .map(|t| TeamMemberSnapshot {
+                name: t.name.clone(),
+                role: t.role.clone(),
+                state: t.state.to_string(),
+            })
+            .collect();
+        TeamSnapshot { members }
+    }
+
+    // ── Manual compaction ───────────────────────────────────────────────
+
+    /// Run the heuristic summarizer in place, replacing the conversation
+    /// with a single summary user-message.
+    ///
+    /// Returns `(before_tokens, after_tokens, removed_messages, summary)` so
+    /// the caller can render a compact-boundary cell without needing an
+    /// engine-side event round-trip. The summarizer is LLM-free and
+    /// deterministic; cost/model/window state are preserved.
+    pub fn compact_now(&mut self) -> (u64, u64, usize, crate::summarizer::ConversationSummary) {
+        let before_tokens = self.conversation.estimated_tokens();
+        let before_count = self.conversation.len();
+
+        let summary = crate::summarizer::summarize_conversation(
+            self.conversation.messages(),
+            &crate::summarizer::SummarizerConfig::default(),
+        );
+        let summary_text = summary.to_compact_text();
+
+        self.conversation.clear();
+        if !summary_text.is_empty() {
+            self.conversation
+                .push_user(format!("[Previous conversation summary]\n\n{summary_text}"));
+        }
+
+        let after_tokens = self.conversation.estimated_tokens();
+        let removed = before_count.saturating_sub(self.conversation.len());
+        (before_tokens, after_tokens, removed, summary)
+    }
+
+    // ── Slash command dispatch ──────────────────────────────────────────
+
+    /// Route a `/command` through the built-in registry and skills.
+    ///
+    /// Priority order:
+    /// 1. [`SlashCommandRegistry`] — built-in commands (`/help`, `/model`,
+    ///    `/compact`, `/clear`, overlay openers, …). Return
+    ///    [`SlashDispatch::Builtin`] so the TUI can short-circuit without
+    ///    sending anything to the LLM.
+    /// 2. [`SkillRegistry`] — user/project skill commands. Return
+    ///    [`SlashDispatch::Prompt`] with the expanded skill content so the
+    ///    caller forwards it as a user message.
+    /// 3. Fallthrough — not a recognized slash (or not a slash at all);
+    ///    return [`SlashDispatch::Passthrough`] with the original input.
+    ///
+    /// `session_id` is threaded through to populate
+    /// [`SlashCommandContext::session_id`]; callers usually already have it.
+    pub fn dispatch_slash(&self, input: &str, session_id: &str) -> SlashDispatch {
         let trimmed = input.trim();
         if !trimmed.starts_with('/') {
-            return input.to_string();
+            return SlashDispatch::Passthrough(input.to_string());
         }
 
-        let command = trimmed
-            .trim_start_matches('/')
-            .split_whitespace()
-            .next()
-            .unwrap_or("");
+        let without_slash = trimmed.trim_start_matches('/');
+        let command = without_slash.split_whitespace().next().unwrap_or("");
+        let args = without_slash.trim_start_matches(command).trim();
 
-        if matches!(command, "exit" | "quit" | "help") {
-            return input.to_string();
+        // 1. Built-in registry.
+        let ctx = self.slash_ctx(session_id);
+        if let Some(result) = self.slash_registry.execute(command, args, &ctx) {
+            return SlashDispatch::Builtin(result);
         }
 
+        // 2. Skill registry — expand to a prompt to be sent as user message.
         if let Some(skill) = self.skill_registry.find_command(command) {
-            let args = trimmed
-                .trim_start_matches('/')
-                .trim_start_matches(command)
-                .trim();
-
             let mut prompt = skill.content.clone();
             if !args.is_empty() {
                 prompt.push_str("\n\nUser arguments: ");
                 prompt.push_str(args);
             }
-            return prompt;
+            return SlashDispatch::Prompt(prompt);
         }
 
-        input.to_string()
+        SlashDispatch::Passthrough(input.to_string())
+    }
+
+    /// Build a [`SlashCommandContext`] snapshot of the current runtime state.
+    fn slash_ctx<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> crate::slash_commands::SlashCommandContext<'a> {
+        let cost_summary = self.cost.summary();
+        // Naive heuristic for context display — total I/O token budget used
+        // so far. Good enough for `/status` and `/cost`; real tokenization is
+        // a separate concern.
+        let estimated_tokens = cost_summary.input_tokens + cost_summary.output_tokens;
+
+        crate::slash_commands::SlashCommandContext {
+            model: &self.loop_config.model,
+            session_id,
+            working_dir: &self.tool_ctx.working_dir,
+            permission_mode: self.tool_ctx.permission_mode,
+            cost: &self.cost,
+            estimated_tokens,
+            message_count: self.conversation.len(),
+            memory_dir: self.memory_dir.as_deref(),
+        }
     }
 
     /// Access the skill registry for external lookups.
@@ -394,6 +557,35 @@ impl AgentRuntime {
         tokio::spawn(async move {
             if let Err(e) = hooks.run(trigger, &ctx).await {
                 tracing::warn!(?trigger, error = %e, "lifecycle hook failed");
+            }
+        });
+    }
+
+    /// Fire [`HookTrigger::FileChanged`] in the background, passing the
+    /// changed path through `CRAB_TOOL_INPUT` so hooks can act on it.
+    pub fn fire_file_changed_hook(
+        &self,
+        path: &Path,
+        session_id: Option<&str>,
+        working_dir: Option<&Path>,
+    ) {
+        let Some(hooks) = self.loop_config.hook_executor.clone() else {
+            return;
+        };
+        let ctx = crab_plugin::hook::HookContext {
+            tool_name: String::new(),
+            tool_input: path.to_string_lossy().into_owned(),
+            working_dir: working_dir.map(PathBuf::from),
+            tool_output: None,
+            tool_exit_code: None,
+            session_id: session_id.map(String::from),
+        };
+        tokio::spawn(async move {
+            if let Err(e) = hooks
+                .run(crab_plugin::hook::HookTrigger::FileChanged, &ctx)
+                .await
+            {
+                tracing::warn!(error = %e, "file_changed hook failed");
             }
         });
     }
@@ -542,53 +734,105 @@ impl PermissionHandler for ChannelPermissionHandler {
 mod tests {
     use super::*;
 
+    use crate::slash_commands::{OverlayKind, SlashAction, SlashCommandResult};
+
     #[test]
-    fn resolve_slash_passthrough() {
+    fn dispatch_slash_passthrough_for_plain_text() {
         let rt = make_test_runtime();
-        assert_eq!(rt.resolve_slash("hello world"), "hello world");
+        match rt.dispatch_slash("hello world", "test") {
+            SlashDispatch::Passthrough(s) => assert_eq!(s, "hello world"),
+            other => panic!("expected Passthrough, got {other:?}"),
+        }
     }
 
     #[test]
-    fn resolve_slash_builtin() {
+    fn dispatch_slash_exit_returns_builtin_action() {
         let rt = make_test_runtime();
-        assert_eq!(rt.resolve_slash("/exit"), "/exit");
-        assert_eq!(rt.resolve_slash("/quit"), "/quit");
-        assert_eq!(rt.resolve_slash("/help"), "/help");
+        match rt.dispatch_slash("/exit", "test") {
+            SlashDispatch::Builtin(SlashCommandResult::Action(SlashAction::Exit)) => {}
+            other => panic!("expected Builtin(Exit), got {other:?}"),
+        }
+        // /quit aliases /exit
+        match rt.dispatch_slash("/quit", "test") {
+            SlashDispatch::Builtin(SlashCommandResult::Action(SlashAction::Exit)) => {}
+            other => panic!("expected Builtin(Exit), got {other:?}"),
+        }
     }
 
     #[test]
-    fn resolve_slash_no_match() {
+    fn dispatch_slash_help_opens_overlay() {
         let rt = make_test_runtime();
-        assert_eq!(rt.resolve_slash("/unknown"), "/unknown");
+        match rt.dispatch_slash("/help", "test") {
+            SlashDispatch::Builtin(SlashCommandResult::Action(SlashAction::OpenOverlay(
+                OverlayKind::Help,
+            ))) => {}
+            other => panic!("expected Builtin(OpenOverlay(Help)), got {other:?}"),
+        }
     }
 
     #[test]
-    fn resolve_slash_matches_skill() {
+    fn dispatch_slash_unknown_passthrough() {
+        let rt = make_test_runtime();
+        match rt.dispatch_slash("/unknowncommand", "test") {
+            SlashDispatch::Passthrough(s) => assert_eq!(s, "/unknowncommand"),
+            other => panic!("expected Passthrough, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_slash_resolves_skill() {
+        // A name not in the builtin registry — skills are second priority.
         let mut rt = make_test_runtime();
         rt.skill_registry.register(crab_skill::Skill {
             trigger: crab_skill::SkillTrigger::Command {
-                name: "commit".into(),
+                name: "myskill".into(),
             },
-            ..crab_skill::Skill::new("commit", "You are a commit helper.")
+            ..crab_skill::Skill::new("myskill", "You are a custom helper.")
         });
 
-        let result = rt.resolve_slash("/commit");
-        assert_eq!(result, "You are a commit helper.");
+        match rt.dispatch_slash("/myskill", "test") {
+            SlashDispatch::Prompt(p) => assert_eq!(p, "You are a custom helper."),
+            other => panic!("expected Prompt, got {other:?}"),
+        }
     }
 
     #[test]
-    fn resolve_slash_with_args() {
+    fn dispatch_slash_skill_forwards_args() {
         let mut rt = make_test_runtime();
         rt.skill_registry.register(crab_skill::Skill {
             trigger: crab_skill::SkillTrigger::Command {
-                name: "review".into(),
+                name: "myreview".into(),
             },
-            ..crab_skill::Skill::new("review", "Review the code.")
+            ..crab_skill::Skill::new("myreview", "Review the code.")
         });
 
-        let result = rt.resolve_slash("/review src/main.rs");
-        assert!(result.contains("Review the code."));
-        assert!(result.contains("src/main.rs"));
+        match rt.dispatch_slash("/myreview src/main.rs", "test") {
+            SlashDispatch::Prompt(p) => {
+                assert!(p.contains("Review the code."));
+                assert!(p.contains("src/main.rs"));
+            }
+            other => panic!("expected Prompt, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dispatch_slash_builtin_beats_skill_when_both_exist() {
+        // /help is a builtin; even if a skill registers under the same name,
+        // the builtin must win to avoid unexpected overrides.
+        let mut rt = make_test_runtime();
+        rt.skill_registry.register(crab_skill::Skill {
+            trigger: crab_skill::SkillTrigger::Command {
+                name: "help".into(),
+            },
+            ..crab_skill::Skill::new("help", "Skill help text.")
+        });
+
+        match rt.dispatch_slash("/help", "test") {
+            SlashDispatch::Builtin(SlashCommandResult::Action(SlashAction::OpenOverlay(
+                OverlayKind::Help,
+            ))) => {}
+            other => panic!("expected Builtin(OpenOverlay(Help)), got {other:?}"),
+        }
     }
 
     fn make_test_runtime() -> AgentRuntime {
@@ -627,9 +871,12 @@ mod tests {
                 session_persister: None,
             },
             skill_registry: SkillRegistry::new(),
+            slash_registry: crate::slash_commands::SlashCommandRegistry::new(),
             session_history: None,
             _mcp_manager: None,
             cost: CostAccumulator::default(),
+            memory_dir: None,
+            team_coordinator: crate::teams::coordinator::TeamCoordinator::new(),
         }
     }
 }

@@ -17,10 +17,11 @@ pub use file_history::{FileHistory, Snapshot, SnapshotError};
 pub use repl_commands::{CommandResult, ReplCommand};
 pub use runtime::{
     AgentRuntime, NotificationHookSink, QueryTaskResult, RuntimeInitConfig, RuntimeInitMeta,
+    SlashDispatch, TeamMemberSnapshot, TeamSnapshot,
 };
 pub use session::{AgentSession, SessionConfig};
 pub use slash_commands::{
-    SlashAction, SlashCommandContext, SlashCommandRegistry, SlashCommandResult,
+    OverlayKind, SlashAction, SlashCommandContext, SlashCommandRegistry, SlashCommandResult,
 };
 pub use summarizer::{
     ConversationSummary, SummarizerConfig, SummaryItem, SummaryItemKind, summarize_conversation,
@@ -36,7 +37,7 @@ pub use teams::{
 // Re-exports: allow tui to depend only on crab-agent instead of individual L2 crates.
 pub use crab_api::LlmBackend;
 pub use crab_api::openai;
-pub use crab_engine::QueryConfig;
+pub use crab_engine::{EffortLevel, QueryConfig};
 pub use crab_mcp::McpManager;
 pub use crab_plugin::hook::{HookExecutor, HookTrigger};
 pub use crab_session::{Conversation, CostAccumulator, SessionHistory, SessionMetadata};

@@ -4,18 +4,10 @@
 //! and gets registered by [`super::types::SlashCommandRegistry::new`].
 use std::path::PathBuf;
 
-use super::types::{SlashAction, SlashCommandContext, SlashCommandRegistry, SlashCommandResult};
+use super::types::{OverlayKind, SlashAction, SlashCommandContext, SlashCommandResult};
 
-pub(super) fn cmd_help(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
-    // We build the help text from a fresh registry to list all commands.
-    // This avoids needing &self in the handler signature.
-    let reg = SlashCommandRegistry::new();
-    let mut lines = vec!["Available commands:".to_string()];
-    for (name, desc) in reg.list() {
-        lines.push(format!("  /{name:<14} {desc}"));
-    }
-    let _ = ctx; // ctx available for future extensions
-    SlashCommandResult::Message(lines.join("\n"))
+pub(super) fn cmd_help(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+    SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Help))
 }
 
 pub(super) fn cmd_clear(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
@@ -54,36 +46,20 @@ pub(super) fn cmd_status(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCom
 }
 
 pub(super) fn cmd_memory(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+    // Guard against missing directory before opening the overlay — tells the
+    // user something actionable instead of showing an empty list.
     let Some(dir) = ctx.memory_dir else {
-        return SlashCommandResult::Message("No memory directory configured.".into());
+        return SlashCommandResult::Message(
+            "No memory directory configured. Set `memory_dir` in ~/.crab/settings.json.".into(),
+        );
     };
-
     if !dir.exists() {
         return SlashCommandResult::Message(format!(
             "Memory directory does not exist: {}",
             dir.display()
         ));
     }
-
-    let entries: Vec<String> = std::fs::read_dir(dir)
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(std::result::Result::ok)
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
-        .map(|e| format!("  {}", e.file_name().to_string_lossy()))
-        .collect();
-
-    if entries.is_empty() {
-        return SlashCommandResult::Message("No memory files found.".into());
-    }
-
-    let mut text = format!("Memory files ({}):", entries.len());
-    for entry in &entries {
-        text.push('\n');
-        text.push_str(entry);
-    }
-    SlashCommandResult::Message(text)
+    SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Memory))
 }
 
 pub(super) fn cmd_init(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
@@ -93,31 +69,19 @@ pub(super) fn cmd_init(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashComm
 pub(super) fn cmd_model(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let name = args.trim();
     if name.is_empty() {
-        return SlashCommandResult::Message(
-            "Usage: /model <name-or-alias>\nAliases: sonnet, opus, haiku".into(),
-        );
+        return SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Model));
     }
 
     let resolved = resolve_model_alias(name);
     SlashCommandResult::Action(SlashAction::SwitchModel(resolved))
 }
 
-pub(super) fn cmd_config(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
-    let text = format!(
-        "Current configuration:\n  Model:           {}\n  Permission mode: {}\n  Working dir:     {}\n  Memory dir:      {}",
-        ctx.model,
-        ctx.permission_mode,
-        ctx.working_dir.display(),
-        ctx.memory_dir
-            .as_ref()
-            .map_or_else(|| "(none)".to_string(), |d| d.display().to_string()),
-    );
-    SlashCommandResult::Message(text)
+pub(super) fn cmd_config(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+    SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Config))
 }
 
-pub(super) fn cmd_permissions(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
-    let text = format!("Permission mode: {}", ctx.permission_mode);
-    SlashCommandResult::Message(text)
+pub(super) fn cmd_permissions(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+    SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Permissions))
 }
 
 pub(super) fn cmd_exit(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
@@ -130,14 +94,12 @@ pub(super) fn cmd_plan(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashComm
 
 // ─── Batch 2 command implementations ────────────────────────────
 
-pub(super) fn cmd_resume(args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+pub(super) fn cmd_resume(args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
     let id = args.trim();
     if id.is_empty() {
-        return SlashCommandResult::Message(
-            "Usage: /resume <session-id>\nUse /history to list available sessions.".into(),
-        );
+        // Open the session picker overlay so users don't have to know IDs.
+        return SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Resume));
     }
-    let _ = ctx;
     SlashCommandResult::Action(SlashAction::Resume(id.to_string()))
 }
 
@@ -236,27 +198,11 @@ pub(super) fn cmd_doctor(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCom
     SlashCommandResult::Message(checks.join("\n"))
 }
 
-pub(super) fn cmd_diff(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
-    let output = std::process::Command::new("git")
-        .args(["diff", "--stat"])
-        .current_dir(ctx.working_dir)
-        .output();
-
-    match output {
-        Ok(out) if out.status.success() => {
-            let text = String::from_utf8_lossy(&out.stdout);
-            if text.trim().is_empty() {
-                SlashCommandResult::Message("No uncommitted changes.".into())
-            } else {
-                SlashCommandResult::Message(format!("Git diff summary:\n{text}"))
-            }
-        }
-        Ok(out) => {
-            let err = String::from_utf8_lossy(&out.stderr);
-            SlashCommandResult::Message(format!("git diff failed: {err}"))
-        }
-        Err(e) => SlashCommandResult::Message(format!("Failed to run git: {e}")),
-    }
+pub(super) fn cmd_diff(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+    // The overlay picks a diff source TUI-side:
+    //   1. latest unified diff from tool output (for reviewing assistant edits)
+    //   2. `git diff --stat` fallback from the working directory
+    SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Diff))
 }
 
 pub(super) fn cmd_review(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
@@ -370,10 +316,11 @@ pub(super) fn cmd_plugin(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCo
 }
 
 pub(super) fn cmd_mcp(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
-    SlashCommandResult::Message(
-        "MCP servers:\n  No MCP servers connected.\n  Configure servers in ~/.crab/settings.json."
-            .into(),
-    )
+    SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Mcp))
+}
+
+pub(super) fn cmd_team(_args: &str, _ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
+    SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Team))
 }
 
 pub(super) fn cmd_branch(_args: &str, ctx: &SlashCommandContext<'_>) -> SlashCommandResult {
@@ -499,9 +446,9 @@ mod tests {
     // ─── Registry tests ───
 
     #[test]
-    fn registry_has_33_commands() {
+    fn registry_has_expected_command_count() {
         let reg = SlashCommandRegistry::new();
-        assert_eq!(reg.len(), 33);
+        assert_eq!(reg.len(), 34);
         assert!(!reg.is_empty());
     }
 
@@ -547,8 +494,9 @@ mod tests {
     fn registry_list_returns_all() {
         let reg = SlashCommandRegistry::new();
         let list = reg.list();
-        assert_eq!(list.len(), 33);
+        assert_eq!(list.len(), 34);
         let names: Vec<&str> = list.iter().map(|(n, _)| *n).collect();
+        assert!(names.contains(&"team"));
         // Original 12
         assert!(names.contains(&"help"));
         assert!(names.contains(&"exit"));
@@ -603,49 +551,18 @@ mod tests {
     // ─── Command output tests ───
 
     #[test]
-    fn help_lists_all_commands() {
+    fn help_opens_overlay() {
+        // /help now pushes the help overlay (which renders its own
+        // command listing from the registry at render time) instead of
+        // returning a flat text dump.
         let reg = SlashCommandRegistry::new();
         let (model, cost, dir) = make_ctx();
         let ctx = ctx_from(&model, &cost, &dir);
         let result = reg.execute("help", "", &ctx).unwrap();
-        if let SlashCommandResult::Message(text) = result {
-            assert!(text.contains("/help"));
-            assert!(text.contains("/exit"));
-            assert!(text.contains("/model"));
-            assert!(text.contains("/cost"));
-            assert!(text.contains("/status"));
-            assert!(text.contains("/clear"));
-            assert!(text.contains("/compact"));
-            assert!(text.contains("/memory"));
-            assert!(text.contains("/init"));
-            assert!(text.contains("/config"));
-            assert!(text.contains("/permissions"));
-            assert!(text.contains("/plan"));
-            // Batch 2
-            assert!(text.contains("/resume"));
-            assert!(text.contains("/history"));
-            assert!(text.contains("/export"));
-            assert!(text.contains("/doctor"));
-            assert!(text.contains("/diff"));
-            assert!(text.contains("/review"));
-            assert!(text.contains("/effort"));
-            assert!(text.contains("/fast"));
-            assert!(text.contains("/thinking"));
-            assert!(text.contains("/skills"));
-            // Batch 3
-            assert!(text.contains("/add-dir"));
-            assert!(text.contains("/files"));
-            assert!(text.contains("/plugin"));
-            assert!(text.contains("/mcp"));
-            assert!(text.contains("/branch"));
-            assert!(text.contains("/commit"));
-            assert!(text.contains("/theme"));
-            assert!(text.contains("/keybindings"));
-            assert!(text.contains("/rename"));
-            assert!(text.contains("/copy"));
-        } else {
-            panic!("expected Message");
-        }
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Help))
+        ));
     }
 
     #[test]
@@ -739,30 +656,27 @@ mod tests {
     }
 
     #[test]
-    fn permissions_shows_mode() {
+    fn permissions_opens_overlay() {
         let reg = SlashCommandRegistry::new();
         let (model, cost, dir) = make_ctx();
         let ctx = ctx_from(&model, &cost, &dir);
         let result = reg.execute("permissions", "", &ctx).unwrap();
-        if let SlashCommandResult::Message(text) = result {
-            assert!(text.contains("Permission mode:"));
-        } else {
-            panic!("expected Message");
-        }
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Permissions))
+        ));
     }
 
     #[test]
-    fn config_shows_values() {
+    fn config_opens_overlay() {
         let reg = SlashCommandRegistry::new();
         let (model, cost, dir) = make_ctx();
         let ctx = ctx_from(&model, &cost, &dir);
         let result = reg.execute("config", "", &ctx).unwrap();
-        if let SlashCommandResult::Message(text) = result {
-            assert!(text.contains("Current configuration:"));
-            assert!(text.contains("Model:"));
-        } else {
-            panic!("expected Message");
-        }
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Config))
+        ));
     }
 
     #[test]
@@ -829,17 +743,17 @@ mod tests {
     }
 
     #[test]
-    fn model_no_args_shows_usage() {
+    fn model_no_args_opens_picker() {
+        // /model with no args opens the model picker overlay; with args
+        // it immediately switches models.
         let reg = SlashCommandRegistry::new();
         let (model, cost, dir) = make_ctx();
         let ctx = ctx_from(&model, &cost, &dir);
         let result = reg.execute("model", "", &ctx).unwrap();
-        if let SlashCommandResult::Message(text) = result {
-            assert!(text.contains("Usage:"));
-            assert!(text.contains("sonnet"));
-        } else {
-            panic!("expected Message");
-        }
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Model))
+        ));
     }
 
     // ─── Default trait ───
@@ -847,22 +761,23 @@ mod tests {
     #[test]
     fn default_registry_has_commands() {
         let reg = SlashCommandRegistry::default();
-        assert_eq!(reg.len(), 33);
+        assert_eq!(reg.len(), 34);
     }
 
     // ─── Batch 2 command tests ───
 
     #[test]
-    fn resume_no_args_shows_usage() {
+    fn resume_no_args_opens_picker() {
+        // /resume without an id opens the session picker overlay so
+        // users don't have to know ids by heart.
         let reg = SlashCommandRegistry::new();
         let (model, cost, dir) = make_ctx();
         let ctx = ctx_from(&model, &cost, &dir);
         let result = reg.execute("resume", "", &ctx).unwrap();
-        if let SlashCommandResult::Message(text) = result {
-            assert!(text.contains("Usage:"));
-        } else {
-            panic!("expected Message");
-        }
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Resume))
+        ));
     }
 
     #[test]
@@ -1065,16 +980,39 @@ mod tests {
     }
 
     #[test]
-    fn mcp_shows_info() {
+    fn mcp_opens_overlay() {
         let reg = SlashCommandRegistry::new();
         let (model, cost, dir) = make_ctx();
         let ctx = ctx_from(&model, &cost, &dir);
         let result = reg.execute("mcp", "", &ctx).unwrap();
-        if let SlashCommandResult::Message(text) = result {
-            assert!(text.contains("MCP servers:"));
-        } else {
-            panic!("expected Message");
-        }
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Mcp))
+        ));
+    }
+
+    #[test]
+    fn team_opens_overlay() {
+        let reg = SlashCommandRegistry::new();
+        let (model, cost, dir) = make_ctx();
+        let ctx = ctx_from(&model, &cost, &dir);
+        let result = reg.execute("team", "", &ctx).unwrap();
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Team))
+        ));
+    }
+
+    #[test]
+    fn diff_opens_overlay() {
+        let reg = SlashCommandRegistry::new();
+        let (model, cost, dir) = make_ctx();
+        let ctx = ctx_from(&model, &cost, &dir);
+        let result = reg.execute("diff", "", &ctx).unwrap();
+        assert!(matches!(
+            result,
+            SlashCommandResult::Action(SlashAction::OpenOverlay(OverlayKind::Diff))
+        ));
     }
 
     #[test]

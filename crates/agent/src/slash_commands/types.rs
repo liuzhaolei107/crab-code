@@ -43,6 +43,33 @@ pub enum SlashCommandResult {
     Silent,
 }
 
+/// Which overlay a slash command requests the TUI to open.
+///
+/// Commands whose primary effect is opening a browser/picker UI return an
+/// [`SlashAction::OpenOverlay`] with one of these variants. The TUI
+/// translates each kind to the corresponding overlay push.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverlayKind {
+    /// Help overlay listing keybindings and commands.
+    Help,
+    /// Model picker.
+    Model,
+    /// Memory browser.
+    Memory,
+    /// MCP server browser.
+    Mcp,
+    /// Team / agents browser.
+    Team,
+    /// Diff viewer (uses latest diff from tool output, or falls back to git).
+    Diff,
+    /// Permissions viewer.
+    Permissions,
+    /// Settings / config viewer.
+    Config,
+    /// Session resume picker.
+    Resume,
+}
+
 /// Actions that a slash command can request the caller to perform.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlashAction {
@@ -72,6 +99,8 @@ pub enum SlashAction {
     CopyLast,
     /// Rewind the most recent file edit, or all edits if `None`.
     Rewind(Option<String>),
+    /// Open an overlay in the TUI.
+    OpenOverlay(OverlayKind),
 }
 
 /// A registered slash command.
@@ -100,7 +129,7 @@ impl SlashCommandRegistry {
             cmd_cost, cmd_diff, cmd_doctor, cmd_effort, cmd_exit, cmd_export, cmd_fast, cmd_files,
             cmd_help, cmd_history, cmd_init, cmd_keybindings, cmd_mcp, cmd_memory, cmd_model,
             cmd_permissions, cmd_plan, cmd_plugin, cmd_rename, cmd_resume, cmd_review, cmd_rewind,
-            cmd_skills, cmd_status, cmd_theme, cmd_thinking,
+            cmd_skills, cmd_status, cmd_team, cmd_theme, cmd_thinking,
         };
 
         let mut reg = Self {
@@ -168,7 +197,8 @@ impl SlashCommandRegistry {
             cmd_files,
         );
         reg.register("plugin", "List loaded plugins", cmd_plugin);
-        reg.register("mcp", "List MCP server connections", cmd_mcp);
+        reg.register("mcp", "Open MCP server browser", cmd_mcp);
+        reg.register("team", "Open agent team browser", cmd_team);
         reg.register("branch", "Show current git branch", cmd_branch);
         reg.register("commit", "Show recent git commits", cmd_commit);
         reg.register("theme", "Show current theme", cmd_theme);

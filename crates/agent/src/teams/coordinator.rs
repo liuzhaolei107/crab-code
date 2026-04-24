@@ -51,6 +51,13 @@ impl TeamCoordinator {
         &self.permission_sync
     }
 
+    /// Read-only view of the in-process backend, used to snapshot the
+    /// teammate list for the TUI team browser.
+    #[must_use]
+    pub fn backend(&self) -> &InProcessBackend {
+        &self.backend
+    }
+
     /// Number of teammates currently tracked by the backend.
     #[must_use]
     pub fn teammate_count(&self) -> usize {
