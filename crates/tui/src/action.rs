@@ -106,6 +106,9 @@ pub enum Action {
     ExitSelectionMode,
 
     // ─── Message actions ───
+    /// Open the per-message action menu (Alt+M), targets the last user
+    /// message.
+    OpenMessageActions,
     MessageCopy,
     MessageEdit,
     MessageDelete,

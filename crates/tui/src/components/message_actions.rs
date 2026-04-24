@@ -1,15 +1,20 @@
-// TODO(ccb-align): wire up. `Action::MessageCopy / MessageEdit /
-// MessageDelete / MessageRewind` are all defined in action.rs but have
-// no handlers. Expected trigger: Alt+M on a selected message →
-// MessageActionsMenu as overlay → routes back to the corresponding
-// AppEvent per selection.
+//! Per-message action popup menu.
+//!
+//! Opened on Alt+M, targets the most-recent user message by default. Handles
+//! Copy / Edit / Delete / Rewind via the overlay trait — routes each choice
+//! back through a `MessageAction` `AppEvent` that the App loop applies to
+//! the targeted message index.
 
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Widget};
 
+use crate::app_event::AppEvent;
+use crate::keybindings::KeyContext;
+use crate::overlay::{Overlay, OverlayAction};
 use crate::traits::Renderable;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,6 +144,51 @@ impl Renderable for MessageActionsMenu {
 
     fn desired_height(&self, _width: u16) -> u16 {
         ALL_ACTIONS.len() as u16 + 2
+    }
+}
+
+impl MessageActionsMenu {
+    fn event_for(&self, action: MessageAction) -> AppEvent {
+        let index = self.message_index;
+        match action {
+            MessageAction::Copy => AppEvent::MessageCopy { index },
+            MessageAction::Edit => AppEvent::MessageEdit { index },
+            MessageAction::Delete => AppEvent::MessageDelete { index },
+            MessageAction::Rewind => AppEvent::MessageRewind { index },
+        }
+    }
+}
+
+impl Overlay for MessageActionsMenu {
+    fn handle_key(&mut self, key: KeyEvent) -> OverlayAction {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => OverlayAction::Dismiss,
+            KeyCode::Enter => OverlayAction::Execute(self.event_for(self.selected_action())),
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.move_up();
+                OverlayAction::Consumed
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.move_down();
+                OverlayAction::Consumed
+            }
+            KeyCode::Char(c) => {
+                if let Some(action) = Self::action_for_key(c) {
+                    OverlayAction::Execute(self.event_for(action))
+                } else {
+                    OverlayAction::Passthrough
+                }
+            }
+            _ => OverlayAction::Passthrough,
+        }
+    }
+
+    fn contexts(&self) -> Vec<KeyContext> {
+        vec![KeyContext::Chat]
+    }
+
+    fn name(&self) -> &'static str {
+        "message_actions"
     }
 }
 

@@ -107,6 +107,16 @@ pub enum AppEvent {
     /// Switch to a session by ID.
     SwitchSession(String),
 
+    // ── Per-message actions ──
+    /// Copy the selected message's text to the clipboard.
+    MessageCopy { index: usize },
+    /// Load the selected message into the input and remove it from history.
+    MessageEdit { index: usize },
+    /// Remove the selected message from history.
+    MessageDelete { index: usize },
+    /// Truncate history to just before the selected message.
+    MessageRewind { index: usize },
+
     // ── Model ──
     /// Switch the active model by name.
     SwitchModel(String),

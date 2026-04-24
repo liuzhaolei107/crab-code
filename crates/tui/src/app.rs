@@ -372,6 +372,20 @@ impl App {
         self.session_id = id.into();
     }
 
+    /// Best-effort text extractor used by the `Message*` actions so Copy /
+    /// Edit grab something meaningful regardless of the message variant.
+    #[must_use]
+    fn message_text(msg: &ChatMessage) -> Option<String> {
+        match msg {
+            ChatMessage::User { text }
+            | ChatMessage::Assistant { text }
+            | ChatMessage::System { text }
+            | ChatMessage::Thinking { text, .. } => Some(text.clone()),
+            ChatMessage::ToolResult { output, .. } => Some(output.clone()),
+            _ => None,
+        }
+    }
+
     /// Scan recent messages for the most recent tool result whose output
     /// contains unified-diff markers (`--- ` / `+++ ` / `@@`). Returns the
     /// matching output text for `DiffViewerOverlay::from_unified_diff`.
@@ -756,6 +770,23 @@ impl App {
                         crate::components::diff_viewer::DiffViewerOverlay::from_unified_diff(
                             &diff_text,
                         );
+                    self.overlay_stack.push(Box::new(overlay));
+                    return AppAction::None;
+                }
+                Action::OpenMessageActions if self.state != AppState::Confirming => {
+                    // Target the most recent user message; Copy / Edit /
+                    // Delete / Rewind all operate on that index.
+                    let Some(index) = self
+                        .messages
+                        .iter()
+                        .rposition(|m| matches!(m, ChatMessage::User { .. }))
+                    else {
+                        self.notifications
+                            .warn("No user message to act on".to_string());
+                        return AppAction::None;
+                    };
+                    let overlay =
+                        crate::components::message_actions::MessageActionsMenu::new(index);
                     self.overlay_stack.push(Box::new(overlay));
                     return AppAction::None;
                 }
@@ -1595,6 +1626,37 @@ impl App {
             AppEvent::SkillsReloaded { count } => {
                 self.notifications
                     .info(format!("Skills reloaded ({count} discovered)"));
+                AppAction::None
+            }
+
+            AppEvent::MessageCopy { index } => {
+                if let Some(text) = self.messages.get(index).and_then(Self::message_text) {
+                    match self.clipboard.copy(&text) {
+                        Ok(()) => self.notifications.success("Copied to clipboard"),
+                        Err(e) => self.notifications.warn(format!("Copy failed: {e}")),
+                    }
+                }
+                self.overlay_stack.pop();
+                AppAction::None
+            }
+            AppEvent::MessageEdit { index } => {
+                if let Some(text) = self.messages.get(index).and_then(Self::message_text) {
+                    self.input.set_text(&text);
+                    self.messages.remove(index);
+                }
+                self.overlay_stack.pop();
+                AppAction::None
+            }
+            AppEvent::MessageDelete { index } => {
+                if index < self.messages.len() {
+                    self.messages.remove(index);
+                }
+                self.overlay_stack.pop();
+                AppAction::None
+            }
+            AppEvent::MessageRewind { index } => {
+                self.messages.truncate(index);
+                self.overlay_stack.pop();
                 AppAction::None
             }
 

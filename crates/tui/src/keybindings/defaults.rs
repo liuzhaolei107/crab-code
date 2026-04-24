@@ -214,6 +214,11 @@ fn register_chat(r: &mut Resolver) {
         ),
         Action::OpenDiffViewer,
     );
+    r.bind(
+        KeyContext::Chat,
+        single(KeyChord::alt(KeyCode::Char('m'))),
+        Action::OpenMessageActions,
+    );
 }
 
 fn register_input(r: &mut Resolver) {
