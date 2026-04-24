@@ -25,6 +25,57 @@ pub struct SessionMetadata {
     pub working_dir: Option<String>,
     pub message_count: usize,
     pub modified: Option<std::time::SystemTime>,
+    /// Short preview — trimmed text of the first user message (or the
+    /// first text block) in the session. Populated lazily by
+    /// [`list_sessions`] so the welcome panel can show something more
+    /// informative than session IDs. Capped at [`SUMMARY_MAX_CHARS`].
+    pub summary: Option<String>,
+}
+
+/// Maximum character count for [`SessionMetadata::summary`]. Anything
+/// longer is truncated with a trailing ellipsis.
+pub const SUMMARY_MAX_CHARS: usize = 80;
+
+/// Build a short preview from a conversation's messages.
+///
+/// Uses the first user text block (falling back to any text block) as the
+/// preview. Collapses whitespace and truncates to [`SUMMARY_MAX_CHARS`].
+/// Returns `None` when no textual content is present.
+fn extract_summary(messages: &[Message]) -> Option<String> {
+    let first_user_text = messages
+        .iter()
+        .find(|m| matches!(m.role, Role::User))
+        .and_then(|m| {
+            m.content.iter().find_map(|block| match block {
+                ContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+        });
+
+    let raw = match first_user_text {
+        Some(text) => text,
+        None => messages.iter().find_map(|m| {
+            m.content.iter().find_map(|block| match block {
+                ContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+        })?,
+    };
+
+    let collapsed: String = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return None;
+    }
+    if collapsed.chars().count() <= SUMMARY_MAX_CHARS {
+        Some(collapsed)
+    } else {
+        let mut out: String = collapsed
+            .chars()
+            .take(SUMMARY_MAX_CHARS.saturating_sub(1))
+            .collect();
+        out.push('…');
+        Some(out)
+    }
 }
 
 /// A search hit within a session.
@@ -173,12 +224,13 @@ impl SessionHistory {
             if let Some(id) = name.strip_suffix(".json") {
                 let modified = entry.metadata().ok().and_then(|m| m.modified().ok());
                 // Read the file to extract metadata
-                let (session_name, working_dir, message_count) =
+                let (session_name, working_dir, message_count, summary) =
                     std::fs::read_to_string(entry.path())
                         .ok()
                         .and_then(|data| serde_json::from_str::<SessionFile>(&data).ok())
-                        .map_or((None, None, 0), |file| {
-                            (file.name, file.working_dir, file.messages.len())
+                        .map_or((None, None, 0, None), |file| {
+                            let summary = extract_summary(&file.messages);
+                            (file.name, file.working_dir, file.messages.len(), summary)
                         });
                 results.push(SessionMetadata {
                     session_id: id.to_string(),
@@ -186,6 +238,7 @@ impl SessionHistory {
                     working_dir,
                     message_count,
                     modified,
+                    summary,
                 });
             }
         }
@@ -533,6 +586,62 @@ mod tests {
 
         let sessions = history.list_sessions().unwrap();
         assert_eq!(sessions, vec!["session-a", "session-b"]);
+    }
+
+    #[test]
+    fn extract_summary_empty_is_none() {
+        assert!(extract_summary(&[]).is_none());
+    }
+
+    #[test]
+    fn extract_summary_picks_first_user_message() {
+        let msgs = vec![
+            Message::assistant("ignore me"),
+            Message::user("what's the weather"),
+            Message::user("and the news"),
+        ];
+        let s = extract_summary(&msgs).unwrap();
+        assert_eq!(s, "what's the weather");
+    }
+
+    #[test]
+    fn extract_summary_collapses_whitespace() {
+        let msgs = vec![Message::user("line1\n\n  line2\t\ttab")];
+        let s = extract_summary(&msgs).unwrap();
+        assert_eq!(s, "line1 line2 tab");
+    }
+
+    #[test]
+    fn extract_summary_truncates_long_text() {
+        let long = "x".repeat(200);
+        let msgs = vec![Message::user(&long)];
+        let s = extract_summary(&msgs).unwrap();
+        assert_eq!(s.chars().count(), SUMMARY_MAX_CHARS);
+        assert!(s.ends_with('…'));
+    }
+
+    #[test]
+    fn extract_summary_falls_back_to_non_user_text() {
+        let msgs = vec![Message::assistant("only assistant text here")];
+        assert_eq!(
+            extract_summary(&msgs).unwrap(),
+            "only assistant text here"
+        );
+    }
+
+    #[test]
+    fn list_sessions_with_metadata_populates_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = SessionHistory::new(dir.path().to_path_buf());
+        history
+            .save("s1", &[Message::user("hello world from session one")])
+            .unwrap();
+        let metas = history.list_sessions_with_metadata().unwrap();
+        assert_eq!(metas.len(), 1);
+        assert_eq!(
+            metas[0].summary.as_deref(),
+            Some("hello world from session one")
+        );
     }
 
     #[test]
