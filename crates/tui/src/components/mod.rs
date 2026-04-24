@@ -27,7 +27,6 @@ pub mod message_pill;
 pub mod model_picker;
 pub mod notification;
 pub mod notification_banner;
-pub mod onboarding;
 pub mod output_styles;
 pub mod permission;
 pub mod plan_card;

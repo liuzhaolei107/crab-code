@@ -16,7 +16,6 @@ const STATE_FILE: &str = "state.json";
 #[serde(default, rename_all = "camelCase")]
 pub struct GlobalState {
     pub schema_version: u32,
-    pub has_completed_onboarding: bool,
     /// Per-project trust records keyed by canonical project path.
     pub project_trust: HashMap<String, ProjectTrust>,
     /// Version string of the last release whose changelog the user saw. When
@@ -194,14 +193,13 @@ mod tests {
     fn default_state() {
         let state = GlobalState::default();
         assert_eq!(state.schema_version, 0);
-        assert!(!state.has_completed_onboarding);
         assert!(state.project_trust.is_empty());
+        assert!(state.last_welcome_version.is_none());
     }
 
     #[test]
     fn roundtrip_serialize() {
         let mut state = GlobalState::default();
-        state.has_completed_onboarding = true;
         state.project_trust.insert(
             "/home/user/project".into(),
             ProjectTrust {

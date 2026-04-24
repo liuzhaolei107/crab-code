@@ -318,32 +318,25 @@ fn push_welcome_if_needed(app: &mut App) {
     }
 }
 
-/// Push onboarding and/or trust overlays based on `GlobalState`.
+/// Push the trust overlay if the current project needs it.
 ///
-/// Called once after background init completes. The overlay stack is LIFO, so
-/// we push the trust dialog first (if needed), then onboarding on top — the
-/// user sees onboarding first, then trust dialog after dismissing it.
+/// Called once after background init completes.
 fn push_startup_overlays(app: &mut App) {
+    if app.working_dir.is_empty() {
+        return;
+    }
     let global_state = crab_config::global_state::load();
-
-    if !app.working_dir.is_empty() {
-        let project_dir = std::path::PathBuf::from(&app.working_dir);
-        if crab_config::global_state::needs_trust_prompt(&global_state, &project_dir) {
-            let ctx = crate::components::trust_dialog::TrustContext::from_project(&project_dir);
-            if !ctx.is_empty() {
-                let overlay = crate::components::trust_dialog::TrustDialogOverlay::new(
-                    app.working_dir.clone(),
-                    ctx,
-                );
-                app.overlay_stack.push(Box::new(overlay));
-            }
-        }
+    let project_dir = std::path::PathBuf::from(&app.working_dir);
+    if !crab_config::global_state::needs_trust_prompt(&global_state, &project_dir) {
+        return;
     }
-
-    if !global_state.has_completed_onboarding {
-        let overlay = crate::components::onboarding::OnboardingOverlay::new();
-        app.overlay_stack.push(Box::new(overlay));
+    let ctx = crate::components::trust_dialog::TrustContext::from_project(&project_dir);
+    if ctx.is_empty() {
+        return;
     }
+    let overlay =
+        crate::components::trust_dialog::TrustDialogOverlay::new(app.working_dir.clone(), ctx);
+    app.overlay_stack.push(Box::new(overlay));
 }
 
 /// Reload settings from disk, returning any validation warnings.

@@ -18,17 +18,20 @@
 //!   • bullet 1
 //!   • bullet 2
 //!   • bullet 3
-//! First time? Press /help · No AGENTS.md — consider /init
+//! No AGENTS.md — consider /init     (only when the project has no AGENTS.md)
 //! ```
 //!
 //! Narrow (width < 40):
 //! ```text
 //! ✦ Crab Code v0.1.0
 //! • bullet 1 · bullet 2 · bullet 3
-//! /help · /init
+//! /init                             (only when the project has no AGENTS.md)
 //! ```
 //!
 //! Tiny (width < 24): banner only.
+//!
+//! The bottom bar already shows "? for shortcuts" permanently, so a
+//! "First time? Press /help" hint here would just duplicate it.
 //!
 //! Not included in the transcript overlay — ambient context is not
 //! conversation content.
@@ -121,7 +124,9 @@ fn render_wide(cell: &WelcomeCell) -> Vec<Line<'static>> {
             ]));
         }
     }
-    out.push(hint_line(cell.show_project_hint));
+    if let Some(hint) = project_hint_line(cell.show_project_hint, false) {
+        out.push(hint);
+    }
     out.push(Line::default());
     out
 }
@@ -142,7 +147,9 @@ fn render_narrow(cell: &WelcomeCell) -> Vec<Line<'static>> {
             Span::styled(joined, Style::default().fg(Color::Gray)),
         ]));
     }
-    out.push(short_hint_line(cell.show_project_hint));
+    if let Some(hint) = project_hint_line(cell.show_project_hint, true) {
+        out.push(hint);
+    }
     out.push(Line::default());
     out
 }
@@ -151,32 +158,25 @@ fn render_tiny(cell: &WelcomeCell) -> Vec<Line<'static>> {
     vec![banner_line(&cell.version), Line::default()]
 }
 
-// ─── Hint rows ────────────────────────────────────────────────────────────
+// ─── Hint row ─────────────────────────────────────────────────────────────
 
-fn hint_line(show_project_hint: bool) -> Line<'static> {
-    let dim = Style::default()
-        .fg(Color::DarkGray)
-        .add_modifier(Modifier::ITALIC);
-    let mut spans = vec![Span::styled("First time? Press /help", dim)];
-    if show_project_hint {
-        spans.push(Span::styled(
-            "  ·  No AGENTS.md — consider /init",
-            dim,
-        ));
+/// Optional project-level hint. `None` when the project already has an
+/// `AGENTS.md` — nothing else to nag the user about. "? for shortcuts"
+/// is always visible in the bottom bar, so we don't duplicate a
+/// "/help" hint here.
+fn project_hint_line(show_project_hint: bool, short: bool) -> Option<Line<'static>> {
+    if !show_project_hint {
+        return None;
     }
-    Line::from(spans)
-}
-
-fn short_hint_line(show_project_hint: bool) -> Line<'static> {
     let dim = Style::default()
         .fg(Color::DarkGray)
         .add_modifier(Modifier::ITALIC);
-    let text = if show_project_hint {
-        "/help · /init"
+    let text = if short {
+        "/init"
     } else {
-        "/help"
+        "No AGENTS.md — consider /init"
     };
-    Line::from(Span::styled(text, dim))
+    Some(Line::from(Span::styled(text, dim)))
 }
 
 #[cfg(test)]
@@ -223,8 +223,9 @@ mod tests {
         assert!(text.contains("Crab Code 0.1.0"));
         assert!(text.contains("What's new"));
         assert!(text.contains("dropped cmd fallback"));
-        assert!(text.contains("First time?"));
         assert!(text.contains("AGENTS.md"));
+        // "First time?" no longer appears — duplicated with permanent bottom bar.
+        assert!(!text.contains("First time?"));
     }
 
     #[test]
@@ -269,17 +270,14 @@ mod tests {
         let cell = WelcomeCell::new("0.1.0".into(), vec!["n".into()], false);
         let text = flatten(&cell.display_lines(120));
         assert!(!text.contains("AGENTS.md"));
-        assert!(text.contains("First time?"));
     }
 
     #[test]
-    fn empty_whats_new_drops_section() {
+    fn empty_whats_new_and_no_hint_renders_banner_only() {
         let cell = WelcomeCell::new("0.1.0".into(), Vec::new(), false);
         let lines = cell.display_lines(120);
-        // banner + hint + blank = 3
-        assert_eq!(lines.len(), 3);
-        let text = flatten(&lines);
-        assert!(!text.contains("What's new"));
+        // banner + trailing blank = 2
+        assert_eq!(lines.len(), 2);
     }
 
     #[test]

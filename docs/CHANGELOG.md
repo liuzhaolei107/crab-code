@@ -30,3 +30,9 @@ imperative.
 
 ### Removed
 - Hardcoded read-only tool list in TUI layer
+- 3-step onboarding modal overlay; its guidance is now implicit — the welcome
+  cell's project hint plus the permanent "? for shortcuts" bottom bar cover
+  the same ground without interrupting the user
+- `has_completed_onboarding` field from `GlobalState` (no longer needed)
+- "First time? Press /help" hint from the welcome cell (duplicated the
+  permanent bottom bar)

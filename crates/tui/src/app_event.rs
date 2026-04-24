@@ -169,9 +169,7 @@ pub enum AppEvent {
     /// Append incremental thinking text from a `ThinkingDelta` event.
     ThinkingAppend(String),
 
-    // ── Onboarding / Trust ──
-    /// User completed (or skipped) the first-run onboarding wizard.
-    OnboardingCompleted,
+    // ── Trust ──
     /// User accepted the project trust dialog.
     TrustAccepted { project_path: String },
     /// User denied the project trust dialog (enter bare mode).

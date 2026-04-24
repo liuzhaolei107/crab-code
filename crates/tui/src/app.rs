@@ -1499,14 +1499,6 @@ impl App {
             // so key bindings can still emit it as a signal.
             AppEvent::Redraw => AppAction::None,
 
-            AppEvent::OnboardingCompleted => {
-                self.overlay_stack.pop();
-                if let Err(e) = persist_onboarding_completed() {
-                    self.notifications
-                        .warn(format!("Failed to save onboarding state: {e}"));
-                }
-                AppAction::None
-            }
             AppEvent::TrustAccepted { project_path } => {
                 self.overlay_stack.pop();
                 if let Err(e) = persist_trust_accepted(&project_path) {
@@ -1880,12 +1872,6 @@ fn render_autocomplete_popup(ac: &AutoComplete, input_area: Rect, buf: &mut Buff
 // components/status_line.rs — see StatusLine.
 
 // Old render_bottom_bar extracted to components/bottom_bar.rs — see BottomBar.
-
-fn persist_onboarding_completed() -> anyhow::Result<()> {
-    let mut state = crab_config::global_state::load();
-    state.has_completed_onboarding = true;
-    crab_config::global_state::save(&state).map_err(|e| anyhow::anyhow!("{e}"))
-}
 
 fn persist_trust_accepted(project_path: &str) -> anyhow::Result<()> {
     let mut state = crab_config::global_state::load();
