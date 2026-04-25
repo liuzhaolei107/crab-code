@@ -473,7 +473,9 @@ fn main() -> anyhow::Result<()> {
             }
             _ => {
                 return match command {
-                    CliCommand::Config { action } => commands::config::run(action),
+                    CliCommand::Config { action } => {
+                        commands::config::run(action, &cli.config_override)
+                    }
                     CliCommand::Serve(args) => {
                         let rt = tokio::runtime::Runtime::new()?;
                         rt.block_on(commands::serve::run(args))

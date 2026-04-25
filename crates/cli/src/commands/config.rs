@@ -41,10 +41,10 @@ pub enum ConfigAction {
 }
 
 /// Execute a config subcommand.
-pub fn run(action: &ConfigAction) -> anyhow::Result<()> {
+pub fn run(action: &ConfigAction, overrides: &[String]) -> anyhow::Result<()> {
     match action {
-        ConfigAction::List => cmd_list(),
-        ConfigAction::Get { key } => cmd_get(key),
+        ConfigAction::List => cmd_list(overrides),
+        ConfigAction::Get { key } => cmd_get(key, overrides),
         ConfigAction::Set {
             key,
             value,
@@ -57,11 +57,15 @@ pub fn run(action: &ConfigAction) -> anyhow::Result<()> {
 }
 
 /// `crab config list` — print all effective config as pretty JSON.
-fn cmd_list() -> anyhow::Result<()> {
+///
+/// Applies the runtime layer (`-c key.path=value` overrides) so the output
+/// reflects exactly what `-p` mode would see.
+fn cmd_list(overrides: &[String]) -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().ok();
     let ctx = crab_config::ResolveContext::new()
         .with_project_dir(working_dir)
-        .with_process_env();
+        .with_process_env()
+        .with_cli_overrides(overrides.to_vec());
     let merged = crab_config::resolve(&ctx)?;
     let json = serde_json::to_string_pretty(&merged)?;
     println!("{json}");
@@ -69,11 +73,12 @@ fn cmd_list() -> anyhow::Result<()> {
 }
 
 /// `crab config get <key>` — print a single config value.
-fn cmd_get(key: &str) -> anyhow::Result<()> {
+fn cmd_get(key: &str, overrides: &[String]) -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().ok();
     let ctx = crab_config::ResolveContext::new()
         .with_project_dir(working_dir)
-        .with_process_env();
+        .with_process_env()
+        .with_cli_overrides(overrides.to_vec());
     let merged = crab_config::resolve(&ctx)?;
     let value = config_to_map(&merged);
 
@@ -252,20 +257,20 @@ mod tests {
     #[test]
     fn cmd_list_succeeds() {
         // Should not panic — loads merged config and prints JSON
-        let result = cmd_list();
+        let result = cmd_list(&[]);
         assert!(result.is_ok());
     }
 
     #[test]
     fn cmd_get_known_key() {
         // "model" is a valid key, even if its value is null
-        let result = cmd_get("model");
+        let result = cmd_get("model", &[]);
         assert!(result.is_ok());
     }
 
     #[test]
     fn cmd_get_unknown_key() {
-        let result = cmd_get("nonexistentKey123");
+        let result = cmd_get("nonexistentKey123", &[]);
         assert!(result.is_err());
     }
 

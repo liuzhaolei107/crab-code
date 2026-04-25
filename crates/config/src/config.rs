@@ -155,9 +155,16 @@ impl Config {
     }
 }
 
-/// Return the global config directory: `~/.crab/`.
+/// Return the global config directory.
+///
+/// Honors `CRAB_CONFIG_DIR` env var first (for containers, tests, multi-identity);
+/// falls back to `~/.crab/`. Used by both the read-side loader and the write-side
+/// `crab config set` so both observe the same root.
 #[must_use]
 pub fn global_config_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("CRAB_CONFIG_DIR").filter(|s| !s.is_empty()) {
+        return PathBuf::from(dir);
+    }
     crab_core::common::utils::path::home_dir().join(CONFIG_DIR)
 }
 
