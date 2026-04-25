@@ -102,9 +102,16 @@ struct Cli {
     #[arg(long)]
     strict_mcp_config: bool,
 
-    /// Load additional settings from a file path or inline JSON string.
-    #[arg(long)]
-    settings: Option<String>,
+    /// Load a whole-file config overlay (TOML) from the given path.
+    /// The file sits at the top of the file layer (above local).
+    #[arg(long, value_name = "PATH")]
+    config: Option<PathBuf>,
+
+    /// Override the user-level config directory (otherwise `CRAB_CONFIG_DIR`
+    /// or `~/.crab/`). Useful for containers, integration tests, and
+    /// multi-identity setups.
+    #[arg(long = "config-dir", value_name = "DIR")]
+    config_dir: Option<PathBuf>,
 
     /// Resume a previous session by ID
     #[arg(long)]
@@ -563,18 +570,6 @@ fn resolve_tool_filters(
     (effective_allowed, effective_denied)
 }
 
-/// Load a `--settings` argument: if it looks like JSON (starts with `{`),
-/// parse it directly; otherwise treat it as a file path and read it.
-fn load_settings_arg(arg: &str) -> anyhow::Result<crab_config::Config> {
-    let content = if arg.trim_start().starts_with('{') {
-        arg.to_string()
-    } else {
-        std::fs::read_to_string(arg)
-            .map_err(|e| anyhow::anyhow!("failed to read settings file '{arg}': {e}"))?
-    };
-    serde_json::from_str(&content).map_err(|e| anyhow::anyhow!("failed to parse settings: {e}"))
-}
-
 /// Load MCP server configurations from one or more JSON files and merge them.
 fn load_mcp_configs(paths: &[PathBuf]) -> anyhow::Result<Value> {
     let mut merged = serde_json::Map::new();
@@ -673,19 +668,15 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
         .as_ref()
         .map(|s| crab_config::config::ConfigSource::parse_list(s));
     let resolve_ctx = crab_config::ResolveContext::new()
-        .with_project_dir(Some(working_dir.clone()))
         .with_process_env()
+        .resolve_config_dir(cli.config_dir.as_deref())
+        .with_project_dir(Some(working_dir.clone()))
+        .with_cli_config_file(cli.config.clone())
         .with_sources_filter(sources);
     let mut settings = crab_config::resolve(&resolve_ctx)?;
     let validation_warnings = crab_config::validate_all_config_files(Some(&working_dir));
     for w in &validation_warnings {
         tracing::warn!("settings validation: {w}");
-    }
-
-    // Apply --settings overlay (higher priority than settings files, lower than CLI flags)
-    if let Some(ref settings_arg) = cli.settings {
-        let overlay = load_settings_arg(settings_arg)?;
-        settings = crab_config::overlay_config(&settings, &overlay)?;
     }
 
     // Apply --mcp-config: load MCP server configs from file(s)
@@ -1907,7 +1898,7 @@ mod tests {
         assert_eq!(cli.effective_output_format(), OutputFormat::StreamJson);
     }
 
-    // ─── MCP config / settings CLI arg tests ───
+    // ─── MCP config / config CLI arg tests ───
 
     #[test]
     fn cli_parses_mcp_config() {
@@ -1924,10 +1915,34 @@ mod tests {
     }
 
     #[test]
-    fn cli_parses_settings_inline_json() {
-        let cli =
-            Cli::try_parse_from(["crab", "--settings", r#"{"model":"gpt-4o"}"#, "hello"]).unwrap();
-        assert!(cli.settings.is_some());
+    fn cli_parses_config_file() {
+        let cli = Cli::try_parse_from(["crab", "--config", "/tmp/my.toml", "hello"]).unwrap();
+        assert_eq!(
+            cli.config.as_deref(),
+            Some(std::path::Path::new("/tmp/my.toml"))
+        );
+    }
+
+    #[test]
+    fn cli_parses_config_dir_flag() {
+        let cli = Cli::try_parse_from(["crab", "--config-dir", "/tmp/cfg-dir", "hello"]).unwrap();
+        assert_eq!(
+            cli.config_dir.as_deref(),
+            Some(std::path::Path::new("/tmp/cfg-dir"))
+        );
+    }
+
+    #[test]
+    fn cli_rejects_legacy_settings_flag() {
+        // --settings was removed in favor of --config (file overlay) and the
+        // -c override flag. clap surfaces the unknown argument instead of
+        // silently dropping it.
+        let err = Cli::try_parse_from(["crab", "--settings", "{}", "hello"]).unwrap_err();
+        assert!(
+            err.kind() == clap::error::ErrorKind::UnknownArgument,
+            "expected UnknownArgument, got {:?}",
+            err.kind(),
+        );
     }
 
     #[test]
@@ -1941,24 +1956,6 @@ mod tests {
         .unwrap();
         assert!(cli.include_partial_messages);
         assert!(cli.include_hook_events);
-    }
-
-    // ─── load_settings_arg tests ───
-
-    #[test]
-    fn load_settings_arg_parses_inline_json() {
-        let s = load_settings_arg(r#"{"model":"gpt-4o"}"#).unwrap();
-        assert_eq!(s.model.as_deref(), Some("gpt-4o"));
-    }
-
-    #[test]
-    fn load_settings_arg_rejects_invalid_json() {
-        assert!(load_settings_arg("{invalid").is_err());
-    }
-
-    #[test]
-    fn load_settings_arg_rejects_missing_file() {
-        assert!(load_settings_arg("/nonexistent/settings.json").is_err());
     }
 
     // ─── load_mcp_configs tests ───

@@ -23,6 +23,30 @@ use crate::config::{
 };
 use crate::merge::merge_toml_values;
 
+/// Resolve the user-level config directory.
+///
+/// Priority (high → low):
+/// 1. `cli_config_dir` (e.g. `--config-dir` flag) — explicit per-invocation.
+/// 2. `CRAB_CONFIG_DIR` environment variable — useful for containers,
+///    integration tests, multi-identity setups.
+/// 3. Compiled-in default: `~/.crab/` (via [`global_config_dir`]).
+///
+/// `env` is the captured process environment; injecting it (rather than
+/// reading `std::env::var` here) keeps the function pure and lets tests
+/// simulate any combination of overrides.
+#[must_use]
+pub fn config_dir(cli_config_dir: Option<&Path>, env: &HashMap<String, String>) -> PathBuf {
+    if let Some(path) = cli_config_dir {
+        return path.to_path_buf();
+    }
+    if let Some(value) = env.get("CRAB_CONFIG_DIR")
+        && !value.is_empty()
+    {
+        return PathBuf::from(value);
+    }
+    global_config_dir()
+}
+
 /// Inputs that drive [`resolve`]. Construct via [`ResolveContext::new`] and
 /// then chain the `with_*` setters before passing to [`resolve`].
 #[derive(Debug, Clone)]
@@ -69,9 +93,22 @@ impl ResolveContext {
         }
     }
 
+    /// Set the user-level config directory directly.
+    ///
+    /// Most callers should prefer [`Self::resolve_config_dir`], which honors
+    /// the `--config-dir` > `CRAB_CONFIG_DIR` > `~/.crab/` precedence.
     #[must_use]
     pub fn with_config_dir(mut self, dir: PathBuf) -> Self {
         self.config_dir = dir;
+        self
+    }
+
+    /// Resolve `config_dir` from a CLI override and the captured env using
+    /// [`config_dir`]. Call this after [`Self::with_env`] /
+    /// [`Self::with_process_env`].
+    #[must_use]
+    pub fn resolve_config_dir(mut self, cli_config_dir: Option<&Path>) -> Self {
+        self.config_dir = config_dir(cli_config_dir, &self.env);
         self
     }
 
@@ -388,6 +425,60 @@ mod tests {
         assert!(result.is_err());
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn config_dir_uses_cli_flag_when_present() {
+        let env: HashMap<String, String> =
+            [("CRAB_CONFIG_DIR".to_string(), "/from-env".to_string())]
+                .into_iter()
+                .collect();
+        let cli = PathBuf::from("/from-cli");
+        let resolved = config_dir(Some(&cli), &env);
+        assert_eq!(resolved, PathBuf::from("/from-cli"));
+    }
+
+    #[test]
+    fn config_dir_falls_back_to_env() {
+        let env: HashMap<String, String> =
+            [("CRAB_CONFIG_DIR".to_string(), "/from-env".to_string())]
+                .into_iter()
+                .collect();
+        let resolved = config_dir(None, &env);
+        assert_eq!(resolved, PathBuf::from("/from-env"));
+    }
+
+    #[test]
+    fn config_dir_ignores_empty_env() {
+        let env: HashMap<String, String> = [("CRAB_CONFIG_DIR".to_string(), String::new())]
+            .into_iter()
+            .collect();
+        let resolved = config_dir(None, &env);
+        // empty env value should NOT win — fall back to default.
+        assert_eq!(resolved, global_config_dir());
+    }
+
+    #[test]
+    fn config_dir_default_is_home_crab() {
+        let env: HashMap<String, String> = HashMap::new();
+        let resolved = config_dir(None, &env);
+        assert_eq!(resolved, global_config_dir());
+        assert!(resolved.ends_with(".crab"));
+    }
+
+    #[test]
+    fn resolve_config_dir_via_context_chain() {
+        let env: HashMap<String, String> = [("CRAB_CONFIG_DIR".to_string(), "/x".to_string())]
+            .into_iter()
+            .collect();
+        let ctx = ResolveContext::new()
+            .with_env(env)
+            .resolve_config_dir(None);
+        assert_eq!(ctx.config_dir, PathBuf::from("/x"));
+
+        let cli = PathBuf::from("/y");
+        let ctx2 = ResolveContext::new().resolve_config_dir(Some(&cli));
+        assert_eq!(ctx2.config_dir, PathBuf::from("/y"));
     }
 
     #[test]
