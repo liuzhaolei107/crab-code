@@ -79,6 +79,7 @@ CRAB_API_KEY (universal, any provider)
     → [provider = anthropic | unset]   ANTHROPIC_AUTH_TOKEN → ANTHROPIC_API_KEY
     → [provider = openai]              OPENAI_API_KEY
     → [provider = deepseek]            DEEPSEEK_API_KEY → OPENAI_API_KEY
+    → cfg.api_key (config-stored direct key; lower priority than env)
     → apiKeyHelper script (config-declared path; stdout consumed)
     → system keychain
     → auth/tokens.json (OAuth, per provider)

@@ -4,6 +4,7 @@
 //!   `CRAB_API_KEY` env (universal, any provider)
 //!     → `ANTHROPIC_AUTH_TOKEN` env (anthropic provider only)
 //!     → provider-specific env (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY`)
+//!     → `cfg.api_key` (config-stored direct key)
 //!     → `apiKeyHelper` script execution
 //!     → system keychain
 //!     → `~/.crab/auth/tokens.json` (`OAuth` access token)
@@ -51,19 +52,19 @@ pub fn resolve_auth_key(cfg: &Config) -> Option<String> {
         return Some(v.to_string());
     }
 
-    // 3. apiKeyHelper script (path is config; the secret it prints never enters Config).
+    // 5. apiKeyHelper script (path is config; the secret it prints never enters Config).
     if let Some(v) = run_api_key_helper(cfg.api_key_helper.as_deref()) {
         return Some(v);
     }
 
-    // 4. System keychain.
+    // 6. System keychain.
     if let Ok(v) = crate::keychain::get_api_key()
         && !v.is_empty()
     {
         return Some(v);
     }
 
-    // 5. OAuth tokens.json — read the access token for the configured provider.
+    // 7. OAuth tokens.json — read the access token for the configured provider.
     if let Some(v) = read_oauth_token_file(cfg.api_provider.as_deref()) {
         return Some(v);
     }
