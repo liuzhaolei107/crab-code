@@ -7,8 +7,8 @@
 //! [`crate::merge::merge_toml_values`], then deserializes the result once.
 //!
 //! Phases later than 3 fill in the currently-empty extension points:
-//! - Phase 5 fills [`runtime::env_to_value`] and [`runtime::cli_flags_to_value`].
-//! - Phase 6 fills [`load_enabled_plugin_configs`] with real disk I/O.
+//! - Phase 5 fills [`env_to_value`] and [`cli_flags_to_value`].
+//! - The plugin slot is filled by [`crate::plugin_loader`].
 //! - Phase 7 inserts schema validation between merge and deserialization.
 
 use std::collections::HashMap;
@@ -141,7 +141,7 @@ impl Default for ResolveContext {
 pub fn resolve(ctx: &ResolveContext) -> crab_core::Result<Config> {
     let mut value = defaults_as_value()?;
 
-    // Plugin layer (Phase 6 fills this in; Phase 3 keeps it inert).
+    // Plugin layer.
     for plugin_cfg in load_enabled_plugin_configs(ctx)? {
         merge_toml_values(&mut value, plugin_cfg);
     }
@@ -224,13 +224,13 @@ fn load_toml_file(path: &Path) -> crab_core::Result<Option<Value>> {
     }
 }
 
-/// Stub: scan and load all enabled plugin contributions.
+/// Scan and load all enabled plugin contributions, alphabetically ordered.
 ///
-/// Phase 6 implements this; Phase 3 returns an empty list so the merge
-/// chain still has the plugin slot wired up.
-#[allow(clippy::unnecessary_wraps)]
-fn load_enabled_plugin_configs(_ctx: &ResolveContext) -> crab_core::Result<Vec<Value>> {
-    Ok(Vec::new())
+/// Delegates to [`crate::plugin_loader::load_enabled_plugin_configs`], which
+/// peeks the user-level `enabledPlugins` map, filters and orders the
+/// `plugins/<name>/config.json` files, and converts each to `toml::Value`.
+fn load_enabled_plugin_configs(ctx: &ResolveContext) -> crab_core::Result<Vec<Value>> {
+    crate::plugin_loader::load_enabled_plugin_configs(ctx)
 }
 
 /// Stub: project process environment into a partial `toml::Value`.

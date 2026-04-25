@@ -11,11 +11,12 @@ pub mod mdm;
 pub mod merge;
 pub mod migration;
 pub mod permissions;
+pub mod plugin_loader;
 pub mod policy;
 pub mod settings_cache;
 pub mod validation;
 
-pub use config::{Config, ConfigSource, GitContextConfig, PermissionsConfig};
+pub use config::{Config, ConfigSource, EnabledPluginValue, GitContextConfig, PermissionsConfig};
 pub use feature_flag::FeatureFlags;
 pub use global_state::GlobalState;
 pub use hot_reload::ConfigWatcher;

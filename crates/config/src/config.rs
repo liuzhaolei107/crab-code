@@ -76,8 +76,37 @@ pub struct Config {
     pub auto_memory_enabled: Option<bool>,
     pub auto_memory_directory: Option<String>,
 
+    // ── Plugins ──
+    /// Map of `plugin-id@marketplace-id` keys to enablement values.
+    /// `Bool(true)` enables the plugin; `Bool(false)` explicitly disables one
+    /// that would otherwise be enabled by default (e.g. bundled plugins);
+    /// `VersionConstraints(...)` carries semver-like constraint strings.
+    pub enabled_plugins: Option<HashMap<String, EnabledPluginValue>>,
+
     // ── Misc ──
     pub cleanup_period_days: Option<u32>,
+}
+
+/// Value variants accepted under `enabledPlugins.<key>`.
+/// Aligned with CCB `types.ts:566-574`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum EnabledPluginValue {
+    Bool(bool),
+    VersionConstraints(Vec<String>),
+}
+
+impl EnabledPluginValue {
+    /// Return `true` if this value enables the plugin.
+    /// Both `Bool(true)` and any `VersionConstraints` list (even empty) are
+    /// treated as enabled — the constraint vector implies opt-in.
+    #[must_use]
+    pub fn is_enabled(&self) -> bool {
+        match self {
+            Self::Bool(b) => *b,
+            Self::VersionConstraints(_) => true,
+        }
+    }
 }
 
 /// Structured permission rules: `{allow, deny, defaultMode}`.
