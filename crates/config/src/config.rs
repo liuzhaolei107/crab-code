@@ -15,15 +15,22 @@ const LOCAL_CONFIG_FILE: &str = "config.local.toml";
 /// applied on top.
 ///
 /// All fields are `Option` to support multi-level merge: global → project →
-/// local → CLI overrides. Uses `camelCase` for compatibility with the existing
-/// JSON-shaped tooling and CCB ecosystem.
+/// local → CLI overrides. TOML keys use `snake_case` (Rust-default) for natural
+/// TOML idiom; JSON output via `crab config list` likewise uses `snake_case`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "gen-schema", derive(schemars::JsonSchema))]
-#[serde(default, rename_all = "camelCase")]
+#[serde(default)]
 pub struct Config {
     // ── Provider / auth ──
     pub api_provider: Option<String>,
-    pub api_base_url: Option<String>,
+    /// API endpoint base URL. Provider-specific clients append their
+    /// path suffixes ("/v1/messages" etc.) to this.
+    pub base_url: Option<String>,
+    /// Direct API key. Stored in config because users frequently put it here
+    /// for ergonomic single-machine setups; production deployments should
+    /// prefer env vars or `api_key_helper`. Lower priority than env in the
+    /// auth resolution chain.
+    pub api_key: Option<String>,
     /// Shell command that prints an API key to stdout.
     /// The path is configuration; the secret value the script returns
     /// never enters `Config` (resolved by the auth module at request time).
@@ -114,7 +121,7 @@ impl EnabledPluginValue {
 /// Structured permission rules: `{allow, deny, defaultMode}`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "gen-schema", derive(schemars::JsonSchema))]
-#[serde(default, rename_all = "camelCase")]
+#[serde(default)]
 pub struct PermissionsConfig {
     #[serde(default)]
     pub allow: Vec<String>,
@@ -127,7 +134,7 @@ pub struct PermissionsConfig {
 /// Configuration for git context injection into system prompts.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "gen-schema", derive(schemars::JsonSchema))]
-#[serde(default, rename_all = "camelCase")]
+#[serde(default)]
 pub struct GitContextConfig {
     /// Whether to inject git context into the system prompt (default: true).
     pub enabled: bool,
@@ -306,7 +313,7 @@ mod tests {
     #[test]
     fn parse_toml_basic() {
         let toml_str = r#"
-apiProvider = "openai"
+api_provider = "openai"
 model = "gpt-4o"
 "#;
         let s = parse_toml(toml_str).unwrap();
@@ -321,14 +328,16 @@ model = "gpt-4o"
     }
 
     #[test]
-    fn parse_toml_with_camel_case() {
+    fn parse_toml_with_snake_case() {
         let toml_str = r#"
-apiBaseUrl = "http://localhost:8080"
-maxTokens = 2048
+base_url = "http://localhost:8080"
+max_tokens = 2048
+api_key = "sk-test"
 "#;
         let s = parse_toml(toml_str).unwrap();
-        assert_eq!(s.api_base_url.as_deref(), Some("http://localhost:8080"));
+        assert_eq!(s.base_url.as_deref(), Some("http://localhost:8080"));
         assert_eq!(s.max_tokens, Some(2048));
+        assert_eq!(s.api_key.as_deref(), Some("sk-test"));
     }
 
     #[test]
@@ -344,9 +353,9 @@ model = "test"
     #[test]
     fn parse_toml_with_table() {
         let toml_str = r#"
-[gitContext]
+[git_context]
 enabled = false
-maxDiffLines = 50
+max_diff_lines = 50
 "#;
         let s = parse_toml(toml_str).unwrap();
         let git_ctx = s.git_context.unwrap();
@@ -367,7 +376,7 @@ maxDiffLines = 50
         let file = dir.join("config.toml");
         std::fs::write(
             &file,
-            r#"apiProvider = "deepseek"
+            r#"api_provider = "deepseek"
 model = "deepseek-chat"
 "#,
         )
@@ -428,7 +437,7 @@ model = "deepseek-chat"
     fn config_all_fields_serde_roundtrip() {
         let s = Config {
             api_provider: Some("anthropic".into()),
-            api_base_url: Some("http://localhost:8080".into()),
+            base_url: Some("http://localhost:8080".into()),
             api_key_helper: Some("/usr/local/bin/get-key.sh".into()),
             model: Some("claude-3".into()),
             small_model: Some("haiku".into()),

@@ -26,10 +26,10 @@ use toml::value::Table;
 /// |----------------------|----------------|----------------------------------------|
 /// | `CRAB_MODEL`         | `model`        |                                        |
 /// | `CRAB_API_PROVIDER`  | `apiProvider`  |                                        |
-/// | `CRAB_BASE_URL`       | `apiBaseUrl`   | universal override (highest priority)  |
-/// | `ANTHROPIC_BASE_URL` | `apiBaseUrl`   | only when provider is anthropic/unset (CCB-compat name) |
-/// | `OPENAI_BASE_URL`     | `apiBaseUrl`   | only when provider is openai/ollama/vllm |
-/// | `DEEPSEEK_BASE_URL`   | `apiBaseUrl`   | only when provider is deepseek         |
+/// | `CRAB_BASE_URL`       | `base_url`   | universal override (highest priority)  |
+/// | `ANTHROPIC_BASE_URL` | `base_url`   | only when provider is anthropic/unset (CCB-compat name) |
+/// | `OPENAI_BASE_URL`     | `base_url`   | only when provider is openai          |
+/// | `DEEPSEEK_BASE_URL`   | `base_url`   | only when provider is deepseek         |
 ///
 /// URL vars are **mutually exclusive** — `CRAB_BASE_URL` wins outright; otherwise the
 /// provider-specific URL matching `CRAB_API_PROVIDER` (defaulting to anthropic if unset)
@@ -52,7 +52,7 @@ pub fn env_to_value(env: &HashMap<String, String>) -> Value {
     };
 
     put("CRAB_MODEL", "model");
-    put("CRAB_API_PROVIDER", "apiProvider");
+    put("CRAB_API_PROVIDER", "api_provider");
 
     // API base URL: mutually exclusive — the highest-priority env that's set wins.
     //   1. CRAB_BASE_URL                  (universal override)
@@ -62,19 +62,16 @@ pub fn env_to_value(env: &HashMap<String, String>) -> Value {
         .get("CRAB_BASE_URL")
         .filter(|s| !s.is_empty())
         .or_else(|| {
-            let provider = env
-                .get("CRAB_API_PROVIDER")
-                .map(String::as_str)
-                .unwrap_or("anthropic");
+            let provider = env.get("CRAB_API_PROVIDER").map_or("anthropic", String::as_str);
             let var = match provider {
-                "openai" | "ollama" | "vllm" => "OPENAI_BASE_URL",
+                "openai" => "OPENAI_BASE_URL",
                 "deepseek" => "DEEPSEEK_BASE_URL",
                 _ => "ANTHROPIC_BASE_URL", // CCB-compat name for anthropic
             };
             env.get(var).filter(|s| !s.is_empty())
         });
     if let Some(v) = url {
-        root.insert("apiBaseUrl".into(), Value::String(v.clone()));
+        root.insert("base_url".into(), Value::String(v.clone()));
     }
 
     Value::Table(root)
@@ -124,7 +121,7 @@ pub fn cli_overrides_to_value(overrides: &[String]) -> crab_core::Result<Value> 
 
 /// Parse the right-hand side of a `-c` override as TOML, falling back to a
 /// plain string when TOML parsing fails. This lets users write either
-/// `-c model=opus` (plain identifier) or `-c maxTokens=8192` (integer) or
+/// `-c model=opus` (plain identifier) or `-c max_tokens=8192` (integer) or
 /// `-c permissions.allow='["Bash(git:*)"]'` (array literal).
 fn parse_override_value(raw: &str) -> Value {
     // `toml::from_str` requires a key=value pair, so synthesize one and
@@ -172,8 +169,8 @@ mod tests {
 
     #[test]
     fn cli_overrides_parses_integer() {
-        let v = cli_overrides_to_value(&["maxTokens=8192".to_string()]).unwrap();
-        assert_eq!(v["maxTokens"].as_integer(), Some(8192));
+        let v = cli_overrides_to_value(&["max_tokens=8192".to_string()]).unwrap();
+        assert_eq!(v["max_tokens"].as_integer(), Some(8192));
     }
 
     #[test]
@@ -263,8 +260,8 @@ mod tests {
         ]));
         let table = v.as_table().unwrap();
         assert_eq!(table["model"].as_str(), Some("haiku"));
-        assert_eq!(table["apiProvider"].as_str(), Some("openai"));
-        assert_eq!(table["apiBaseUrl"].as_str(), Some("https://example.test"));
+        assert_eq!(table["api_provider"].as_str(), Some("openai"));
+        assert_eq!(table["base_url"].as_str(), Some("https://example.test"));
     }
 
     #[test]
@@ -276,7 +273,7 @@ mod tests {
             ("ANTHROPIC_BASE_URL", "https://wrong"),
         ]));
         assert_eq!(
-            v.as_table().unwrap()["apiBaseUrl"].as_str(),
+            v.as_table().unwrap()["base_url"].as_str(),
             Some("https://api.deepseek.com/v1"),
         );
     }
@@ -289,7 +286,7 @@ mod tests {
             ("CRAB_BASE_URL", "https://universal"),
         ]));
         assert_eq!(
-            v.as_table().unwrap()["apiBaseUrl"].as_str(),
+            v.as_table().unwrap()["base_url"].as_str(),
             Some("https://universal"),
         );
     }
@@ -314,7 +311,7 @@ mod tests {
         ]));
         let table = v.as_table().unwrap();
         assert!(table.contains_key("model"));
-        assert!(!table.contains_key("apiKey"));
+        assert!(!table.contains_key("api_key"));
         assert!(!table.contains_key("anthropicApiKey"));
         assert_eq!(table.len(), 1);
     }

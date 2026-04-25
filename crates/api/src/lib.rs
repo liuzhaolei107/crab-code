@@ -154,16 +154,16 @@ impl LlmBackend {
 /// Create an `LlmBackend` from settings.
 ///
 /// Routes to the appropriate client based on `api_provider`:
-/// - `"openai"`, `"ollama"`, `"deepseek"`, `"vllm"` → `OpenAiClient`
+/// - `"openai"`, `"deepseek"` → `OpenAiClient`
 /// - `"bedrock"` → `BedrockClient` (requires `bedrock` feature)
 /// - `"vertex"` → `VertexClient` (requires `vertex` feature)
 /// - Everything else (including `None`) → `AnthropicClient`
 #[must_use]
 pub fn create_backend(settings: &crab_config::Config) -> LlmBackend {
     match settings.api_provider.as_deref() {
-        Some("openai" | "ollama" | "deepseek" | "vllm") => {
+        Some("openai" | "deepseek") => {
             let base_url = settings
-                .api_base_url
+                .base_url
                 .as_deref()
                 .unwrap_or("https://api.openai.com/v1");
             let api_key = crab_auth::resolve_auth_key(settings);
@@ -172,7 +172,7 @@ pub fn create_backend(settings: &crab_config::Config) -> LlmBackend {
         #[cfg(feature = "bedrock")]
         Some("bedrock") => {
             let region = settings
-                .api_base_url
+                .base_url
                 .as_deref()
                 .unwrap_or("us-east-1")
                 .to_string();
@@ -204,7 +204,7 @@ pub fn create_backend(settings: &crab_config::Config) -> LlmBackend {
                 .or_else(|_| std::env::var("GCLOUD_PROJECT"))
                 .unwrap_or_default();
             let region = settings
-                .api_base_url
+                .base_url
                 .as_deref()
                 .unwrap_or("us-central1")
                 .to_string();
@@ -231,7 +231,7 @@ pub fn create_backend(settings: &crab_config::Config) -> LlmBackend {
         }
         _ => {
             let base_url = settings
-                .api_base_url
+                .base_url
                 .as_deref()
                 .unwrap_or("https://api.anthropic.com");
             let auth = crab_auth::create_auth_provider(settings);

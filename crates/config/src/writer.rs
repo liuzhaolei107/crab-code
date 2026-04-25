@@ -318,9 +318,8 @@ mod tests {
     #[test]
     fn insert_at_path_rejects_empty_segment() {
         let mut doc: DocumentMut = "".parse().unwrap();
-        let err =
-            insert_at_path(&mut doc, "permissions..allow", &toml::Value::Boolean(true))
-                .unwrap_err();
+        let err = insert_at_path(&mut doc, "permissions..allow", &toml::Value::Boolean(true))
+            .unwrap_err();
         assert!(err.to_string().contains("empty segment"));
     }
 }

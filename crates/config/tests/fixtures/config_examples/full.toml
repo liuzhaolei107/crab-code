@@ -4,47 +4,47 @@
 # fixture exercises as much of the schema as possible. The rust_defaults
 # drift guard does NOT consume this file; it consumes Config::default().
 
-apiProvider = "anthropic"
-apiBaseUrl = "https://api.anthropic.com"
-apiKeyHelper = "/usr/local/bin/anthropic-key.sh"
+api_provider = "anthropic"
+base_url = "https://api.anthropic.com"
+api_key_helper = "/usr/local/bin/anthropic-key.sh"
 
 model = "claude-opus-4-7"
-smallModel = "claude-haiku-4-5"
-advisorModel = "claude-haiku-4-5"
-availableModels = ["claude-opus-4-7", "claude-haiku-4-5"]
-modelOverrides = { fast = "claude-haiku-4-5", deep = "claude-opus-4-7" }
-maxTokens = 8192
+small_model = "claude-haiku-4-5"
+advisor_model = "claude-haiku-4-5"
+available_models = ["claude-opus-4-7", "claude-haiku-4-5"]
+model_overrides = { fast = "claude-haiku-4-5", deep = "claude-opus-4-7" }
+max_tokens = 8192
 
-permissionMode = "default"
+permission_mode = "default"
 
-systemPrompt = "Be precise."
-includeGitInstructions = true
-customInstructions = "Always use Rust idioms."
+system_prompt = "Be precise."
+include_git_instructions = true
+custom_instructions = "Always use Rust idioms."
 
-enableAllProjectMcpServers = false
-disableAllHooks = false
+enable_all_project_mcp_servers = false
+disable_all_hooks = false
 
-defaultShell = "/bin/bash"
+default_shell = "/bin/bash"
 theme = "dark"
 language = "en-US"
-outputStyle = "concise"
-respectGitignore = true
+output_style = "concise"
+respect_gitignore = true
 
-autoMemoryEnabled = true
-autoMemoryDirectory = "memory"
+auto_memory_enabled = true
+auto_memory_directory = "memory"
 
-cleanupPeriodDays = 30
+cleanup_period_days = 30
 
 [permissions]
 allow = ["Bash(git:*)", "Edit", "Read"]
 deny = ["Bash(rm:*)"]
-defaultMode = "default"
-additionalDirectories = ["/workspace"]
+default_mode = "default"
+additional_directories = ["/workspace"]
 
-[mcpServers.github]
+[mcp_servers.github]
 url = "https://mcp.github.com"
 
-[mcpServers.local]
+[mcp_servers.local]
 command = "npx"
 
 [hooks]
@@ -54,10 +54,10 @@ PreToolUse = [{ command = "echo pre" }]
 HTTP_PROXY = "http://proxy:8080"
 ANTHROPIC_BASE_URL = "https://proxy.corp.internal/api"
 
-[gitContext]
+[git_context]
 enabled = true
-maxDiffLines = 200
+max_diff_lines = 200
 
-[enabledPlugins]
+[enabled_plugins]
 "superpowers@official" = true
 "foo@bar" = [">=1.0", "<2.0"]

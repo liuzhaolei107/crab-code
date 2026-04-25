@@ -10,25 +10,25 @@
       "type": "string",
       "description": "Schema pragma understood by IDE TOML extensions; ignored at runtime."
     },
-    "schemaVersion": {
+    "schema_version": {
       "type": "integer",
       "minimum": 0,
       "description": "Settings schema version stamped by the migration layer.",
       "default": 0
     },
-    "apiProvider": {
+    "api_provider": {
       "type": "string",
-      "enum": ["anthropic", "openai", "ollama", "bedrock", "vertex", "deepseek", "custom"],
+      "enum": ["anthropic", "openai", "bedrock", "vertex", "deepseek", "custom"],
       "description": "LLM provider name used to select the auth + transport backend.",
       "default": null
     },
-    "apiBaseUrl": {
+    "base_url": {
       "type": "string",
       "format": "uri",
       "description": "Override the provider's HTTP endpoint (e.g. corporate proxy or local Ollama).",
       "default": null
     },
-    "apiKeyHelper": {
+    "api_key_helper": {
       "type": "string",
       "description": "Path to a script whose stdout is consumed as the API key. The path is configuration; the secret it returns never enters Config.",
       "default": null
@@ -38,30 +38,30 @@
       "description": "Primary model identifier passed to the provider (e.g. `claude-opus-4-7`).",
       "default": null
     },
-    "smallModel": {
+    "small_model": {
       "type": "string",
       "description": "Smaller/faster model used for auxiliary tasks (compaction, planning).",
       "default": null
     },
-    "advisorModel": {
+    "advisor_model": {
       "type": "string",
       "description": "Alias of `smallModel` accepted for CC-compat. Use `smallModel` in new configs.",
       "default": null
     },
-    "availableModels": {
+    "available_models": {
       "type": "array",
       "items": { "type": "string" },
       "uniqueItems": true,
       "description": "Allow-list of models surfaced in the model picker.",
       "default": null
     },
-    "modelOverrides": {
+    "model_overrides": {
       "type": "object",
       "additionalProperties": { "type": "string" },
       "description": "Map of alias → concrete model id (e.g. `{ \"fast\": \"claude-haiku\" }`).",
       "default": null
     },
-    "maxTokens": {
+    "max_tokens": {
       "type": "integer",
       "minimum": 1,
       "maximum": 1000000,
@@ -91,13 +91,13 @@
           "description": "Block-list of tool patterns; deny always wins over allow.",
           "default": []
         },
-        "defaultMode": {
+        "default_mode": {
           "type": "string",
           "enum": ["default", "acceptEdits", "accept-edits", "trust-project", "dontAsk", "dont-ask", "bypassPermissions", "dangerously", "plan"],
           "description": "Fallback mode when no rule matches.",
           "default": null
         },
-        "additionalDirectories": {
+        "additional_directories": {
           "type": "array",
           "items": { "type": "string" },
           "description": "Extra filesystem roots tools may read/write.",
@@ -106,28 +106,28 @@
       },
       "default": null
     },
-    "permissionMode": {
+    "permission_mode": {
       "type": "string",
       "enum": ["default", "acceptEdits", "accept-edits", "trust-project", "dontAsk", "dont-ask", "bypassPermissions", "dangerously", "plan"],
       "description": "Convenience alias for `permissions.defaultMode`.",
       "default": null
     },
-    "systemPrompt": {
+    "system_prompt": {
       "type": "string",
       "description": "Custom system prompt prepended to every request.",
       "default": null
     },
-    "includeGitInstructions": {
+    "include_git_instructions": {
       "type": "boolean",
       "description": "Inject git-context block (branch, status, diff) into the system prompt.",
       "default": null
     },
-    "customInstructions": {
+    "custom_instructions": {
       "type": "string",
       "description": "Additional instructions appended to the system prompt.",
       "default": null
     },
-    "mcpServers": {
+    "mcp_servers": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -136,7 +136,7 @@
       "description": "Named MCP server configurations.",
       "default": null
     },
-    "enableAllProjectMcpServers": {
+    "enable_all_project_mcp_servers": {
       "type": "boolean",
       "description": "Auto-enable every server defined in the project layer without prompting.",
       "default": null
@@ -146,12 +146,12 @@
       "description": "Trigger → list of hook entries (each carries a `command` string).",
       "default": null
     },
-    "disableAllHooks": {
+    "disable_all_hooks": {
       "type": "boolean",
       "description": "Master kill-switch for the hook subsystem.",
       "default": null
     },
-    "defaultShell": {
+    "default_shell": {
       "type": "string",
       "description": "Shell used to execute Bash tool invocations and `apiKeyHelper`.",
       "default": null
@@ -173,12 +173,12 @@
       "description": "BCP-47 locale tag for UI strings.",
       "default": null
     },
-    "outputStyle": {
+    "output_style": {
       "type": "string",
       "description": "Named output-style preset (controls verbosity, formatting).",
       "default": null
     },
-    "gitContext": {
+    "git_context": {
       "type": "object",
       "additionalProperties": false,
       "description": "Configure git-context injection.",
@@ -188,7 +188,7 @@
           "description": "Whether to inject git context.",
           "default": true
         },
-        "maxDiffLines": {
+        "max_diff_lines": {
           "type": "integer",
           "minimum": 0,
           "description": "Maximum diff lines to include.",
@@ -197,22 +197,22 @@
       },
       "default": null
     },
-    "respectGitignore": {
+    "respect_gitignore": {
       "type": "boolean",
       "description": "Honor `.gitignore` patterns when traversing the project.",
       "default": null
     },
-    "autoMemoryEnabled": {
+    "auto_memory_enabled": {
       "type": "boolean",
       "description": "Persist auto-memory entries between sessions.",
       "default": null
     },
-    "autoMemoryDirectory": {
+    "auto_memory_directory": {
       "type": "string",
       "description": "Directory where auto-memory files are written.",
       "default": null
     },
-    "enabledPlugins": {
+    "enabled_plugins": {
       "type": "object",
       "additionalProperties": {
         "oneOf": [
@@ -226,7 +226,7 @@
       "description": "Map of `plugin-id@marketplace-id` keys; value is `true`/`false` or a version-constraint list.",
       "default": null
     },
-    "cleanupPeriodDays": {
+    "cleanup_period_days": {
       "type": "integer",
       "minimum": 0,
       "description": "Days after which idle session/log artifacts are pruned.",

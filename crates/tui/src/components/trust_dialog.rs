@@ -487,10 +487,10 @@ mod tests {
         std::fs::write(
             crab_dir.join("config.toml"),
             r#"
-[mcpServers.filesystem]
+[mcp_servers.filesystem]
 command = "fs-mcp"
 
-[mcpServers.github]
+[mcp_servers.github]
 command = "gh-mcp"
 
 [[hooks]]

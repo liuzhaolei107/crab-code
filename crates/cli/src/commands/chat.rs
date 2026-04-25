@@ -127,7 +127,7 @@ pub async fn run_chat(config: ChatConfig) -> anyhow::Result<()> {
     // 3. Build effective settings for backend creation
     let effective_settings = crab_config::Config {
         api_provider: Some(provider.clone()),
-        api_base_url: merged_settings.api_base_url.clone(),
+        base_url: merged_settings.base_url.clone(),
         model: Some(model_id.clone()),
         ..merged_settings.clone()
     };

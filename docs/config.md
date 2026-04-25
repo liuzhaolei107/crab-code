@@ -77,7 +77,7 @@ The chain is **provider-aware** — only env vars semantically tied to the activ
 ```
 CRAB_API_KEY (universal, any provider)
     → [provider = anthropic | unset]   ANTHROPIC_AUTH_TOKEN → ANTHROPIC_API_KEY
-    → [provider = openai/ollama/vllm]  OPENAI_API_KEY
+    → [provider = openai]              OPENAI_API_KEY
     → [provider = deepseek]            DEEPSEEK_API_KEY → OPENAI_API_KEY
     → apiKeyHelper script (config-declared path; stdout consumed)
     → system keychain

@@ -70,7 +70,7 @@ pub fn load_enabled_plugin_configs(ctx: &ResolveContext) -> crab_core::Result<Ve
 fn peek_enabled_plugins(path: &Path) -> Option<HashMap<String, EnabledPluginValue>> {
     #[derive(Deserialize)]
     struct Peek {
-        #[serde(rename = "enabledPlugins")]
+        #[serde(rename = "enabled_plugins")]
         enabled_plugins: Option<HashMap<String, EnabledPluginValue>>,
     }
 

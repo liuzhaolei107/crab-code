@@ -73,7 +73,7 @@ fn read_env(var: &str) -> Option<String> {
 /// Map `api_provider` to its API-key env var list (priority order).
 fn provider_env_vars(provider: Option<&str>) -> &'static [&'static str] {
     match provider {
-        Some("openai" | "ollama" | "vllm") => &["OPENAI_API_KEY"],
+        Some("openai") => &["OPENAI_API_KEY"],
         Some("deepseek") => &["DEEPSEEK_API_KEY", "OPENAI_API_KEY"],
         _ => &["ANTHROPIC_API_KEY"],
     }
@@ -124,8 +124,6 @@ mod tests {
         assert_eq!(provider_env_vars(None), &["ANTHROPIC_API_KEY"]);
         assert_eq!(provider_env_vars(Some("anthropic")), &["ANTHROPIC_API_KEY"]);
         assert_eq!(provider_env_vars(Some("openai")), &["OPENAI_API_KEY"]);
-        assert_eq!(provider_env_vars(Some("ollama")), &["OPENAI_API_KEY"]);
-        assert_eq!(provider_env_vars(Some("vllm")), &["OPENAI_API_KEY"]);
         assert_eq!(
             provider_env_vars(Some("deepseek")),
             &["DEEPSEEK_API_KEY", "OPENAI_API_KEY"]

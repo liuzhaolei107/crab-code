@@ -70,10 +70,10 @@ mod tests {
 
     #[test]
     fn migrate_preserves_existing_fields() {
-        let mut raw = json!({"model": "test-model", "maxTokens": 4096});
+        let mut raw = json!({"model": "test-model", "max_tokens": 4096});
         migrate_settings(&mut raw);
         assert_eq!(raw["model"], "test-model");
-        assert_eq!(raw["maxTokens"], 4096);
+        assert_eq!(raw["max_tokens"], 4096);
         assert_eq!(raw["schemaVersion"], CURRENT_SCHEMA_VERSION);
     }
 

@@ -67,10 +67,10 @@ maxDiffLines = 50
 fn table_deep_merge_three_levels() {
     let mut base = parse(
         r#"
-[mcpServers.github]
+[mcp_servers.github]
 url = "https://example.com"
 
-[mcpServers.github.headers]
+[mcp_servers.github.headers]
 "X-User" = "alice"
 "X-Org" = "team"
 "#,
@@ -79,14 +79,14 @@ url = "https://example.com"
         &mut base,
         parse(
             r#"
-[mcpServers.github.headers]
+[mcp_servers.github.headers]
 "X-Org" = "newteam"
 "X-Trace" = "abc"
 "#,
         ),
     );
     let headers = base
-        .get("mcpServers")
+        .get("mcp_servers")
         .unwrap()
         .get("github")
         .unwrap()
@@ -186,7 +186,7 @@ allow = ["Bash"]
 fn mcp_servers_same_name_field_level_merge() {
     let mut base = parse(
         r#"
-[mcpServers.github]
+[mcp_servers.github]
 url = "https://mcp.github.com"
 args = ["--verbose"]
 "#,
@@ -195,14 +195,14 @@ args = ["--verbose"]
         &mut base,
         parse(
             r#"
-[mcpServers.github]
+[mcp_servers.github]
 auth = "oauth"
 args = ["--quiet"]
 "#,
         ),
     );
     let github = base
-        .get("mcpServers")
+        .get("mcp_servers")
         .unwrap()
         .get("github")
         .unwrap()
@@ -299,14 +299,14 @@ fn resolve_merges_mcp_server_fields_across_layers() {
     write(
         &user_dir.join("config.toml"),
         r#"
-[mcpServers.github]
+[mcp_servers.github]
 url = "https://mcp.github.com"
 "#,
     );
     write(
         &project_crab.join("config.toml"),
         r#"
-[mcpServers.github]
+[mcp_servers.github]
 auth = "oauth"
 "#,
     );

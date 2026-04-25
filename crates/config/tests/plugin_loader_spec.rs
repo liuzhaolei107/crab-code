@@ -53,7 +53,7 @@ fn all_enabled_merge_in_alphabetical_order() {
     copy_plugin_into(&dir, "zeta");
     write_user_config(
         &dir,
-        r#"[enabledPlugins]
+        r#"[enabled_plugins]
 alpha = true
 beta = true
 zeta = true
@@ -87,7 +87,7 @@ fn disabled_plugin_is_skipped() {
     copy_plugin_into(&dir, "zeta");
     write_user_config(
         &dir,
-        r#"[enabledPlugins]
+        r#"[enabled_plugins]
 alpha = true
 beta = false
 zeta = true
@@ -113,7 +113,7 @@ fn broken_plugin_is_skipped_with_warning() {
     copy_plugin_into(&dir, "zeta");
     write_user_config(
         &dir,
-        r#"[enabledPlugins]
+        r#"[enabled_plugins]
 alpha = true
 broken = true
 zeta = true
@@ -139,7 +139,7 @@ fn plugin_setting_env_field_is_rejected() {
     copy_plugin_into(&dir, "gamma");
     write_user_config(
         &dir,
-        r#"[enabledPlugins]
+        r#"[enabled_plugins]
 alpha = true
 gamma = true
 "#,
@@ -162,7 +162,7 @@ fn missing_plugins_dir_returns_empty_list() {
     let dir = isolated_config_dir("no-plugins-dir");
     write_user_config(
         &dir,
-        r#"[enabledPlugins]
+        r#"[enabled_plugins]
 alpha = true
 "#,
     );
@@ -180,7 +180,7 @@ fn version_constraints_value_enables_plugin() {
     copy_plugin_into(&dir, "alpha");
     write_user_config(
         &dir,
-        r#"[enabledPlugins]
+        r#"[enabled_plugins]
 alpha = [">=1.0", "<2.0"]
 "#,
     );
@@ -221,7 +221,7 @@ fn alphabetical_merge_through_resolve() {
     copy_plugin_into(&dir, "zeta");
     write_user_config(
         &dir,
-        r#"[enabledPlugins]
+        r#"[enabled_plugins]
 alpha = true
 beta = true
 zeta = true

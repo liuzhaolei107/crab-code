@@ -259,9 +259,9 @@ mod tests {
     fn known_fields_pass() {
         let value: toml::Value = toml::from_str(
             r#"
-apiProvider = "openai"
+api_provider = "openai"
 model = "gpt-4o"
-maxTokens = 4096
+max_tokens = 4096
 "#,
         )
         .unwrap();
@@ -284,7 +284,7 @@ maxTokens = 4096
 
     #[test]
     fn bad_max_tokens_range_rejected() {
-        let value: toml::Value = toml::from_str(r#"maxTokens = 0"#).unwrap();
+        let value: toml::Value = toml::from_str(r#"max_tokens = 0"#).unwrap();
         let errors = validate_config_value(&value);
         assert!(!errors.is_empty(), "expected range violation");
     }
@@ -298,7 +298,7 @@ maxTokens = 4096
 
     #[test]
     fn bad_provider_rejected() {
-        let value: toml::Value = toml::from_str(r#"apiProvider = "definitely-not-real""#).unwrap();
+        let value: toml::Value = toml::from_str(r#"api_provider = "definitely-not-real""#).unwrap();
         let errors = validate_config_value(&value);
         assert!(!errors.is_empty());
     }
@@ -336,7 +336,7 @@ allow = ["Bash(git:*)", "Edit", "*"]
     fn enabled_plugins_accepts_bool_or_array() {
         let value: toml::Value = toml::from_str(
             r#"
-[enabledPlugins]
+[enabled_plugins]
 "superpowers@official" = true
 "foo@bar" = [">=1.0", "<2.0"]
 "#,
@@ -350,7 +350,7 @@ allow = ["Bash(git:*)", "Edit", "*"]
     fn enabled_plugins_rejects_non_string_array_items() {
         let value: toml::Value = toml::from_str(
             r#"
-[enabledPlugins]
+[enabled_plugins]
 "foo@bar" = [1, 2]
 "#,
         )
