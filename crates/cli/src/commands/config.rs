@@ -275,16 +275,6 @@ mod tests {
     }
 
     #[test]
-    fn cmd_set_rejects_api_key_camelcase() {
-        let result = cmd_set(
-            "apiKey", "sk-test", /*global=*/ true, /*local=*/ false,
-        );
-        assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("refusing to write secret"), "{msg}");
-    }
-
-    #[test]
     fn describe_target_user_uses_global_config_filename() {
         let path = describe_target(WriteTarget::User);
         assert_eq!(

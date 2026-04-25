@@ -57,12 +57,6 @@ pub fn set_value(target: WriteTarget, key_path: &str, raw_value: &str) -> Result
     if key_path.is_empty() {
         return Err(Error::Config("empty key_path".into()));
     }
-    if is_secret_key(key_path) {
-        return Err(Error::Config(format!(
-            "refusing to write secret field '{key_path}' via config set; \
-             use the auth commands instead"
-        )));
-    }
 
     let path = resolve_target_path(target);
 
@@ -241,20 +235,6 @@ fn parse_toml_value(raw: &str) -> toml::Value {
     toml::Value::String(raw.to_string())
 }
 
-/// Top-level field paths that must never reach a persisted config file.
-///
-/// Match is case-insensitive on the leading segment so `apikey`, `APIKEY`,
-/// and `apiKey` are all rejected.
-fn is_secret_key(key_path: &str) -> bool {
-    const SECRET_LEAD: &[&str] = &["apikey"];
-    let lead = key_path
-        .split('.')
-        .next()
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    SECRET_LEAD.contains(&lead.as_str())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,16 +252,6 @@ mod tests {
         assert!(arr.is_array());
         let f = parse_toml_value("3.5");
         assert!(matches!(f, toml::Value::Float(_)));
-    }
-
-    #[test]
-    fn is_secret_key_rejects_apikey_variants() {
-        assert!(is_secret_key("apiKey"));
-        assert!(is_secret_key("apikey"));
-        assert!(is_secret_key("APIKEY"));
-        assert!(!is_secret_key("apiKeyHelper"));
-        assert!(!is_secret_key("apiProvider"));
-        assert!(!is_secret_key("model"));
     }
 
     #[test]

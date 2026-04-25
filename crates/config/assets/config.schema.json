@@ -28,6 +28,11 @@
       "description": "Override the provider's HTTP endpoint (e.g. corporate proxy or local Ollama).",
       "default": null
     },
+    "api_key": {
+      "type": "string",
+      "description": "Direct API key. Stored in config for ergonomic single-machine setups; production deployments should prefer env vars or `api_key_helper`. Lower priority than env in the auth chain.",
+      "default": null
+    },
     "api_key_helper": {
       "type": "string",
       "description": "Path to a script whose stdout is consumed as the API key. The path is configuration; the secret it returns never enters Config.",

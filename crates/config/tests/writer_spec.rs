@@ -56,20 +56,30 @@ fn preserves_top_and_inline_comments() {
 }
 
 #[test]
-fn rejects_secret_field() {
+fn api_key_writable_to_config() {
+    // api_key became a documented Config field after the snake_case migration;
+    // the writer no longer rejects it. Schema validation still ensures we don't
+    // smuggle in unknown fields under a misspelling.
     let tmp = TempDir::new().unwrap();
     with_cwd(tmp.path(), || {
-        let err = set_value(WriteTarget::Project, "apiKey", "sk-test").unwrap_err();
-        assert!(err.to_string().contains("refusing to write secret"));
+        set_value(WriteTarget::Project, "api_key", "sk-test").unwrap();
+        let written = std::fs::read_to_string(tmp.path().join(".crab/config.toml")).unwrap();
+        assert!(written.contains("api_key = \"sk-test\""), "{written}");
     });
 }
 
 #[test]
-fn rejects_secret_field_lowercase() {
+fn rejects_camelcase_apikey_via_schema() {
+    // Schema is authoritative — `apiKey` (camelCase) is not a known field, so
+    // it should fail post-write validation.
     let tmp = TempDir::new().unwrap();
     with_cwd(tmp.path(), || {
-        let err = set_value(WriteTarget::Project, "apikey", "sk-test").unwrap_err();
-        assert!(err.to_string().contains("refusing to write secret"));
+        let err = set_value(WriteTarget::Project, "apiKey", "sk-test").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("schema") || msg.contains("apiKey"),
+            "unexpected error: {msg}",
+        );
     });
 }
 

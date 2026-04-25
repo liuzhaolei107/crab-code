@@ -46,6 +46,11 @@ pub fn resolve_auth_key(cfg: &Config) -> Option<String> {
         }
     }
 
+    // 4. Config file: cfg.api_key (lower priority than env to let env override).
+    if let Some(v) = cfg.api_key.as_deref().filter(|s| !s.is_empty()) {
+        return Some(v.to_string());
+    }
+
     // 3. apiKeyHelper script (path is config; the secret it prints never enters Config).
     if let Some(v) = run_api_key_helper(cfg.api_key_helper.as_deref()) {
         return Some(v);
