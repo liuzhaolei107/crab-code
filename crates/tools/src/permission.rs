@@ -42,6 +42,15 @@ pub fn check_permission(
     input: &serde_json::Value,
     working_dir: &Path,
 ) -> PermissionDecision {
+    // SECURITY BOUNDARY: deny is always evaluated before allow.
+    //
+    // The deny list is the user's last line of defense; an allow rule (from
+    // any layer, any source) MUST NOT override it. Reordering these two
+    // branches would silently turn a working blocklist into a no-op the
+    // moment a sibling allow rule matches the same tool. See
+    // `docs/config.md` §8.4 and `crates/config/tests/
+    // permission_deny_wins_spec.rs` for the explicit invariant.
+    //
     // 1. Denied list — always deny, any mode (supports glob + param matching)
     if policy.is_denied_by_filter(tool_name, input) {
         return PermissionDecision::Deny(format!("tool '{tool_name}' is denied by policy"));
