@@ -138,9 +138,10 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
     // ── Phase 4c: Settings & skills filesystem watcher ─────────────────
 
     let home = crab_core::common::utils::path::home_dir();
-    let mut settings_watch_paths = vec![home.join(".crab").join("settings.json")];
+    let config_file = crab_config::config::config_file_name();
+    let mut settings_watch_paths = vec![home.join(".crab").join(config_file)];
     if let Ok(cwd) = std::env::current_dir() {
-        settings_watch_paths.push(cwd.join(".crab").join("settings.json"));
+        settings_watch_paths.push(cwd.join(".crab").join(config_file));
     }
 
     let (watch_tx, watch_rx) = mpsc::unbounded_channel();
@@ -794,12 +795,12 @@ async fn run_loop(
                             app.apply_event(crate::app_event::AppEvent::SettingsReloaded { warnings });
                             // FileChanged hook fires after reload so hooks
                             // observe the already-applied state; the
-                            // virtual path "settings.json" lets glob-based
+                            // virtual path "config.toml" lets glob-based
                             // filters match without having to know the
                             // full merged path chain.
                             if let Some(ref rt) = state {
                                 rt.fire_file_changed_hook(
-                                    std::path::Path::new("settings.json"),
+                                    std::path::Path::new("config.toml"),
                                     Some(session_id),
                                     wd.as_deref(),
                                 );

@@ -1,4 +1,4 @@
-//! `ConfigTool` — programmatic settings.json read/write.
+//! `ConfigTool` — programmatic config.toml read/write.
 //!
 //! Provides get, set, and list operations on the merged configuration,
 //! allowing the LLM to inspect and modify settings at runtime.
@@ -155,34 +155,82 @@ async fn set_setting(key: &str, value: &Value) -> Result<ToolOutput> {
             crab_core::Error::Config(format!("failed to create .crab directory: {e}"))
         })?;
     }
-    let settings_path = project_dir.join("settings.json");
+    let config_path = project_dir.join(crab_config::config::config_file_name());
 
-    // Load existing project settings as raw JSON (or start with empty object).
-    let mut root: Value = if settings_path.exists() {
-        let content = tokio::fs::read_to_string(&settings_path)
-            .await
-            .map_err(|e| {
-                crab_core::Error::Config(format!("failed to read {}: {e}", settings_path.display()))
-            })?;
-        serde_json::from_str(&content).unwrap_or(Value::Object(serde_json::Map::new()))
+    // Load existing project config as raw JSON via the TOML→JSON bridge so
+    // dot-path mutation works against tables/scalars uniformly.
+    let mut root: Value = if config_path.exists() {
+        let content = tokio::fs::read_to_string(&config_path).await.map_err(|e| {
+            crab_core::Error::Config(format!("failed to read {}: {e}", config_path.display()))
+        })?;
+        let parsed: toml::Value = toml::from_str(&content).map_err(|e| {
+            crab_core::Error::Config(format!("failed to parse {}: {e}", config_path.display()))
+        })?;
+        let as_json = toml_value_to_json(parsed);
+        if as_json.is_object() {
+            as_json
+        } else {
+            Value::Object(serde_json::Map::new())
+        }
     } else {
         Value::Object(serde_json::Map::new())
     };
 
     set_dot_path(&mut root, key, value.clone());
 
-    let output = serde_json::to_string_pretty(&root)
-        .map_err(|e| crab_core::Error::Config(format!("failed to serialize settings: {e}")))?;
-    tokio::fs::write(&settings_path, &output)
-        .await
-        .map_err(|e| {
-            crab_core::Error::Config(format!("failed to write {}: {e}", settings_path.display()))
-        })?;
+    let toml_value = json_value_to_toml(&root)
+        .ok_or_else(|| crab_core::Error::Config("config root must be an object".into()))?;
+    let output = toml::to_string_pretty(&toml_value)
+        .map_err(|e| crab_core::Error::Config(format!("failed to serialize config: {e}")))?;
+    tokio::fs::write(&config_path, &output).await.map_err(|e| {
+        crab_core::Error::Config(format!("failed to write {}: {e}", config_path.display()))
+    })?;
 
     Ok(ToolOutput::success(format!(
         "Setting '{key}' updated in {}",
-        settings_path.display()
+        config_path.display()
     )))
+}
+
+fn toml_value_to_json(value: toml::Value) -> Value {
+    match value {
+        toml::Value::String(s) => Value::String(s),
+        toml::Value::Integer(i) => Value::Number(i.into()),
+        toml::Value::Float(f) => serde_json::Number::from_f64(f).map_or(Value::Null, Value::Number),
+        toml::Value::Boolean(b) => Value::Bool(b),
+        toml::Value::Datetime(dt) => Value::String(dt.to_string()),
+        toml::Value::Array(arr) => Value::Array(arr.into_iter().map(toml_value_to_json).collect()),
+        toml::Value::Table(tbl) => Value::Object(
+            tbl.into_iter()
+                .map(|(k, v)| (k, toml_value_to_json(v)))
+                .collect(),
+        ),
+    }
+}
+
+fn json_value_to_toml(value: &Value) -> Option<toml::Value> {
+    Some(match value {
+        Value::Null => return None,
+        Value::Bool(b) => toml::Value::Boolean(*b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                toml::Value::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                toml::Value::Float(f)
+            } else {
+                return None;
+            }
+        }
+        Value::String(s) => toml::Value::String(s.clone()),
+        Value::Array(arr) => {
+            toml::Value::Array(arr.iter().filter_map(json_value_to_toml).collect())
+        }
+        Value::Object(map) => toml::Value::Table(
+            map.iter()
+                .filter_map(|(k, v)| json_value_to_toml(v).map(|tv| (k.clone(), tv)))
+                .collect(),
+        ),
+    })
 }
 
 /// List all current settings.

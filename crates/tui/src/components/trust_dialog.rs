@@ -28,7 +28,7 @@ pub struct TrustContext {
     pub hook_count: usize,
     /// Custom environment variable names set in project settings.
     pub env_vars: Vec<String>,
-    /// Whether a project-level `settings.json` file exists.
+    /// Whether a project-level `config.toml` file exists.
     pub has_settings: bool,
     /// Whether a `AGENTS.md` instruction file exists.
     pub has_agents_md: bool,
@@ -36,11 +36,14 @@ pub struct TrustContext {
 
 impl TrustContext {
     /// Build a context by inspecting the project directory and its merged
-    /// project+local settings (but NOT user/global — only project-scoped
+    /// project+local config (but NOT user/global — only project-scoped
     /// threats should appear in the trust prompt).
     #[must_use]
     pub fn from_project(project_dir: &Path) -> Self {
-        let has_settings = project_dir.join(".crab").join("settings.json").exists();
+        let has_settings = project_dir
+            .join(".crab")
+            .join(crab_config::config::config_file_name())
+            .exists();
         let has_agents_md = project_dir.join("AGENTS.md").exists();
 
         let project_settings = crab_config::config::load_project(project_dir).unwrap_or_default();
@@ -190,8 +193,8 @@ impl Renderable for TrustDialogOverlay {
         }
         if self.ctx.has_settings {
             lines.push(threat_line(
-                "Settings file",
-                Span::styled(".crab/settings.json", Style::default().fg(Color::White)),
+                "Config file",
+                Span::styled(".crab/config.toml", Style::default().fg(Color::White)),
             ));
         }
         if !self.ctx.mcp_servers.is_empty() {
@@ -481,18 +484,26 @@ mod tests {
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
         std::fs::write(
-            crab_dir.join("settings.json"),
-            r#"{
-                "mcpServers": {
-                    "filesystem": {"command": "fs-mcp"},
-                    "github": {"command": "gh-mcp"}
-                },
-                "hooks": [
-                    {"trigger": "pre_tool_use", "command": "echo a"},
-                    {"trigger": "stop", "command": "echo b"}
-                ],
-                "env": {"MY_KEY": "v1", "OTHER": "v2"}
-            }"#,
+            crab_dir.join("config.toml"),
+            r#"
+[mcpServers.filesystem]
+command = "fs-mcp"
+
+[mcpServers.github]
+command = "gh-mcp"
+
+[[hooks]]
+trigger = "pre_tool_use"
+command = "echo a"
+
+[[hooks]]
+trigger = "stop"
+command = "echo b"
+
+[env]
+MY_KEY = "v1"
+OTHER = "v2"
+"#,
         )
         .unwrap();
         std::fs::write(dir.join("AGENTS.md"), "# hi").unwrap();

@@ -88,30 +88,30 @@ fn check_api_key(settings: &crab_config::Config) -> Check {
 }
 
 fn check_settings_file(global_dir: &Path) -> Check {
-    let path = global_dir.join("settings.json");
+    let path = global_dir.join(crab_config::config::config_file_name());
     if !path.exists() {
         return Check {
-            name: "Settings file",
+            name: "Config file",
             passed: true,
             detail: format!("{} (not created yet, using defaults)", path.display()),
         };
     }
 
     match std::fs::read_to_string(&path) {
-        Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
+        Ok(content) => match toml::from_str::<toml::Value>(&content) {
             Ok(_) => Check {
-                name: "Settings file",
+                name: "Config file",
                 passed: true,
-                detail: format!("{} (valid JSON)", path.display()),
+                detail: format!("{} (valid TOML)", path.display()),
             },
             Err(e) => Check {
-                name: "Settings file",
+                name: "Config file",
                 passed: false,
-                detail: format!("{} (invalid JSON: {})", path.display(), e),
+                detail: format!("{} (invalid TOML: {})", path.display(), e),
             },
         },
         Err(e) => Check {
-            name: "Settings file",
+            name: "Config file",
             passed: false,
             detail: format!("{} (read error: {})", path.display(), e),
         },
@@ -204,42 +204,42 @@ fn check_dir_exists_writable(global_dir: &Path, subdir: &str, name: &'static str
 
 fn check_project_settings(working_dir: &Path) -> Check {
     let project_dir = working_dir.join(".crab");
-    let settings_path = project_dir.join("settings.json");
-    let local_path = project_dir.join("settings.local.json");
+    let settings_path = project_dir.join(crab_config::config::config_file_name());
+    let local_path = project_dir.join(crab_config::config::local_config_file_name());
 
     if !project_dir.exists() {
         return Check {
-            name: "Project settings",
+            name: "Project config",
             passed: true,
-            detail: "no .crab/ directory (using global settings only)".into(),
+            detail: "no .crab/ directory (using global config only)".into(),
         };
     }
 
     let mut parts = Vec::new();
     if settings_path.exists() {
         match std::fs::read_to_string(&settings_path) {
-            Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(_) => parts.push("settings.json (valid)"),
+            Ok(content) => match toml::from_str::<toml::Value>(&content) {
+                Ok(_) => parts.push("config.toml (valid)"),
                 Err(_) => {
                     return Check {
-                        name: "Project settings",
+                        name: "Project config",
                         passed: false,
-                        detail: "settings.json has invalid JSON".into(),
+                        detail: "config.toml has invalid TOML".into(),
                     };
                 }
             },
-            Err(_) => parts.push("settings.json (unreadable)"),
+            Err(_) => parts.push("config.toml (unreadable)"),
         }
     }
     if local_path.exists() {
-        parts.push("settings.local.json");
+        parts.push("config.local.toml");
     }
 
     Check {
-        name: "Project settings",
+        name: "Project config",
         passed: true,
         detail: if parts.is_empty() {
-            ".crab/ exists but no settings files".into()
+            ".crab/ exists but no config files".into()
         } else {
             parts.join(", ")
         },
@@ -491,15 +491,15 @@ mod tests {
     }
 
     #[test]
-    fn check_project_settings_with_valid_json() {
+    fn check_project_settings_with_valid_toml() {
         let dir = std::env::temp_dir().join("crab-doctor-test-proj-settings");
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
-        std::fs::write(crab_dir.join("settings.json"), r#"{"model":"test"}"#).unwrap();
+        std::fs::write(crab_dir.join("config.toml"), r#"model = "test""#).unwrap();
 
         let result = check_project_settings(&dir);
         assert!(result.passed);
-        assert!(result.detail.contains("settings.json"));
+        assert!(result.detail.contains("config.toml"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

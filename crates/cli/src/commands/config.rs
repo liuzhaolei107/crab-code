@@ -22,13 +22,13 @@ pub enum ConfigAction {
         key: String,
         /// Value to set
         value: String,
-        /// Write to global (~/.crab/settings.json) instead of project
+        /// Write to global (~/.crab/config.toml) instead of project
         #[arg(long, short)]
         global: bool,
     },
-    /// Open settings.json in your $EDITOR
+    /// Open the config file in your $EDITOR
     Edit {
-        /// Edit global (~/.crab/settings.json) instead of project
+        /// Edit global (~/.crab/config.toml) instead of project
         #[arg(long, short)]
         global: bool,
     },
@@ -47,7 +47,7 @@ pub fn run(action: &ConfigAction) -> anyhow::Result<()> {
     }
 }
 
-/// `crab config list` — print all effective settings as pretty JSON.
+/// `crab config list` — print all effective config as pretty JSON.
 fn cmd_list() -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().ok();
     let merged = config::load_merged_config(working_dir.as_ref())?;
@@ -56,11 +56,11 @@ fn cmd_list() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `crab config get <key>` — print a single setting value.
+/// `crab config get <key>` — print a single config value.
 fn cmd_get(key: &str) -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().ok();
     let merged = config::load_merged_config(working_dir.as_ref())?;
-    let value = settings_to_map(&merged);
+    let value = config_to_map(&merged);
 
     match value.get(key) {
         Some(v) if v.is_null() => {
@@ -84,7 +84,7 @@ fn cmd_get(key: &str) -> anyhow::Result<()> {
 /// `crab config set <key> <value>` — write a setting to the chosen config file.
 fn cmd_set(key: &str, value: &str, global: bool) -> anyhow::Result<()> {
     // Validate key
-    let known_keys = known_settings_keys();
+    let known_keys = known_config_keys();
     if !known_keys.contains(&key) {
         anyhow::bail!(
             "unknown configuration key: {key}\nValid keys: {}",
@@ -92,46 +92,42 @@ fn cmd_set(key: &str, value: &str, global: bool) -> anyhow::Result<()> {
         );
     }
 
-    let path = target_settings_path(global)?;
+    let path = target_config_path(global)?;
 
-    // Load existing file (or empty object)
-    let mut map: serde_json::Map<String, serde_json::Value> = if path.exists() {
+    // Load existing TOML file (or empty table)
+    let mut doc: toml::Table = if path.exists() {
         let content = std::fs::read_to_string(&path)?;
-        let parsed = jsonc_to_value(&content)?;
-        match parsed {
-            serde_json::Value::Object(m) => m,
-            _ => serde_json::Map::new(),
-        }
+        toml::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("failed to parse {}: {e}", path.display()))?
     } else {
-        serde_json::Map::new()
+        toml::Table::new()
     };
 
-    // Parse value: try integer, then bool, then string
-    let json_value = parse_value(value);
-    map.insert(key.to_string(), json_value);
+    let toml_value = parse_toml_value(value);
+    doc.insert(key.to_string(), toml_value);
 
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
-    let json = serde_json::to_string_pretty(&serde_json::Value::Object(map))?;
-    std::fs::write(&path, format!("{json}\n"))?;
+    let serialized = toml::to_string_pretty(&doc)?;
+    std::fs::write(&path, serialized)?;
 
     eprintln!("Set {key} = {value} in {}", path.display());
     Ok(())
 }
 
-/// `crab config edit` — open the settings file in $EDITOR.
+/// `crab config edit` — open the config file in $EDITOR.
 fn cmd_edit(global: bool) -> anyhow::Result<()> {
-    let path = target_settings_path(global)?;
+    let path = target_config_path(global)?;
 
-    // Ensure the file exists (create empty JSON object if not)
+    // Ensure the file exists (create empty TOML file if not)
     if !path.exists() {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path, "{}\n")?;
+        std::fs::write(&path, "")?;
     }
 
     let editor = std::env::var("EDITOR")
@@ -157,20 +153,20 @@ fn cmd_edit(global: bool) -> anyhow::Result<()> {
 #[allow(clippy::unnecessary_wraps)]
 fn cmd_path() -> anyhow::Result<()> {
     let global_dir = config::global_config_dir();
-    let global_settings = global_dir.join("settings.json");
+    let global_config = global_dir.join(config::config_file_name());
     let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let project_dir = config::project_config_dir(&working_dir);
-    let project_settings = project_dir.join("settings.json");
+    let project_config = project_dir.join(config::config_file_name());
 
     println!(
         "Global:  {} {}",
-        global_settings.display(),
-        existence_tag(&global_settings)
+        global_config.display(),
+        existence_tag(&global_config)
     );
     println!(
         "Project: {} {}",
-        project_settings.display(),
-        existence_tag(&project_settings)
+        project_config.display(),
+        existence_tag(&project_config)
     );
 
     Ok(())
@@ -178,8 +174,8 @@ fn cmd_path() -> anyhow::Result<()> {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-/// Convert `Settings` to a JSON map for key lookup.
-fn settings_to_map(s: &crab_config::Config) -> serde_json::Map<String, serde_json::Value> {
+/// Convert `Config` to a JSON map for key lookup.
+fn config_to_map(s: &crab_config::Config) -> serde_json::Map<String, serde_json::Value> {
     let v = serde_json::to_value(s).unwrap_or_default();
     match v {
         serde_json::Value::Object(m) => m,
@@ -187,8 +183,8 @@ fn settings_to_map(s: &crab_config::Config) -> serde_json::Map<String, serde_jso
     }
 }
 
-/// List of valid `camelCase` settings keys.
-fn known_settings_keys() -> Vec<&'static str> {
+/// List of valid `camelCase` config keys.
+fn known_config_keys() -> Vec<&'static str> {
     vec![
         "apiProvider",
         "apiBaseUrl",
@@ -204,46 +200,35 @@ fn known_settings_keys() -> Vec<&'static str> {
     ]
 }
 
-/// Resolve the target settings.json path.
-fn target_settings_path(global: bool) -> anyhow::Result<PathBuf> {
+/// Resolve the target `config.toml` path.
+fn target_config_path(global: bool) -> anyhow::Result<PathBuf> {
     if global {
-        Ok(config::global_config_dir().join("settings.json"))
+        Ok(config::global_config_dir().join(config::config_file_name()))
     } else {
         let working_dir = std::env::current_dir()?;
-        Ok(config::project_config_dir(&working_dir).join("settings.json"))
+        Ok(config::project_config_dir(&working_dir).join(config::config_file_name()))
     }
 }
 
-/// Parse a JSONC string to a `serde_json::Value`.
-fn jsonc_to_value(content: &str) -> anyhow::Result<serde_json::Value> {
-    jsonc_parser::parse_to_serde_value::<serde_json::Value>(
-        content,
-        &jsonc_parser::ParseOptions::default(),
-    )
-    .map_err(|e| anyhow::anyhow!("JSONC parse error: {e}"))
-}
-
-/// Try to parse a string value as a JSON-typed value.
-fn parse_value(value: &str) -> serde_json::Value {
-    // Try as integer
+/// Try to parse a string value as a typed TOML value.
+fn parse_toml_value(value: &str) -> toml::Value {
     if let Ok(n) = value.parse::<i64>() {
-        return serde_json::Value::Number(n.into());
+        return toml::Value::Integer(n);
     }
-    // Try as bool
     match value {
-        "true" => return serde_json::Value::Bool(true),
-        "false" => return serde_json::Value::Bool(false),
-        "null" => return serde_json::Value::Null,
+        "true" => return toml::Value::Boolean(true),
+        "false" => return toml::Value::Boolean(false),
         _ => {}
     }
-    // Try as JSON object/array
-    if (value.starts_with('{') || value.starts_with('['))
-        && serde_json::from_str::<serde_json::Value>(value).is_ok()
+    // Inline TOML expressions (e.g. arrays / inline tables) — wrap and parse.
+    let trimmed = value.trim_start();
+    if (trimmed.starts_with('[') || trimmed.starts_with('{'))
+        && let Ok(parsed) = toml::from_str::<toml::Table>(&format!("__v = {value}\n"))
+        && let Some(v) = parsed.get("__v")
     {
-        return serde_json::from_str(value).unwrap();
+        return v.clone();
     }
-    // Default: string
-    serde_json::Value::String(value.to_string())
+    toml::Value::String(value.to_string())
 }
 
 /// Return "(exists)" or "(not found)" for display.
@@ -261,51 +246,52 @@ mod tests {
 
     #[test]
     fn parse_value_integer() {
-        assert_eq!(parse_value("42"), serde_json::json!(42));
-        assert_eq!(parse_value("0"), serde_json::json!(0));
-        assert_eq!(parse_value("-1"), serde_json::json!(-1));
+        assert_eq!(parse_toml_value("42"), toml::Value::Integer(42));
+        assert_eq!(parse_toml_value("0"), toml::Value::Integer(0));
+        assert_eq!(parse_toml_value("-1"), toml::Value::Integer(-1));
     }
 
     #[test]
     fn parse_value_bool() {
-        assert_eq!(parse_value("true"), serde_json::json!(true));
-        assert_eq!(parse_value("false"), serde_json::json!(false));
-    }
-
-    #[test]
-    fn parse_value_null() {
-        assert_eq!(parse_value("null"), serde_json::Value::Null);
+        assert_eq!(parse_toml_value("true"), toml::Value::Boolean(true));
+        assert_eq!(parse_toml_value("false"), toml::Value::Boolean(false));
     }
 
     #[test]
     fn parse_value_string() {
-        assert_eq!(parse_value("anthropic"), serde_json::json!("anthropic"));
-        assert_eq!(parse_value("gpt-4o"), serde_json::json!("gpt-4o"));
+        assert_eq!(
+            parse_toml_value("anthropic"),
+            toml::Value::String("anthropic".into())
+        );
+        assert_eq!(
+            parse_toml_value("gpt-4o"),
+            toml::Value::String("gpt-4o".into())
+        );
     }
 
     #[test]
-    fn parse_value_json_object() {
-        let v = parse_value(r#"{"key": "val"}"#);
-        assert!(v.is_object());
-        assert_eq!(v["key"], "val");
-    }
-
-    #[test]
-    fn parse_value_json_array() {
-        let v = parse_value(r#"["a", "b"]"#);
+    fn parse_value_inline_array() {
+        let v = parse_toml_value(r#"["a", "b"]"#);
         assert!(v.is_array());
     }
 
     #[test]
-    fn parse_value_brace_like_string_not_valid_json() {
-        // A string that starts with '{' but is not valid JSON should be a string
-        let v = parse_value("{not json");
-        assert!(v.is_string());
+    fn parse_value_inline_table() {
+        let v = parse_toml_value(r#"{ key = "val" }"#);
+        assert!(v.is_table());
+        assert_eq!(v["key"].as_str(), Some("val"));
+    }
+
+    #[test]
+    fn parse_value_brace_like_string_not_valid_inline_table() {
+        // A string that starts with '{' but is not valid TOML should be a string
+        let v = parse_toml_value("{not toml");
+        assert!(v.is_str());
     }
 
     #[test]
     fn known_keys_contains_expected() {
-        let keys = known_settings_keys();
+        let keys = known_config_keys();
         assert!(keys.contains(&"apiProvider"));
         assert!(keys.contains(&"model"));
         assert!(keys.contains(&"maxTokens"));
@@ -313,13 +299,13 @@ mod tests {
     }
 
     #[test]
-    fn settings_to_map_roundtrip() {
+    fn config_to_map_roundtrip() {
         let s = crab_config::Config {
             model: Some("test-model".into()),
             theme: Some("dark".into()),
             ..Default::default()
         };
-        let map = settings_to_map(&s);
+        let map = config_to_map(&s);
         assert_eq!(
             map.get("model").and_then(|v| v.as_str()),
             Some("test-model")
@@ -328,9 +314,9 @@ mod tests {
     }
 
     #[test]
-    fn settings_to_map_none_fields_are_null() {
+    fn config_to_map_none_fields_are_null() {
         let s = crab_config::Config::default();
-        let map = settings_to_map(&s);
+        let map = config_to_map(&s);
         assert!(map.get("model").is_some_and(serde_json::Value::is_null));
     }
 
@@ -344,7 +330,7 @@ mod tests {
 
     #[test]
     fn cmd_list_succeeds() {
-        // Should not panic — loads merged settings and prints JSON
+        // Should not panic — loads merged config and prints JSON
         let result = cmd_list();
         assert!(result.is_ok());
     }
@@ -375,19 +361,19 @@ mod tests {
         let dir = std::env::temp_dir().join("crab-cli-config-test-set-get");
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
-        let settings_file = crab_dir.join("settings.json");
-        std::fs::write(&settings_file, "{}\n").unwrap();
+        let config_file = crab_dir.join("config.toml");
+        std::fs::write(&config_file, "").unwrap();
 
-        // Write directly to the temp file to test the logic
-        let mut map = serde_json::Map::new();
-        map.insert("model".into(), parse_value("test-model-123"));
-        let json = serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap();
-        std::fs::write(&settings_file, format!("{json}\n")).unwrap();
+        // Simulate cmd_set logic without going through the global helper.
+        let mut doc = toml::Table::new();
+        doc.insert("model".into(), parse_toml_value("test-model-123"));
+        let serialized = toml::to_string_pretty(&doc).unwrap();
+        std::fs::write(&config_file, serialized).unwrap();
 
         // Read back
-        let content = std::fs::read_to_string(&settings_file).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed["model"], "test-model-123");
+        let content = std::fs::read_to_string(&config_file).unwrap();
+        let parsed: toml::Table = toml::from_str(&content).unwrap();
+        assert_eq!(parsed["model"].as_str(), Some("test-model-123"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -396,17 +382,5 @@ mod tests {
     fn cmd_path_succeeds() {
         let result = cmd_path();
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn jsonc_to_value_valid() {
-        let v = jsonc_to_value(r#"{"key": "val" /* comment */}"#).unwrap();
-        assert_eq!(v["key"], "val");
-    }
-
-    #[test]
-    fn jsonc_to_value_invalid() {
-        let result = jsonc_to_value("not json");
-        assert!(result.is_err());
     }
 }

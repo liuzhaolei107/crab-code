@@ -97,7 +97,7 @@ fn run_login(settings: &crab_config::Config) -> anyhow::Result<()> {
     eprintln!("     export ANTHROPIC_API_KEY=sk-ant-...");
     eprintln!("     export OPENAI_API_KEY=sk-...");
     eprintln!();
-    eprintln!("  2. Settings file (~/.crab/settings.json):");
+    eprintln!("  2. Config file (~/.crab/config.toml):");
     eprintln!("     crab config set apiKey sk-ant-...");
     eprintln!();
     eprintln!("  3. Interactive setup:");
@@ -143,25 +143,22 @@ fn run_status(settings: &crab_config::Config, json_output: bool) -> anyhow::Resu
 
 fn run_logout() -> anyhow::Result<()> {
     let global_dir = crab_config::config::global_config_dir();
-    let settings_path = global_dir.join("settings.json");
+    let config_path = global_dir.join(crab_config::config::config_file_name());
 
-    if !settings_path.exists() {
-        eprintln!("No settings file found. Nothing to do.");
+    if !config_path.exists() {
+        eprintln!("No config file found. Nothing to do.");
         return Ok(());
     }
 
-    let content = std::fs::read_to_string(&settings_path)?;
-    let mut value: serde_json::Value =
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
+    let content = std::fs::read_to_string(&config_path)?;
+    let mut doc: toml::Table = toml::from_str(&content).unwrap_or_default();
 
-    if let Some(obj) = value.as_object_mut() {
-        if obj.remove("apiKey").is_some() {
-            let updated = serde_json::to_string_pretty(&value)?;
-            std::fs::write(&settings_path, updated)?;
-            eprintln!("API key removed from {}", settings_path.display());
-        } else {
-            eprintln!("No API key found in settings file.");
-        }
+    if doc.remove("apiKey").is_some() {
+        let updated = toml::to_string_pretty(&doc)?;
+        std::fs::write(&config_path, updated)?;
+        eprintln!("API key removed from {}", config_path.display());
+    } else {
+        eprintln!("No API key found in config file.");
     }
 
     Ok(())
@@ -182,22 +179,20 @@ fn run_setup_token() -> anyhow::Result<()> {
 
     let global_dir = crab_config::config::global_config_dir();
     std::fs::create_dir_all(&global_dir)?;
-    let settings_path = global_dir.join("settings.json");
+    let config_path = global_dir.join(crab_config::config::config_file_name());
 
-    let mut value: serde_json::Value = if settings_path.exists() {
-        let content = std::fs::read_to_string(&settings_path)?;
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
+    let mut doc: toml::Table = if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path)?;
+        toml::from_str(&content).unwrap_or_default()
     } else {
-        serde_json::json!({})
+        toml::Table::new()
     };
 
-    if let Some(obj) = value.as_object_mut() {
-        obj.insert("apiKey".into(), serde_json::Value::String(key.to_string()));
-    }
+    doc.insert("apiKey".into(), toml::Value::String(key.to_string()));
 
-    let updated = serde_json::to_string_pretty(&value)?;
-    std::fs::write(&settings_path, updated)?;
-    eprintln!("API key saved to {}", settings_path.display());
+    let updated = toml::to_string_pretty(&doc)?;
+    std::fs::write(&config_path, updated)?;
+    eprintln!("API key saved to {}", config_path.display());
 
     Ok(())
 }
