@@ -6,4 +6,4 @@ publish = false
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-toml_edit = "0.25"
+toml_edit.workspace = true
