@@ -1,8 +1,9 @@
 //! Auth key resolution chain — independent of `Config` business fields.
 //!
 //! Implements the out-of-chain auth resolution order from `docs/config.md` §3:
-//!   `ANTHROPIC_AUTH_TOKEN` env
-//!     → provider-specific env (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / …)
+//!   `CRAB_API_KEY` env (universal, any provider)
+//!     → `ANTHROPIC_AUTH_TOKEN` env (anthropic provider only)
+//!     → provider-specific env (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY`)
 //!     → `apiKeyHelper` script execution
 //!     → system keychain
 //!     → `~/.crab/auth/tokens.json` (`OAuth` access token)
@@ -22,7 +23,13 @@ use crab_config::Config;
 pub fn resolve_auth_key(cfg: &Config) -> Option<String> {
     let provider = cfg.api_provider.as_deref();
 
-    // 1. ANTHROPIC_AUTH_TOKEN: only consulted for anthropic provider (or unset, which
+    // 1. CRAB_API_KEY: universal override, applies to any provider.
+    //    Use when you want crab to use one key regardless of provider routing.
+    if let Some(v) = read_env("CRAB_API_KEY") {
+        return Some(v);
+    }
+
+    // 2. ANTHROPIC_AUTH_TOKEN: only consulted for anthropic provider (or unset, which
     //    defaults to anthropic). This token is anthropic-specific (CCB-compat OAuth-equivalent);
     //    leaking it to deepseek/openai would send the wrong credential and trigger 401s for
     //    users who have it set in their shell from a prior CCB session.
@@ -32,7 +39,7 @@ pub fn resolve_auth_key(cfg: &Config) -> Option<String> {
         return Some(v);
     }
 
-    // 2. Provider-specific API key env vars.
+    // 3. Provider-specific API key env vars.
     for var in provider_env_vars(provider) {
         if let Some(v) = read_env(var) {
             return Some(v);

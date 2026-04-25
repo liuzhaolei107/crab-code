@@ -72,19 +72,22 @@ The following values never participate in the file/runtime merge chain, never ap
 
 ### Authentication Resolution Order
 
-The chain is **provider-aware** — only env vars semantically tied to the active provider are consulted:
+The chain is **provider-aware** — only env vars semantically tied to the active provider are consulted, with `CRAB_API_KEY` as a universal override:
 
 ```
-[provider = anthropic | unset]   ANTHROPIC_AUTH_TOKEN → ANTHROPIC_API_KEY
-[provider = openai/ollama/vllm]  OPENAI_API_KEY
-[provider = deepseek]            DEEPSEEK_API_KEY → OPENAI_API_KEY
+CRAB_API_KEY (universal, any provider)
+    → [provider = anthropic | unset]   ANTHROPIC_AUTH_TOKEN → ANTHROPIC_API_KEY
+    → [provider = openai/ollama/vllm]  OPENAI_API_KEY
+    → [provider = deepseek]            DEEPSEEK_API_KEY → OPENAI_API_KEY
     → apiKeyHelper script (config-declared path; stdout consumed)
     → system keychain
     → auth/tokens.json (OAuth, per provider)
     → error
 ```
 
-Critical invariant: **`ANTHROPIC_AUTH_TOKEN` never flows to non-anthropic providers**. CCB users routinely have it set in their shell environment; without provider gating, configuring `provider = "deepseek"` in `config.toml` would silently leak the Anthropic token to deepseek's endpoint and produce a 401.
+Critical invariants:
+- **`CRAB_API_KEY`** is the universal escape hatch — set it when you want crab to use one key regardless of provider routing.
+- **`ANTHROPIC_AUTH_TOKEN` never flows to non-anthropic providers**. CCB users routinely have it set in their shell environment; without provider gating, configuring `provider = "deepseek"` in `config.toml` would silently leak the Anthropic token to deepseek's endpoint and produce a 401.
 
 This chain is orthogonal to the file-layer merge chain. A user may configure `apiKeyHelper` in `config.toml`, but the secret it returns never round-trips through `Config`.
 
@@ -217,7 +220,7 @@ The dotted override form mirrors `codex -c key.path=value` and lets users tweak 
 
 ## 6. The `env` Field
 
-The `Config` struct carries an `env: HashMap<String, String>` field that mirrors Claude Code's behavior. This looks like it contradicts the "secrets must not live in `Config`" rule, but the semantics are different:
+The `Config` struct carries an `env: HashMap<String, String>` field intended to mirror Claude Code's behavior:
 
 ```toml
 # ~/.crab/config.toml
@@ -226,11 +229,13 @@ ANTHROPIC_BASE_URL = "https://proxy.corp.internal/api"
 HTTP_PROXY = "http://proxy:8080"
 ```
 
-**Interpretation.** The `env` field declares environment variables to **inject into child processes Crab spawns**, and to set on Crab's own process at startup. It is not a business field read by the agent — it is a small startup-script fragment expressed as data.
+**Intended semantics.** The `env` field declares environment variables to **inject into child processes Crab spawns** (such as MCP server stdio children), and to set on Crab's own process at startup. It is not a business field read by the agent — it is a small startup-script fragment expressed as data.
 
-**Implication for secrets.** A user may place `ANTHROPIC_AUTH_TOKEN` under `[env]`. When Crab starts, it exports the variable, and the `auth` module reads it from the OS environment exactly as if it had been set by the shell. The secret therefore flows through the OS env path, not through a business `Config` field. This matches how Claude Code users configure third-party proxies today.
+**Current implementation status.** As of this writing the field is **parsed and validated** but **runtime injection is not wired up** — the workspace forbids `unsafe_code`, which Rust 2024 requires for `std::env::set_var`. The honest contract today: putting values under `[env]` does **not** make them visible to the auth resolver or to child processes; the field is reserved for forward-compatibility. To inject env vars in the meantime, set them in the parent shell.
 
-**What is still removed.** Any direct secret field on `Config` (e.g., the current `apiKey: Option<String>`) is removed. The only settings-level hooks into authentication that remain are the indirect `env` channel and the `apiKeyHelper` pointer.
+**Plugin-layer security constraint.** Plugin `config.json` files are **forbidden from setting an `env` field** (`plugin_loader.rs::reject_forbidden_keys`), even before runtime injection lands — so plugins cannot quietly hijack secrets or proxy targets even in future.
+
+**What is still removed.** Any direct secret field on `Config` (e.g., the historical `apiKey: Option<String>`) is removed. The settings-level hook into authentication is the `apiKeyHelper` pointer; secret env vars (`CRAB_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`) are read by the `auth` module from the **process environment**, not from `Config`.
 
 ---
 
