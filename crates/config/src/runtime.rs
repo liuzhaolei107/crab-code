@@ -20,11 +20,36 @@ use toml::value::Table;
 
 /// Project the captured process environment into a partial `toml::Value`.
 ///
-/// Currently a no-op placeholder; the `CRAB_*` mapping table lands in a
-/// follow-up commit so the runtime slot can be wired up incrementally.
+/// Only the public, non-secret `CRAB_*` knobs are mapped today:
+///
+/// | env var              | config field   |
+/// |----------------------|----------------|
+/// | `CRAB_MODEL`         | `model`        |
+/// | `CRAB_API_PROVIDER`  | `apiProvider`  |
+/// | `CRAB_API_BASE_URL`  | `apiBaseUrl`   |
+///
+/// Empty values are ignored so an explicitly-cleared variable behaves the
+/// same as an unset one. Secret env vars (`CRAB_API_KEY`,
+/// `ANTHROPIC_API_KEY`, …) are deliberately **not** mapped here — they
+/// flow through the `auth` module so they never round-trip through
+/// `Config`.
 #[must_use]
-pub fn env_to_value(_env: &HashMap<String, String>) -> Value {
-    Value::Table(Table::new())
+pub fn env_to_value(env: &HashMap<String, String>) -> Value {
+    let mut root = Table::new();
+
+    let mut put = |env_key: &str, config_key: &str| {
+        if let Some(value) = env.get(env_key)
+            && !value.is_empty()
+        {
+            root.insert(config_key.into(), Value::String(value.clone()));
+        }
+    };
+
+    put("CRAB_MODEL", "model");
+    put("CRAB_API_PROVIDER", "apiProvider");
+    put("CRAB_API_BASE_URL", "apiBaseUrl");
+
+    Value::Table(root)
 }
 
 /// Parse a list of `-c / --config-override` `KEY.PATH=VALUE` strings into a
@@ -194,14 +219,48 @@ mod tests {
         assert_eq!(env_tbl["PATH"].as_str(), Some("/usr/bin:/usr/local/bin"));
     }
 
+    fn env_map(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
     #[test]
-    fn env_to_value_is_currently_empty_placeholder() {
-        let env: HashMap<String, String> = [("CRAB_MODEL".into(), "opus".into())]
-            .into_iter()
-            .collect();
-        let v = env_to_value(&env);
-        // env mapping lands in a follow-up commit; today the placeholder
-        // returns an empty table so the runtime slot still composes.
-        assert!(v.as_table().unwrap().is_empty());
+    fn env_to_value_maps_known_keys() {
+        let v = env_to_value(&env_map(&[
+            ("CRAB_MODEL", "haiku"),
+            ("CRAB_API_PROVIDER", "openai"),
+            ("CRAB_API_BASE_URL", "https://example.test"),
+        ]));
+        let table = v.as_table().unwrap();
+        assert_eq!(table["model"].as_str(), Some("haiku"));
+        assert_eq!(table["apiProvider"].as_str(), Some("openai"));
+        assert_eq!(table["apiBaseUrl"].as_str(), Some("https://example.test"));
+    }
+
+    #[test]
+    fn env_to_value_ignores_unrelated_and_empty() {
+        let v = env_to_value(&env_map(&[
+            ("PATH", "/usr/bin"),
+            ("CRAB_MODEL", ""),
+            ("HOME", "/root"),
+        ]));
+        let table = v.as_table().unwrap();
+        assert!(table.is_empty());
+    }
+
+    #[test]
+    fn env_to_value_does_not_map_secret_keys() {
+        let v = env_to_value(&env_map(&[
+            ("CRAB_API_KEY", "sk-secret"),
+            ("ANTHROPIC_API_KEY", "sk-anthropic"),
+            ("CRAB_MODEL", "opus"),
+        ]));
+        let table = v.as_table().unwrap();
+        assert!(table.contains_key("model"));
+        assert!(!table.contains_key("apiKey"));
+        assert!(!table.contains_key("anthropicApiKey"));
+        assert_eq!(table.len(), 1);
     }
 }
