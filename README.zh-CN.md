@@ -17,7 +17,7 @@
 
 > **积极开发中** — 3600+ 测试 · 24 crate · ~144k LOC
 
-Crab Code 是一个 Rust 原生的 Agentic Coding CLI。它对齐 Claude Code 的工具集、权限模型和交互方式，同时支持任意 LLM 提供商（Anthropic / OpenAI / DeepSeek / Ollama / Bedrock / Vertex 等）。
+Crab Code 是一个 Rust 原生的 Agentic Coding CLI。它对齐 Claude Code 的工具集、权限模型和交互方式，同时支持任意 LLM 提供商（Anthropic / OpenAI / DeepSeek / Bedrock / Vertex）。
 
 ## 快速开始
 
@@ -31,21 +31,54 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ./target/release/crab -p "修复 bug"      # 非交互
 ```
 
-更多用法见 `crab --help`。配置文件：`~/.crab/settings.json`
+更多用法见 `crab --help`。配置在 `~/.crab/config.toml`（snake_case TOML），完整加载与合并规范见 [`docs/config.md`](docs/config.md)。
+
+## 配置
+
+配置来源优先级（低 → 高）：
+
+```
+defaults  <  plugin  <  user  <  project  <  local  <  --config <file>     (file 层)
+                                                            <
+                                                       env  <  CLI flag    (runtime 层)
+```
+
+- **User**：`~/.crab/config.toml`（或 `$CRAB_CONFIG_DIR/config.toml`）
+- **Project**：`$PWD/.crab/config.toml`（入 git）
+- **Local**：`$PWD/.crab/config.local.toml`（gitignored）
+- **`--config <path>`**：CLI 注入文件
+- **`-c key.path=value`**：dotted runtime 覆盖（TOML 语法，可重复）
+
+`config.toml` 示例：
+
+```toml
+api_provider = "deepseek"
+base_url = "https://api.deepseek.com"
+model = "deepseek-chat"
+api_key = "sk-..."           # 可选；env 同时设置时 env 赢
+
+[permissions]
+allow = ["Bash(git:*)", "Read", "Edit"]
+deny  = ["Bash(rm:*)"]       # deny 永远赢 allow
+```
 
 ## 环境变量
 
-优先级：环境变量覆盖 `settings.json`，后者覆盖 `config.toml` 默认值。
+env（runtime 层）永远赢 file。互斥变量按"高优先级先生效"。
 
 | 分类 | 变量 | 用途 |
 |------|------|------|
-| Provider | `CRAB_API_PROVIDER` | 覆盖 provider：`anthropic`、`openai`、`deepseek`、`ollama`、`vllm`、`bedrock`、`vertex` |
-| Provider | `CRAB_API_KEY` | 统一 API key（优先级高于下方 provider 专用 key） |
+| Provider | `CRAB_API_PROVIDER` | 覆盖 provider：`anthropic`、`openai`、`deepseek`、`bedrock`、`vertex`、`custom` |
+| Provider | `CRAB_API_KEY` | 通用 API key（任意 provider，最高优先级） |
 | Provider | `CRAB_MODEL` | 覆盖模型名 |
-| Provider | `CRAB_API_BASE_URL` | 覆盖 base URL（用于 OpenAI 兼容端点） |
-| Provider | `ANTHROPIC_API_KEY` | Anthropic key（`CRAB_API_KEY` 未设置时使用） |
-| Provider | `OPENAI_API_KEY` | OpenAI / Ollama / vLLM / DeepSeek 兼容端点 key |
-| Provider | `DEEPSEEK_API_KEY` | DeepSeek key |
+| Provider | `CRAB_BASE_URL` | 通用 base URL 覆盖 |
+| Provider | `CRAB_CONFIG_DIR` | 重定位配置根（默认 `~/.crab/`） |
+| Provider | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | 仅 anthropic provider |
+| Provider | `ANTHROPIC_BASE_URL` | Anthropic base URL（仅当 `CRAB_API_PROVIDER=anthropic`） |
+| Provider | `OPENAI_API_KEY` | OpenAI provider |
+| Provider | `OPENAI_BASE_URL` | OpenAI base URL（仅当 `CRAB_API_PROVIDER=openai`） |
+| Provider | `DEEPSEEK_API_KEY` | DeepSeek provider |
+| Provider | `DEEPSEEK_BASE_URL` | DeepSeek base URL（仅当 `CRAB_API_PROVIDER=deepseek`） |
 | Bedrock | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | 静态凭证 |
 | Bedrock | `AWS_SESSION_TOKEN` | 可选 session token（用于临时凭证） |
 | Bedrock | `AWS_REGION` / `AWS_DEFAULT_REGION` | AWS 区域 |
@@ -80,10 +113,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 24 个 Rust crate，4 层依赖。详见 [`docs/architecture.md`](docs/architecture.md)。
 
 ```
-入口    cli · daemon
+入口    cli · daemon · acp
 编排    agent · engine · session · tui · remote
-服务    api · tools · mcp · skill · plugin · telemetry · ide · sandbox · job · acp
-基础    core · common · config · auth · fs · memory · process
+服务    api · tools · mcp · skill · plugin · telemetry · ide · sandbox · job · fs · memory · process
+基础    core · common · config · auth
 ```
 
 ## 构建与测试

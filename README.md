@@ -17,7 +17,7 @@
 
 > **Active Development** — 3600+ tests · 24 crates · ~144k LOC
 
-Crab Code is a Rust-native agentic coding CLI. It aligns with Claude Code's toolset, permission model, and interaction patterns while supporting any LLM provider (Anthropic / OpenAI / DeepSeek / Ollama / Bedrock / Vertex, etc.).
+Crab Code is a Rust-native agentic coding CLI. It aligns with Claude Code's toolset, permission model, and interaction patterns while supporting any LLM provider (Anthropic / OpenAI / DeepSeek / Bedrock / Vertex).
 
 ## Quick Start
 
@@ -31,21 +31,54 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ./target/release/crab -p "fix the bug"  # Non-interactive
 ```
 
-See `crab --help` for more. Config: `~/.crab/settings.json`
+See `crab --help` for more. Config lives at `~/.crab/config.toml` (snake_case TOML); the full loading & merge spec is in [`docs/config.md`](docs/config.md).
+
+## Configuration
+
+Config sources, low → high priority:
+
+```
+defaults  <  plugin  <  user  <  project  <  local  <  --config <file>     (file layer)
+                                                            <
+                                                       env  <  CLI flag    (runtime layer)
+```
+
+- **User**: `~/.crab/config.toml` (or `$CRAB_CONFIG_DIR/config.toml`)
+- **Project**: `$PWD/.crab/config.toml` (committed)
+- **Local**: `$PWD/.crab/config.local.toml` (gitignored)
+- **`--config <path>`**: CLI-injected file
+- **`-c key.path=value`**: dotted runtime override (TOML grammar; repeatable)
+
+Example `config.toml`:
+
+```toml
+api_provider = "deepseek"
+base_url = "https://api.deepseek.com"
+model = "deepseek-chat"
+api_key = "sk-..."           # optional; env wins if both set
+
+[permissions]
+allow = ["Bash(git:*)", "Read", "Edit"]
+deny  = ["Bash(rm:*)"]       # deny always wins over allow
+```
 
 ## Environment Variables
 
-Priority: env vars override `settings.json`, which overrides `config.toml` defaults.
+Env (runtime layer) always wins over file. Mutually-exclusive variants apply highest-first.
 
 | Category | Variable | Purpose |
 |----------|----------|---------|
-| Provider | `CRAB_API_PROVIDER` | Override provider: `anthropic`, `openai`, `deepseek`, `ollama`, `vllm`, `bedrock`, `vertex` |
-| Provider | `CRAB_API_KEY` | Unified API key (takes priority over provider-specific keys) |
+| Provider | `CRAB_API_PROVIDER` | Override provider: `anthropic`, `openai`, `deepseek`, `bedrock`, `vertex`, `custom` |
+| Provider | `CRAB_API_KEY` | Universal API key (any provider; highest priority) |
 | Provider | `CRAB_MODEL` | Override model name |
-| Provider | `CRAB_API_BASE_URL` | Override base URL (for OpenAI-compatible endpoints) |
-| Provider | `ANTHROPIC_API_KEY` | Anthropic key (used when `CRAB_API_KEY` is unset) |
-| Provider | `OPENAI_API_KEY` | OpenAI / Ollama / vLLM / DeepSeek-compat key |
-| Provider | `DEEPSEEK_API_KEY` | DeepSeek key |
+| Provider | `CRAB_BASE_URL` | Universal base URL override |
+| Provider | `CRAB_CONFIG_DIR` | Relocate config root (default `~/.crab/`) |
+| Provider | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | Anthropic provider only |
+| Provider | `ANTHROPIC_BASE_URL` | Anthropic base URL (only when `CRAB_API_PROVIDER=anthropic`) |
+| Provider | `OPENAI_API_KEY` | OpenAI provider |
+| Provider | `OPENAI_BASE_URL` | OpenAI base URL (only when `CRAB_API_PROVIDER=openai`) |
+| Provider | `DEEPSEEK_API_KEY` | DeepSeek provider |
+| Provider | `DEEPSEEK_BASE_URL` | DeepSeek base URL (only when `CRAB_API_PROVIDER=deepseek`) |
 | Bedrock | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Static credentials |
 | Bedrock | `AWS_SESSION_TOKEN` | Optional session token (temporary credentials) |
 | Bedrock | `AWS_REGION` / `AWS_DEFAULT_REGION` | AWS region |
@@ -80,10 +113,10 @@ Priority: env vars override `settings.json`, which overrides `config.toml` defau
 24 Rust crates in 4 layers. See [`docs/architecture.md`](docs/architecture.md) for details.
 
 ```
-Entry     cli · daemon
+Entry     cli · daemon · acp
 Engine    agent · engine · session · tui · remote
-Service   api · tools · mcp · skill · plugin · telemetry · ide · sandbox · job · acp
-Foundation core · common · config · auth · fs · memory · process
+Service   api · tools · mcp · skill · plugin · telemetry · ide · sandbox · job · fs · memory · process
+Foundation core · common · config · auth
 ```
 
 ## Build & Test
