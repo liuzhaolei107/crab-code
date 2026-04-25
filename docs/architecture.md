@@ -12,9 +12,9 @@
 
 | Layer | Crate | Responsibility |
 |-------|-------|----------------|
-| **Layer 4** Entry Layer | `cli` `daemon` | CLI entry point (clap), background daemon |
+| **Layer 4** Entry Layer | `cli` `daemon` `acp` | CLI entry point (clap), background daemon, ACP stdio adapter |
 | **Layer 3** Engine Layer | `agent` `engine` `session` `tui` `remote` | Query loop, multi-agent orchestration, session state, terminal UI, remote-control WebSocket server + client |
-| **Layer 2** Service Layer | `api` `tools` `mcp` `fs` `process` `sandbox` `remote` `ide` `skill` `plugin` `memory` `telemetry` | Tool system, MCP stack, LLM clients, file/process/sandbox, claude.ai outbound client, IDE client, skill system, plugins, persistent memory, telemetry |
+| **Layer 2** Service Layer | `api` `tools` `mcp` `fs` `process` `sandbox` `ide` `skill` `plugin` `memory` `telemetry` `job` | Tool system, MCP stack, LLM clients, file/process/sandbox, IDE client, skill system, plugins, persistent memory, telemetry, unified job scheduling |
 | **Layer 1** Foundation Layer | `core` `common` `config` `auth` | Domain model, layered config, authentication |
 
 > Dependency direction: upper layers depend on lower layers; reverse dependencies are prohibited. `core` defines the `Tool` trait to avoid circular dependencies between `tools` and `agent`. See §5.3 for inner-layer rules (aggregator vs leaf service; Layer 3 Event-only control flow).
@@ -76,7 +76,7 @@
 
 1. **core has zero I/O** -- Pure data structures and trait definitions, reusable by any frontend (CLI/GUI/WASM)
 2. **Message loop driven** -- Everything revolves around the query loop: user input -> API call -> tool execution -> result return
-3. **Workspace isolation** -- 20 library crates with orthogonal responsibilities (plus 2 bin + xtask = 23 total); incremental compilation only triggers on changed parts
+3. **Workspace isolation** -- 22 library crates with orthogonal responsibilities (plus 2 bin + xtask = 25 total); incremental compilation only triggers on changed parts
 4. **Feature flags control dependencies** -- No Bedrock? AWS SDK is not compiled. No WASM? wasmtime is not compiled.
 
 ---
@@ -655,7 +655,7 @@ crab-code/
 | Binary crate | 2 | `crates/cli` `crates/daemon` |
 | Helper crate | 1 | `xtask` |
 | **Total** | **23** | -- |
-| Total modules | ~300 | Across 20 library crates |
+| Total modules | ~300 | Across 22 library crates |
 | Total tests | ~2700 | `cargo test --workspace` |
 
 
