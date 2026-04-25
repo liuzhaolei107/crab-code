@@ -48,7 +48,8 @@ impl TrustContext {
 
         let project_settings = crab_config::config::load_project(project_dir).unwrap_or_default();
         let local_settings = crab_config::config::load_local(project_dir).unwrap_or_default();
-        let merged = project_settings.merge(&local_settings);
+        let merged =
+            crab_config::overlay_config(&project_settings, &local_settings).unwrap_or_default();
 
         let mcp_servers = merged
             .mcp_servers

@@ -50,7 +50,10 @@ pub fn run(action: &ConfigAction) -> anyhow::Result<()> {
 /// `crab config list` — print all effective config as pretty JSON.
 fn cmd_list() -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().ok();
-    let merged = config::load_merged_config(working_dir.as_ref())?;
+    let ctx = crab_config::ResolveContext::new()
+        .with_project_dir(working_dir)
+        .with_process_env();
+    let merged = crab_config::resolve(&ctx)?;
     let json = serde_json::to_string_pretty(&merged)?;
     println!("{json}");
     Ok(())
@@ -59,7 +62,10 @@ fn cmd_list() -> anyhow::Result<()> {
 /// `crab config get <key>` — print a single config value.
 fn cmd_get(key: &str) -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().ok();
-    let merged = config::load_merged_config(working_dir.as_ref())?;
+    let ctx = crab_config::ResolveContext::new()
+        .with_project_dir(working_dir)
+        .with_process_env();
+    let merged = crab_config::resolve(&ctx)?;
     let value = config_to_map(&merged);
 
     match value.get(key) {

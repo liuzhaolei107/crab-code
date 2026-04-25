@@ -62,7 +62,10 @@ fn check_providers(settings: &crab_config::Config) -> Vec<ProviderStatus> {
 
 pub fn run(action: &AuthAction) -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().unwrap_or_default();
-    let settings = crab_config::config::load_merged_config(Some(&working_dir)).unwrap_or_default();
+    let ctx = crab_config::ResolveContext::new()
+        .with_project_dir(Some(working_dir))
+        .with_process_env();
+    let settings = crab_config::resolve(&ctx).unwrap_or_default();
 
     match action {
         AuthAction::Login => run_login(&settings),

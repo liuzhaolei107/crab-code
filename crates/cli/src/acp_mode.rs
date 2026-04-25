@@ -35,8 +35,10 @@ use tokio_util::sync::CancellationToken;
 /// Build the ACP agent from config and run it until stdin closes.
 pub async fn run() -> anyhow::Result<()> {
     let working_dir = std::env::current_dir()?;
-    let settings = crab_config::config::load_merged_config_with_sources(Some(&working_dir), None)
-        .unwrap_or_default();
+    let ctx = crab_config::ResolveContext::new()
+        .with_project_dir(Some(working_dir.clone()))
+        .with_process_env();
+    let settings = crab_config::resolve(&ctx).unwrap_or_default();
 
     let backend = Arc::new(crab_api::create_backend(&settings));
     let system_prompt = "You are crab, an AI coding assistant.".to_string();

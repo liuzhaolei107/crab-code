@@ -7,7 +7,8 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::config::{self, Config};
+use crate::config::Config;
+use crate::loader::{ResolveContext, resolve};
 
 /// Cached, lazily-loaded settings.
 ///
@@ -43,15 +44,10 @@ impl SettingsCache {
             return Ok(cached.clone());
         }
 
-        // Load and merge: global → project → local (each layer optional)
-        let global = config::load_global().unwrap_or_default();
-
-        let merged = if let Some(ref project_dir) = self.project_dir {
-            let project = config::load_project(project_dir).unwrap_or_default();
-            global.merge(&project)
-        } else {
-            global
-        };
+        // Resolve via the value-layer loader: defaults < user < project < local.
+        // Local layer is always included so per-developer overrides apply.
+        let ctx = ResolveContext::new().with_project_dir(self.project_dir.clone());
+        let merged = resolve(&ctx).unwrap_or_default();
 
         *guard = Some(merged.clone());
         drop(guard);

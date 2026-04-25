@@ -672,8 +672,12 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
         .setting_sources
         .as_ref()
         .map(|s| crab_config::config::ConfigSource::parse_list(s));
-    let (mut settings, validation_warnings) =
-        crab_config::config::load_merged_config_validated(Some(&working_dir), sources.as_deref())?;
+    let resolve_ctx = crab_config::ResolveContext::new()
+        .with_project_dir(Some(working_dir.clone()))
+        .with_process_env()
+        .with_sources_filter(sources);
+    let mut settings = crab_config::resolve(&resolve_ctx)?;
+    let validation_warnings = crab_config::validate_all_config_files(Some(&working_dir));
     for w in &validation_warnings {
         tracing::warn!("settings validation: {w}");
     }
@@ -681,7 +685,7 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
     // Apply --settings overlay (higher priority than settings files, lower than CLI flags)
     if let Some(ref settings_arg) = cli.settings {
         let overlay = load_settings_arg(settings_arg)?;
-        settings = settings.merge(&overlay);
+        settings = crab_config::overlay_config(&settings, &overlay)?;
     }
 
     // Apply --mcp-config: load MCP server configs from file(s)

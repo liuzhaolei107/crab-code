@@ -107,8 +107,12 @@ impl Default for RunConfig {
 /// Returns an error if settings loading, backend creation, or the query fails.
 pub async fn run_once(config: RunConfig) -> anyhow::Result<()> {
     // 1. Load settings
-    let merged_settings =
-        config::load_merged_config(Some(&config.project_dir)).context("failed to load settings")?;
+    let merged_settings = {
+        let ctx = crab_config::ResolveContext::new()
+            .with_project_dir(Some(config.project_dir.clone()))
+            .with_process_env();
+        crab_config::resolve(&ctx).context("failed to load settings")?
+    };
 
     // 2. Resolve provider and model
     let provider = if config.provider == "anthropic" {

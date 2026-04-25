@@ -95,8 +95,12 @@ impl Default for ChatConfig {
 /// TUI/REPL loop fails.
 pub async fn run_chat(config: ChatConfig) -> anyhow::Result<()> {
     // 1. Load merged settings
-    let merged_settings =
-        config::load_merged_config(Some(&config.project_dir)).context("failed to load settings")?;
+    let merged_settings = {
+        let ctx = crab_config::ResolveContext::new()
+            .with_project_dir(Some(config.project_dir.clone()))
+            .with_process_env();
+        crab_config::resolve(&ctx).context("failed to load settings")?
+    };
 
     // 2. Resolve effective model and provider
     let provider = if config.provider == "anthropic" {

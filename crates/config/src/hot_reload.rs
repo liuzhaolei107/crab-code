@@ -173,7 +173,7 @@ pub fn start_watching(config: HotReloadConfig) -> ConfigWatcher {
     }
 }
 
-/// Reload logic — parameterized to use the same merge chain as `settings.rs`.
+/// Reload logic — parameterized to use the same merge chain as the loader.
 fn load_current_settings(config: &HotReloadConfig) -> Config {
     let project_dir = config
         .project_path
@@ -182,7 +182,8 @@ fn load_current_settings(config: &HotReloadConfig) -> Config {
         .and_then(|p| p.parent())
         .map(PathBuf::from);
 
-    crate::config::load_merged_config(project_dir.as_ref()).unwrap_or_default()
+    let ctx = crate::loader::ResolveContext::new().with_project_dir(project_dir);
+    crate::loader::resolve(&ctx).unwrap_or_default()
 }
 
 // ── Standalone reload function (non-async) ────────────────────────────
@@ -190,7 +191,8 @@ fn load_current_settings(config: &HotReloadConfig) -> Config {
 /// Manually reload settings from disk. Useful for one-shot reloads
 /// without the background watcher.
 pub fn reload_config(project_dir: Option<&PathBuf>) -> crab_core::Result<Config> {
-    crate::config::load_merged_config(project_dir)
+    let ctx = crate::loader::ResolveContext::new().with_project_dir(project_dir.cloned());
+    crate::loader::resolve(&ctx)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────

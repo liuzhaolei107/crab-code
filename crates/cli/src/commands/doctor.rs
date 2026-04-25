@@ -12,7 +12,10 @@ struct Check {
 pub fn run() -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let global_dir = crab_config::config::global_config_dir();
-    let settings = crab_config::config::load_merged_config(Some(&working_dir)).unwrap_or_default();
+    let ctx = crab_config::ResolveContext::new()
+        .with_project_dir(Some(working_dir.clone()))
+        .with_process_env();
+    let settings = crab_config::resolve(&ctx).unwrap_or_default();
 
     let checks = vec![
         check_api_key(&settings),
