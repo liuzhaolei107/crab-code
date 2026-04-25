@@ -20,19 +20,24 @@ use toml::value::Table;
 
 /// Project the captured process environment into a partial `toml::Value`.
 ///
-/// Only the public, non-secret `CRAB_*` knobs are mapped today:
+/// Public, non-secret env knobs:
 ///
-/// | env var              | config field   |
-/// |----------------------|----------------|
-/// | `CRAB_MODEL`         | `model`        |
-/// | `CRAB_API_PROVIDER`  | `apiProvider`  |
-/// | `CRAB_API_BASE_URL`  | `apiBaseUrl`   |
+/// | env var              | config field   | notes                                 |
+/// |----------------------|----------------|----------------------------------------|
+/// | `CRAB_MODEL`         | `model`        |                                        |
+/// | `CRAB_API_PROVIDER`  | `apiProvider`  |                                        |
+/// | `CRAB_BASE_URL`       | `apiBaseUrl`   | universal override (highest priority)  |
+/// | `ANTHROPIC_BASE_URL` | `apiBaseUrl`   | only when provider is anthropic/unset (CCB-compat name) |
+/// | `OPENAI_BASE_URL`     | `apiBaseUrl`   | only when provider is openai/ollama/vllm |
+/// | `DEEPSEEK_BASE_URL`   | `apiBaseUrl`   | only when provider is deepseek         |
 ///
-/// Empty values are ignored so an explicitly-cleared variable behaves the
-/// same as an unset one. Secret env vars (`CRAB_API_KEY`,
-/// `ANTHROPIC_API_KEY`, …) are deliberately **not** mapped here — they
-/// flow through the `auth` module so they never round-trip through
-/// `Config`.
+/// URL vars are **mutually exclusive** — `CRAB_BASE_URL` wins outright; otherwise the
+/// provider-specific URL matching `CRAB_API_PROVIDER` (defaulting to anthropic if unset)
+/// is used. Empty values behave the same as unset.
+///
+/// Secret env vars (`CRAB_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `<PROVIDER>_API_KEY`) are
+/// deliberately **not** mapped here — they flow through the `auth` module so they never
+/// round-trip through `Config`.
 #[must_use]
 #[allow(clippy::implicit_hasher)]
 pub fn env_to_value(env: &HashMap<String, String>) -> Value {
@@ -48,7 +53,29 @@ pub fn env_to_value(env: &HashMap<String, String>) -> Value {
 
     put("CRAB_MODEL", "model");
     put("CRAB_API_PROVIDER", "apiProvider");
-    put("CRAB_API_BASE_URL", "apiBaseUrl");
+
+    // API base URL: mutually exclusive — the highest-priority env that's set wins.
+    //   1. CRAB_BASE_URL                  (universal override)
+    //   2. <PROVIDER>_BASE_URL            (provider determined by CRAB_API_PROVIDER env;
+    //                                       defaults to anthropic when env not set)
+    let url = env
+        .get("CRAB_BASE_URL")
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            let provider = env
+                .get("CRAB_API_PROVIDER")
+                .map(String::as_str)
+                .unwrap_or("anthropic");
+            let var = match provider {
+                "openai" | "ollama" | "vllm" => "OPENAI_BASE_URL",
+                "deepseek" => "DEEPSEEK_BASE_URL",
+                _ => "ANTHROPIC_BASE_URL", // CCB-compat name for anthropic
+            };
+            env.get(var).filter(|s| !s.is_empty())
+        });
+    if let Some(v) = url {
+        root.insert("apiBaseUrl".into(), Value::String(v.clone()));
+    }
 
     Value::Table(root)
 }
@@ -232,12 +259,39 @@ mod tests {
         let v = env_to_value(&env_map(&[
             ("CRAB_MODEL", "haiku"),
             ("CRAB_API_PROVIDER", "openai"),
-            ("CRAB_API_BASE_URL", "https://example.test"),
+            ("CRAB_BASE_URL", "https://example.test"),
         ]));
         let table = v.as_table().unwrap();
         assert_eq!(table["model"].as_str(), Some("haiku"));
         assert_eq!(table["apiProvider"].as_str(), Some("openai"));
         assert_eq!(table["apiBaseUrl"].as_str(), Some("https://example.test"));
+    }
+
+    #[test]
+    fn env_to_value_url_provider_routing() {
+        // DEEPSEEK_BASE_URL only honored when CRAB_API_PROVIDER=deepseek
+        let v = env_to_value(&env_map(&[
+            ("CRAB_API_PROVIDER", "deepseek"),
+            ("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+            ("ANTHROPIC_BASE_URL", "https://wrong"),
+        ]));
+        assert_eq!(
+            v.as_table().unwrap()["apiBaseUrl"].as_str(),
+            Some("https://api.deepseek.com/v1"),
+        );
+    }
+
+    #[test]
+    fn env_to_value_crab_api_url_wins_over_provider_specific() {
+        let v = env_to_value(&env_map(&[
+            ("CRAB_API_PROVIDER", "deepseek"),
+            ("DEEPSEEK_BASE_URL", "https://provider-specific"),
+            ("CRAB_BASE_URL", "https://universal"),
+        ]));
+        assert_eq!(
+            v.as_table().unwrap()["apiBaseUrl"].as_str(),
+            Some("https://universal"),
+        );
     }
 
     #[test]
