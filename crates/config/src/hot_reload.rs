@@ -1,4 +1,4 @@
-//! Configuration hot-reload — monitors settings files and reloads on change.
+//! Configuration hot-reload — monitors config files and reloads on change.
 //!
 //! Uses polling (file metadata mtime) to detect changes, with configurable
 //! debounce interval. Publishes updated `Config` via `tokio::sync::watch`.
@@ -23,9 +23,9 @@ pub struct HotReloadConfig {
     pub poll_interval: Duration,
     /// Debounce window — ignore repeated changes within this window (default: 500ms).
     pub debounce: Duration,
-    /// Global settings file path (`~/.crab/settings.json`).
+    /// Global config file path (`~/.crab/config.toml`).
     pub global_path: PathBuf,
-    /// Project settings file path (`.crab/settings.json`), if any.
+    /// Project config file path (`.crab/config.toml`), if any.
     pub project_path: Option<PathBuf>,
 }
 
@@ -33,9 +33,10 @@ impl HotReloadConfig {
     /// Create a config with default intervals for a given project directory.
     #[must_use]
     pub fn new(project_dir: Option<&Path>) -> Self {
-        let global_path = crate::config::global_config_dir().join("settings.json");
-        let project_path =
-            project_dir.map(|d| crate::config::project_config_dir(d).join("settings.json"));
+        let global_path =
+            crate::config::global_config_dir().join(crate::config::config_file_name());
+        let project_path = project_dir
+            .map(|d| crate::config::project_config_dir(d).join(crate::config::config_file_name()));
         Self {
             poll_interval: Duration::from_secs(2),
             debounce: Duration::from_millis(500),
@@ -215,7 +216,7 @@ mod tests {
         assert!(config.project_path.is_some());
         let pp = config.project_path.unwrap();
         assert!(pp.to_string_lossy().contains(".crab"));
-        assert!(pp.to_string_lossy().contains("settings.json"));
+        assert!(pp.to_string_lossy().contains("config.toml"));
     }
 
     #[test]
@@ -348,11 +349,7 @@ mod tests {
         ));
         let crab_dir = dir.join(".crab");
         std::fs::create_dir_all(&crab_dir).unwrap();
-        std::fs::write(
-            crab_dir.join("settings.json"),
-            r#"{"model": "reload-test"}"#,
-        )
-        .unwrap();
+        std::fs::write(crab_dir.join("config.toml"), r#"model = "reload-test""#).unwrap();
 
         let result = reload_config(Some(&dir)).unwrap();
         assert_eq!(result.model.as_deref(), Some("reload-test"));
@@ -397,13 +394,13 @@ mod tests {
         ));
         let crab_dir = dir.join(".crab");
         std::fs::create_dir_all(&crab_dir).unwrap();
-        let settings_file = crab_dir.join("settings.json");
-        std::fs::write(&settings_file, r#"{"model": "before"}"#).unwrap();
+        let config_file = crab_dir.join("config.toml");
+        std::fs::write(&config_file, r#"model = "before""#).unwrap();
 
         let config = HotReloadConfig {
             poll_interval: Duration::from_millis(50),
             debounce: Duration::from_millis(10),
-            global_path: settings_file.clone(),
+            global_path: config_file.clone(),
             project_path: None,
         };
 
@@ -414,7 +411,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Modify the file
-        std::fs::write(&settings_file, r#"{"model": "after"}"#).unwrap();
+        std::fs::write(&config_file, r#"model = "after""#).unwrap();
 
         // Wait for the watcher to detect the change
         let changed = tokio::time::timeout(Duration::from_secs(2), rx.changed()).await;
@@ -463,7 +460,7 @@ mod tests {
         ));
         let crab_dir = dir.join(".crab");
         std::fs::create_dir_all(&crab_dir).unwrap();
-        std::fs::write(crab_dir.join("settings.json"), r#"{"theme": "dark"}"#).unwrap();
+        std::fs::write(crab_dir.join("config.toml"), r#"theme = "dark""#).unwrap();
 
         let config = HotReloadConfig::new(Some(&dir));
         let settings = load_current_settings(&config);

@@ -78,7 +78,7 @@ pub fn save(state: &GlobalState) -> crab_core::Result<()> {
 
 /// Compute a hash of a project's `.crab/` directory for trust comparison.
 ///
-/// Hashes the sorted list of filenames plus the content of `settings.json`
+/// Hashes the sorted list of filenames plus the content of `config.toml`
 /// (if present). Returns an empty string if the directory doesn't exist.
 #[must_use]
 pub fn compute_project_hash(project_dir: &Path) -> String {
@@ -104,8 +104,8 @@ pub fn compute_project_hash(project_dir: &Path) -> String {
         name.hash(&mut hasher);
     }
 
-    // Hash settings.json content if present
-    if let Ok(content) = std::fs::read_to_string(crab_dir.join("settings.json")) {
+    // Hash config.toml content if present
+    if let Ok(content) = std::fs::read_to_string(crab_dir.join(crate::config::config_file_name())) {
         content.hash(&mut hasher);
     }
 
@@ -233,7 +233,7 @@ mod tests {
         let dir = temp_dir("with-crab");
         let crab = dir.join(".crab");
         fs::create_dir_all(&crab).unwrap();
-        fs::write(crab.join("settings.json"), r#"{"model":"test"}"#).unwrap();
+        fs::write(crab.join("config.toml"), r#"model = "test""#).unwrap();
 
         let hash = compute_project_hash(&dir);
         assert!(!hash.is_empty());
@@ -247,11 +247,11 @@ mod tests {
         let dir = temp_dir("hash-change");
         let crab = dir.join(".crab");
         fs::create_dir_all(&crab).unwrap();
-        fs::write(crab.join("settings.json"), r#"{"model":"v1"}"#).unwrap();
+        fs::write(crab.join("config.toml"), r#"model = "v1""#).unwrap();
 
         let hash1 = compute_project_hash(&dir);
 
-        fs::write(crab.join("settings.json"), r#"{"model":"v2"}"#).unwrap();
+        fs::write(crab.join("config.toml"), r#"model = "v2""#).unwrap();
 
         let hash2 = compute_project_hash(&dir);
         assert_ne!(hash1, hash2);
@@ -282,7 +282,7 @@ mod tests {
         let dir = temp_dir("accepted");
         let crab = dir.join(".crab");
         fs::create_dir_all(&crab).unwrap();
-        fs::write(crab.join("settings.json"), "{}").unwrap();
+        fs::write(crab.join("config.toml"), "").unwrap();
 
         let mut state = GlobalState::default();
         record_trust(&mut state, &dir);
@@ -296,13 +296,13 @@ mod tests {
         let dir = temp_dir("changed");
         let crab = dir.join(".crab");
         fs::create_dir_all(&crab).unwrap();
-        fs::write(crab.join("settings.json"), r#"{"v":1}"#).unwrap();
+        fs::write(crab.join("config.toml"), r#"model = "v1""#).unwrap();
 
         let mut state = GlobalState::default();
         record_trust(&mut state, &dir);
 
         // Modify config after trust was recorded
-        fs::write(crab.join("settings.json"), r#"{"v":2}"#).unwrap();
+        fs::write(crab.join("config.toml"), r#"model = "v2""#).unwrap();
 
         assert!(needs_trust_prompt(&state, &dir));
         let _ = fs::remove_dir_all(&dir);

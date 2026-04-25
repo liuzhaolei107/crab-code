@@ -313,7 +313,7 @@ fn validate_hook_entry_inner(trigger: &str, entry: &serde_json::Value) -> Vec<Va
 
 /// Validate a raw config file from disk.
 ///
-/// Reads the file, parses JSONC, and validates the raw JSON object.
+/// Reads the file, parses TOML, and validates the resulting object.
 /// Each error's `field` is prefixed with the source label (e.g. `[global]`).
 /// Returns an empty `Vec` if the file does not exist or is empty.
 pub fn validate_raw_file(path: &std::path::Path, source_label: &str) -> Vec<ValidationError> {
@@ -334,10 +334,7 @@ pub fn validate_raw_file(path: &std::path::Path, source_label: &str) -> Vec<Vali
         return Vec::new();
     }
 
-    let json = match jsonc_parser::parse_to_serde_value::<serde_json::Value>(
-        content,
-        &jsonc_parser::ParseOptions::default(),
-    ) {
+    let toml_value: toml::Value = match toml::from_str(content) {
         Ok(v) => v,
         Err(e) => {
             return vec![ValidationError {
@@ -347,6 +344,8 @@ pub fn validate_raw_file(path: &std::path::Path, source_label: &str) -> Vec<Vali
             }];
         }
     };
+
+    let json = crate::config::toml_value_to_json_for_validation(toml_value);
 
     validate_config(&json)
         .into_iter()
@@ -365,14 +364,16 @@ pub fn validate_raw_file(path: &std::path::Path, source_label: &str) -> Vec<Vali
 pub fn validate_all_config_files(project_dir: Option<&std::path::Path>) -> Vec<ValidationError> {
     let mut warnings = Vec::new();
 
-    let global_path = crate::config::global_config_dir().join("settings.json");
+    let global_path = crate::config::global_config_dir().join(crate::config::config_file_name());
     warnings.extend(validate_raw_file(&global_path, "global"));
 
     if let Some(dir) = project_dir {
-        let project_path = crate::config::project_config_dir(dir).join("settings.json");
+        let project_path =
+            crate::config::project_config_dir(dir).join(crate::config::config_file_name());
         warnings.extend(validate_raw_file(&project_path, "project"));
 
-        let local_path = crate::config::project_config_dir(dir).join("settings.local.json");
+        let local_path =
+            crate::config::project_config_dir(dir).join(crate::config::local_config_file_name());
         warnings.extend(validate_raw_file(&local_path, "local"));
     }
 

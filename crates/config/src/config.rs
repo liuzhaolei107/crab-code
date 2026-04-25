@@ -5,14 +5,18 @@ use serde::{Deserialize, Serialize};
 
 /// Global config directory name.
 const CONFIG_DIR: &str = ".crab";
-/// Settings file name within config directories.
-const SETTINGS_FILE: &str = "settings.json";
+/// User/project config file name within `.crab/`.
+const CONFIG_FILE: &str = "config.toml";
+/// Project-local override file name within `.crab/` (gitignored).
+const LOCAL_CONFIG_FILE: &str = "config.local.toml";
 
-/// Application configuration, loaded from `~/.crab/settings.json` (global)
-/// and `.crab/settings.json` (project-level).
+/// Application configuration, loaded from `~/.crab/config.toml` (global)
+/// and `.crab/config.toml` (project-level), with `.crab/config.local.toml`
+/// applied on top.
 ///
-/// All fields are `Option` to support three-level merge: global → project → CLI overrides.
-/// Uses `camelCase` for JSON compatibility.
+/// All fields are `Option` to support multi-level merge: global → project →
+/// local → CLI overrides. Uses `camelCase` for compatibility with the existing
+/// JSON-shaped tooling and CCB ecosystem.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Config {
@@ -207,26 +211,65 @@ pub fn project_config_dir(project_dir: &Path) -> PathBuf {
     project_dir.join(CONFIG_DIR)
 }
 
-/// Parse JSONC (JSON with comments) into a `Config`.
+/// File name used for the user/project `Config` file (`config.toml`).
+#[must_use]
+pub const fn config_file_name() -> &'static str {
+    CONFIG_FILE
+}
+
+/// File name used for the project-local override file (`config.local.toml`).
+#[must_use]
+pub const fn local_config_file_name() -> &'static str {
+    LOCAL_CONFIG_FILE
+}
+
+/// Parse a TOML config string into a `Config`.
 ///
-/// Applies schema migrations (if needed) before deserialization so that
-/// older config files are transparently upgraded.
-fn parse_jsonc(content: &str) -> crab_core::Result<Config> {
-    let mut json = jsonc_parser::parse_to_serde_value::<serde_json::Value>(
-        content,
-        &jsonc_parser::ParseOptions::default(),
-    )
-    .map_err(|e| crab_core::Error::Config(format!("JSONC parse error: {e}")))?;
+/// Applies schema migrations (if needed) on the raw value before
+/// deserialization so that older config files are transparently upgraded.
+fn parse_toml(content: &str) -> crab_core::Result<Config> {
+    let toml_value: toml::Value = toml::from_str(content)
+        .map_err(|e| crab_core::Error::Config(format!("TOML parse error: {e}")))?;
+    let mut json = toml_value_to_json(toml_value);
     crate::migration::migrate_settings(&mut json);
     serde_json::from_value(json)
         .map_err(|e| crab_core::Error::Config(format!("config deserialization error: {e}")))
 }
 
-/// Load config from a specific JSON/JSONC file.
+/// Recursively convert a `toml::Value` to a `serde_json::Value`.
+///
+/// Used as a bridge so that the migration layer (which operates on JSON
+/// values for historical reasons) and the `serde_json::Value` fields
+/// inside `Config` (`mcp_servers`, `hooks`) keep working unchanged.
+/// Crate-internal export used by the validation module.
+pub(crate) fn toml_value_to_json_for_validation(value: toml::Value) -> serde_json::Value {
+    toml_value_to_json(value)
+}
+
+fn toml_value_to_json(value: toml::Value) -> serde_json::Value {
+    match value {
+        toml::Value::String(s) => serde_json::Value::String(s),
+        toml::Value::Integer(i) => serde_json::Value::Number(i.into()),
+        toml::Value::Float(f) => serde_json::Number::from_f64(f)
+            .map_or(serde_json::Value::Null, serde_json::Value::Number),
+        toml::Value::Boolean(b) => serde_json::Value::Bool(b),
+        toml::Value::Datetime(dt) => serde_json::Value::String(dt.to_string()),
+        toml::Value::Array(arr) => {
+            serde_json::Value::Array(arr.into_iter().map(toml_value_to_json).collect())
+        }
+        toml::Value::Table(tbl) => serde_json::Value::Object(
+            tbl.into_iter()
+                .map(|(k, v)| (k, toml_value_to_json(v)))
+                .collect(),
+        ),
+    }
+}
+
+/// Load config from a specific TOML file.
 /// Returns `Ok(Config::default())` if the file does not exist.
 fn load_from_file(path: &Path) -> crab_core::Result<Config> {
     match std::fs::read_to_string(path) {
-        Ok(content) => parse_jsonc(&content),
+        Ok(content) => parse_toml(&content),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
         Err(e) => Err(crab_core::Error::Config(format!(
             "failed to read {}: {e}",
@@ -235,36 +278,36 @@ fn load_from_file(path: &Path) -> crab_core::Result<Config> {
     }
 }
 
-/// Load config from an explicit file path. Unlike the internal `load_from_file`,
+/// Load config from an explicit TOML file path. Unlike `load_from_file`,
 /// this returns an error if the file does not exist.
 pub fn load_config_from_path(path: &Path) -> crab_core::Result<Config> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| crab_core::Error::Config(format!("failed to read {}: {e}", path.display())))?;
-    parse_jsonc(&content)
+    parse_toml(&content)
 }
 
-/// Load global config from `~/.crab/settings.json`.
+/// Load global config from `~/.crab/config.toml`.
 pub fn load_global() -> crab_core::Result<Config> {
-    let path = global_config_dir().join(SETTINGS_FILE);
+    let path = global_config_dir().join(CONFIG_FILE);
     load_from_file(&path)
 }
 
-/// Load project-level config from `<project_dir>/.crab/settings.json`.
+/// Load project-level config from `<project_dir>/.crab/config.toml`.
 pub fn load_project(project_dir: &Path) -> crab_core::Result<Config> {
-    let path = project_config_dir(project_dir).join(SETTINGS_FILE);
+    let path = project_config_dir(project_dir).join(CONFIG_FILE);
     load_from_file(&path)
 }
 
-/// Load project-local config from `<project_dir>/.crab/settings.local.json`.
+/// Load project-local config from `<project_dir>/.crab/config.local.toml`.
 /// This file is intended to be gitignored and holds per-developer overrides.
 pub fn load_local(project_dir: &Path) -> crab_core::Result<Config> {
-    let path = project_config_dir(project_dir).join("settings.local.json");
+    let path = project_config_dir(project_dir).join(LOCAL_CONFIG_FILE);
     load_from_file(&path)
 }
 
 /// Load and merge config with full priority chain:
 ///
-/// `config.toml defaults → global settings.json → project settings.json → env vars`
+/// `defaults → user config.toml → project config.toml → project config.local.toml → env vars`
 ///
 /// Environment variables checked (highest priority):
 /// - `CRAB_API_PROVIDER` — override provider
@@ -303,7 +346,7 @@ impl ConfigSource {
 /// Load and merge config with configurable source layers.
 ///
 /// When `sources` is `None`, all layers are included:
-/// config.toml → user → project → local → env vars
+/// user → project → local → env vars.
 ///
 /// When `sources` is `Some(list)`, only the listed layers are included.
 pub fn load_merged_config_with_sources(
@@ -331,8 +374,8 @@ pub fn load_merged_config_validated(
 
 /// Inner merge implementation, parameterized over env var lookup for testability.
 ///
-/// Merge chain: config.toml → user settings.json → project settings.json
-///              → local settings.local.json → env vars
+/// Merge chain: user `config.toml` → project `config.toml`
+///              → project `config.local.toml` → env vars
 fn load_merged_config_with_env<F>(
     project_dir: Option<&PathBuf>,
     env_lookup: F,
@@ -355,19 +398,14 @@ where
     let include_all = sources.is_none();
     let has = |s: ConfigSource| include_all || sources.is_some_and(|list| list.contains(&s));
 
-    // 1. config.toml defaults (always loaded, lowest priority)
-    let config_toml = crate::config_toml::load_config_toml()?;
-    let merged = crate::config_toml::config_toml_to_config(&config_toml, None);
-
-    // 2. User (~/.crab/settings.json)
+    // 1. User (~/.crab/config.toml)
     let merged = if has(ConfigSource::User) {
-        let global = load_global()?;
-        merged.merge(&global)
+        load_global()?
     } else {
-        merged
+        Config::default()
     };
 
-    // 3. Project (.crab/settings.json)
+    // 2. Project (.crab/config.toml)
     let merged = if has(ConfigSource::Project) {
         match project_dir {
             Some(dir) => {
@@ -380,7 +418,7 @@ where
         merged
     };
 
-    // 4. Local (.crab/settings.local.json)
+    // 3. Local (.crab/config.local.toml)
     let merged = if has(ConfigSource::Local) {
         match project_dir {
             Some(dir) => {
@@ -393,9 +431,9 @@ where
         merged
     };
 
-    // 5. Environment variable overrides (always applied, highest priority).
+    // 4. Environment variable overrides (always applied, highest priority).
     //    The env_lookup falls back to config.env (CC-compatible) so that
-    //    `{"env": {"ANTHROPIC_API_KEY": "sk-..."}}` in settings.json works.
+    //    `env = { ANTHROPIC_API_KEY = "sk-..." }` in config.toml works.
     let config_env = merged.env.clone();
     let env_with_fallback = move |key: &str| -> std::result::Result<String, std::env::VarError> {
         env_lookup(key).or_else(|_| {
@@ -519,42 +557,59 @@ mod tests {
     }
 
     #[test]
-    fn parse_jsonc_with_comments() {
-        let jsonc = r#"{
-            // This is a comment
-            "apiProvider": "openai",
-            "model": "gpt-4o"
-            /* block comment */
-        }"#;
-        let s = parse_jsonc(jsonc).unwrap();
+    fn parse_toml_basic() {
+        let toml_str = r#"
+apiProvider = "openai"
+model = "gpt-4o"
+"#;
+        let s = parse_toml(toml_str).unwrap();
         assert_eq!(s.api_provider.as_deref(), Some("openai"));
         assert_eq!(s.model.as_deref(), Some("gpt-4o"));
     }
 
     #[test]
-    fn parse_jsonc_empty_object() {
-        let s = parse_jsonc("{}").unwrap();
+    fn parse_toml_empty() {
+        let s = parse_toml("").unwrap();
         assert_eq!(s, Config::default());
     }
 
     #[test]
-    fn parse_jsonc_with_camel_case() {
-        let jsonc = r#"{"apiBaseUrl": "http://localhost:8080", "maxTokens": 2048}"#;
-        let s = parse_jsonc(jsonc).unwrap();
+    fn parse_toml_with_camel_case() {
+        let toml_str = r#"
+apiBaseUrl = "http://localhost:8080"
+maxTokens = 2048
+"#;
+        let s = parse_toml(toml_str).unwrap();
         assert_eq!(s.api_base_url.as_deref(), Some("http://localhost:8080"));
         assert_eq!(s.max_tokens, Some(2048));
     }
 
     #[test]
-    fn parse_jsonc_unknown_fields_ignored() {
-        let jsonc = r#"{"unknownField": true, "model": "test"}"#;
-        let s = parse_jsonc(jsonc).unwrap();
+    fn parse_toml_unknown_fields_ignored() {
+        let toml_str = r#"
+unknownField = true
+model = "test"
+"#;
+        let s = parse_toml(toml_str).unwrap();
         assert_eq!(s.model.as_deref(), Some("test"));
     }
 
     #[test]
+    fn parse_toml_with_table() {
+        let toml_str = r#"
+[gitContext]
+enabled = false
+maxDiffLines = 50
+"#;
+        let s = parse_toml(toml_str).unwrap();
+        let git_ctx = s.git_context.unwrap();
+        assert!(!git_ctx.enabled);
+        assert_eq!(git_ctx.max_diff_lines, 50);
+    }
+
+    #[test]
     fn load_from_nonexistent_file_returns_default() {
-        let s = load_from_file(Path::new("/nonexistent/path/settings.json")).unwrap();
+        let s = load_from_file(Path::new("/nonexistent/path/config.toml")).unwrap();
         assert_eq!(s, Config::default());
     }
 
@@ -562,10 +617,12 @@ mod tests {
     fn load_from_temp_file() {
         let dir = std::env::temp_dir().join("crab-config-test-load");
         let _ = std::fs::create_dir_all(&dir);
-        let file = dir.join("settings.json");
+        let file = dir.join("config.toml");
         std::fs::write(
             &file,
-            r#"{"apiProvider": "deepseek", "model": "deepseek-chat"}"#,
+            r#"apiProvider = "deepseek"
+model = "deepseek-chat"
+"#,
         )
         .unwrap();
 
@@ -601,11 +658,7 @@ mod tests {
         let dir = std::env::temp_dir().join("crab-config-test-merge");
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
-        std::fs::write(
-            crab_dir.join("settings.json"),
-            r#"{"model": "project-model"}"#,
-        )
-        .unwrap();
+        std::fs::write(crab_dir.join("config.toml"), r#"model = "project-model""#).unwrap();
 
         let result = load_merged_config(Some(&dir)).unwrap();
         assert_eq!(result.model.as_deref(), Some("project-model"));
@@ -676,33 +729,17 @@ mod tests {
     }
 
     #[test]
-    fn parse_jsonc_trailing_comma() {
-        // jsonc_parser should handle trailing commas
-        let jsonc = r#"{"model": "gpt-4o",}"#;
-        let s = parse_jsonc(jsonc).unwrap();
-        assert_eq!(s.model.as_deref(), Some("gpt-4o"));
-    }
-
-    #[test]
-    fn parse_jsonc_invalid_json_returns_error() {
-        let result = parse_jsonc("not json at all");
+    fn parse_toml_invalid_returns_error() {
+        let result = parse_toml("not = valid = toml");
         assert!(result.is_err());
     }
 
     #[test]
-    fn parse_jsonc_null_values_become_none() {
-        let jsonc = r#"{"model": null, "maxTokens": null}"#;
-        let s = parse_jsonc(jsonc).unwrap();
-        assert!(s.model.is_none());
-        assert!(s.max_tokens.is_none());
-    }
-
-    #[test]
-    fn load_from_invalid_json_file() {
+    fn load_from_invalid_toml_file() {
         let dir = std::env::temp_dir().join("crab-config-test-invalid");
         let _ = std::fs::create_dir_all(&dir);
-        let file = dir.join("settings.json");
-        std::fs::write(&file, "{ broken json }").unwrap();
+        let file = dir.join("config.toml");
+        std::fs::write(&file, "not = valid = toml").unwrap();
 
         let result = load_from_file(&file);
         assert!(result.is_err());
@@ -754,8 +791,8 @@ mod tests {
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
         std::fs::write(
-            crab_dir.join("settings.json"),
-            r#"{"model": "project-model", "theme": "dark"}"#,
+            crab_dir.join("config.toml"),
+            "model = \"project-model\"\ntheme = \"dark\"\n",
         )
         .unwrap();
 
@@ -918,8 +955,8 @@ mod tests {
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
         std::fs::write(
-            crab_dir.join("settings.json"),
-            r#"{"model": "project-model", "apiKey": "project-key"}"#,
+            crab_dir.join("config.toml"),
+            "model = \"project-model\"\napiKey = \"project-key\"\n",
         )
         .unwrap();
 
@@ -942,8 +979,8 @@ mod tests {
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
         std::fs::write(
-            crab_dir.join("settings.json"),
-            r#"{"model": "project-model", "theme": "dark"}"#,
+            crab_dir.join("config.toml"),
+            "model = \"project-model\"\ntheme = \"dark\"\n",
         )
         .unwrap();
 
@@ -957,22 +994,21 @@ mod tests {
     #[test]
     fn full_merge_priority_chain() {
         // This test verifies the complete priority chain:
-        // config.toml < global settings.json < project settings.json < env vars
+        // global config.toml < project config.toml < env vars
         //
-        // We can only control project settings + env vars in tests
-        // (global settings.json and config.toml depend on user's home dir),
+        // We can only control project + env vars in tests
+        // (global config.toml depends on user's home dir),
         // but we verify that env vars override project settings.
         let dir = std::env::temp_dir().join("crab-config-test-full-chain");
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
         std::fs::write(
-            crab_dir.join("settings.json"),
-            r#"{
-                "apiProvider": "anthropic",
-                "model": "project-model",
-                "apiKey": "project-key",
-                "theme": "dark"
-            }"#,
+            crab_dir.join("config.toml"),
+            r#"apiProvider = "anthropic"
+model = "project-model"
+apiKey = "project-key"
+theme = "dark"
+"#,
         )
         .unwrap();
 
@@ -997,8 +1033,8 @@ mod tests {
     fn load_config_from_path_reads_file() {
         let dir = std::env::temp_dir().join("crab-config-test-from-path");
         let _ = std::fs::create_dir_all(&dir);
-        let file = dir.join("custom.json");
-        std::fs::write(&file, r#"{"model": "custom-model"}"#).unwrap();
+        let file = dir.join("custom.toml");
+        std::fs::write(&file, r#"model = "custom-model""#).unwrap();
 
         let s = load_config_from_path(&file).unwrap();
         assert_eq!(s.model.as_deref(), Some("custom-model"));
@@ -1008,7 +1044,7 @@ mod tests {
 
     #[test]
     fn load_config_from_path_errors_on_missing_file() {
-        let result = load_config_from_path(Path::new("/nonexistent/custom.json"));
+        let result = load_config_from_path(Path::new("/nonexistent/custom.toml"));
         assert!(result.is_err());
     }
 
@@ -1020,8 +1056,8 @@ mod tests {
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
         std::fs::write(
-            crab_dir.join("settings.local.json"),
-            r#"{"apiKey": "local-secret"}"#,
+            crab_dir.join("config.local.toml"),
+            r#"apiKey = "local-secret""#,
         )
         .unwrap();
 
@@ -1076,11 +1112,7 @@ mod tests {
         let dir = std::env::temp_dir().join("crab-config-test-source-skip");
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
-        std::fs::write(
-            crab_dir.join("settings.json"),
-            r#"{"model": "project-model"}"#,
-        )
-        .unwrap();
+        std::fs::write(crab_dir.join("config.toml"), r#"model = "project-model""#).unwrap();
 
         // Only load user, not project — project model should not appear
         let result = load_merged_config_with_env_and_sources(
@@ -1100,14 +1132,10 @@ mod tests {
         let dir = std::env::temp_dir().join("crab-config-test-source-local");
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
+        std::fs::write(crab_dir.join("config.toml"), r#"model = "project-model""#).unwrap();
         std::fs::write(
-            crab_dir.join("settings.json"),
-            r#"{"model": "project-model"}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            crab_dir.join("settings.local.json"),
-            r#"{"model": "local-model"}"#,
+            crab_dir.join("config.local.toml"),
+            r#"model = "local-model""#,
         )
         .unwrap();
 
@@ -1121,5 +1149,25 @@ mod tests {
         assert_eq!(result.model.as_deref(), Some("local-model"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn toml_value_to_json_handles_all_kinds() {
+        let toml_str = r#"
+s = "x"
+i = 42
+f = 1.5
+b = true
+arr = [1, 2, 3]
+[tbl]
+inner = "v"
+"#;
+        let val: toml::Value = toml::from_str(toml_str).unwrap();
+        let json = toml_value_to_json(val);
+        assert_eq!(json["s"], "x");
+        assert_eq!(json["i"], 42);
+        assert_eq!(json["b"], true);
+        assert_eq!(json["arr"][0], 1);
+        assert_eq!(json["tbl"]["inner"], "v");
     }
 }

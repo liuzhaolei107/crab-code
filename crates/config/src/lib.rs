@@ -1,7 +1,6 @@
 pub mod agents_md;
 pub mod change_detector;
 pub mod config;
-pub mod config_toml;
 pub mod feature_flag;
 pub mod global_state;
 pub mod hooks;
@@ -15,7 +14,6 @@ pub mod settings_cache;
 pub mod validation;
 
 pub use config::{Config, ConfigSource, GitContextConfig, PermissionsConfig};
-pub use config_toml::ConfigToml;
 pub use feature_flag::FeatureFlags;
 pub use global_state::GlobalState;
 pub use hot_reload::ConfigWatcher;
