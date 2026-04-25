@@ -54,19 +54,22 @@ pub fn env_to_value(env: &HashMap<String, String>) -> Value {
     put("CRAB_MODEL", "model");
     put("CRAB_API_PROVIDER", "api_provider");
 
-    // API base URL: mutually exclusive — the highest-priority env that's set wins.
-    //   1. CRAB_BASE_URL                  (universal override)
-    //   2. <PROVIDER>_BASE_URL            (provider determined by CRAB_API_PROVIDER env;
-    //                                       defaults to anthropic when env not set)
+    // API base URL: mutually exclusive, applied conservatively.
+    //   1. CRAB_BASE_URL — universal override (highest priority).
+    //   2. <PROVIDER>_BASE_URL — only when CRAB_API_PROVIDER env is **explicitly**
+    //      set to that provider. We never pick a provider-specific URL by default,
+    //      because the active provider may come from the file layer (which env_to_value
+    //      cannot see); guessing here would silently override the wrong target.
     let url = env
         .get("CRAB_BASE_URL")
         .filter(|s| !s.is_empty())
         .or_else(|| {
-            let provider = env.get("CRAB_API_PROVIDER").map_or("anthropic", String::as_str);
-            let var = match provider {
+            let provider = env.get("CRAB_API_PROVIDER")?;
+            let var = match provider.as_str() {
+                "anthropic" => "ANTHROPIC_BASE_URL",
                 "openai" => "OPENAI_BASE_URL",
                 "deepseek" => "DEEPSEEK_BASE_URL",
-                _ => "ANTHROPIC_BASE_URL", // CCB-compat name for anthropic
+                _ => return None,
             };
             env.get(var).filter(|s| !s.is_empty())
         });
