@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/lingcoder/crab-code/blob/main/crates/config/assets/config.schema.json",
+  "title": "Crab Configuration",
+  "description": "Hand-written JSON Schema (Draft 2020-12) for Crab's `config.toml`. Each leaf documents the field's purpose and declares a `default` matching `Config::default()`.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Schema pragma understood by IDE TOML extensions; ignored at runtime."
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Settings schema version stamped by the migration layer.",
+      "default": 0
+    },
+    "apiProvider": {
+      "type": "string",
+      "enum": ["anthropic", "openai", "ollama", "bedrock", "vertex", "deepseek", "custom"],
+      "description": "LLM provider name used to select the auth + transport backend.",
+      "default": null
+    },
+    "apiBaseUrl": {
+      "type": "string",
+      "format": "uri",
+      "description": "Override the provider's HTTP endpoint (e.g. corporate proxy or local Ollama).",
+      "default": null
+    },
+    "apiKeyHelper": {
+      "type": "string",
+      "description": "Path to a script whose stdout is consumed as the API key. The path is configuration; the secret it returns never enters Config.",
+      "default": null
+    },
+    "model": {
+      "type": "string",
+      "description": "Primary model identifier passed to the provider (e.g. `claude-opus-4-7`).",
+      "default": null
+    },
+    "smallModel": {
+      "type": "string",
+      "description": "Smaller/faster model used for auxiliary tasks (compaction, planning).",
+      "default": null
+    },
+    "advisorModel": {
+      "type": "string",
+      "description": "Alias of `smallModel` accepted for CC-compat. Use `smallModel` in new configs.",
+      "default": null
+    },
+    "availableModels": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true,
+      "description": "Allow-list of models surfaced in the model picker.",
+      "default": null
+    },
+    "modelOverrides": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Map of alias → concrete model id (e.g. `{ \"fast\": \"claude-haiku\" }`).",
+      "default": null
+    },
+    "maxTokens": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000,
+      "description": "Maximum response length in tokens.",
+      "default": null
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Tool authorization rules and default mode.",
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\([^)]*\\))?$|^\\*$"
+          },
+          "description": "Permit-list of tool patterns, e.g. `Bash` or `Bash(git:*)`.",
+          "default": []
+        },
+        "deny": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\([^)]*\\))?$|^\\*$"
+          },
+          "description": "Block-list of tool patterns; deny always wins over allow.",
+          "default": []
+        },
+        "defaultMode": {
+          "type": "string",
+          "enum": ["default", "acceptEdits", "accept-edits", "trust-project", "dontAsk", "dont-ask", "bypassPermissions", "dangerously", "plan"],
+          "description": "Fallback mode when no rule matches.",
+          "default": null
+        },
+        "additionalDirectories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Extra filesystem roots tools may read/write.",
+          "default": null
+        }
+      },
+      "default": null
+    },
+    "permissionMode": {
+      "type": "string",
+      "enum": ["default", "acceptEdits", "accept-edits", "trust-project", "dontAsk", "dont-ask", "bypassPermissions", "dangerously", "plan"],
+      "description": "Convenience alias for `permissions.defaultMode`.",
+      "default": null
+    },
+    "systemPrompt": {
+      "type": "string",
+      "description": "Custom system prompt prepended to every request.",
+      "default": null
+    },
+    "includeGitInstructions": {
+      "type": "boolean",
+      "description": "Inject git-context block (branch, status, diff) into the system prompt.",
+      "default": null
+    },
+    "customInstructions": {
+      "type": "string",
+      "description": "Additional instructions appended to the system prompt.",
+      "default": null
+    },
+    "mcpServers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "description": "MCP server entry. Either `command` (stdio) or `url` (SSE/WebSocket) must be present."
+      },
+      "description": "Named MCP server configurations.",
+      "default": null
+    },
+    "enableAllProjectMcpServers": {
+      "type": "boolean",
+      "description": "Auto-enable every server defined in the project layer without prompting.",
+      "default": null
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Trigger → list of hook entries (each carries a `command` string).",
+      "default": null
+    },
+    "disableAllHooks": {
+      "type": "boolean",
+      "description": "Master kill-switch for the hook subsystem.",
+      "default": null
+    },
+    "defaultShell": {
+      "type": "string",
+      "description": "Shell used to execute Bash tool invocations and `apiKeyHelper`.",
+      "default": null
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Environment variables exported to Crab and to spawned child processes.",
+      "default": null
+    },
+    "theme": {
+      "type": "string",
+      "enum": ["dark", "light", "dark-daltonized", "light-daltonized", "high-contrast", "system"],
+      "description": "TUI color theme.",
+      "default": null
+    },
+    "language": {
+      "type": "string",
+      "description": "BCP-47 locale tag for UI strings.",
+      "default": null
+    },
+    "outputStyle": {
+      "type": "string",
+      "description": "Named output-style preset (controls verbosity, formatting).",
+      "default": null
+    },
+    "gitContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Configure git-context injection.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether to inject git context.",
+          "default": true
+        },
+        "maxDiffLines": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum diff lines to include.",
+          "default": 200
+        }
+      },
+      "default": null
+    },
+    "respectGitignore": {
+      "type": "boolean",
+      "description": "Honor `.gitignore` patterns when traversing the project.",
+      "default": null
+    },
+    "autoMemoryEnabled": {
+      "type": "boolean",
+      "description": "Persist auto-memory entries between sessions.",
+      "default": null
+    },
+    "autoMemoryDirectory": {
+      "type": "string",
+      "description": "Directory where auto-memory files are written.",
+      "default": null
+    },
+    "enabledPlugins": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "boolean" },
+          {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        ]
+      },
+      "description": "Map of `plugin-id@marketplace-id` keys; value is `true`/`false` or a version-constraint list.",
+      "default": null
+    },
+    "cleanupPeriodDays": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Days after which idle session/log artifacts are pruned.",
+      "default": null
+    }
+  }
+}
