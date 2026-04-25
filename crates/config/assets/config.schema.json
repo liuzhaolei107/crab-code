@@ -6,16 +6,6 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "$schema": {
-      "type": "string",
-      "description": "Schema pragma understood by IDE TOML extensions; ignored at runtime."
-    },
-    "schema_version": {
-      "type": "integer",
-      "minimum": 0,
-      "description": "Settings schema version stamped by the migration layer.",
-      "default": 0
-    },
     "api_provider": {
       "type": "string",
       "enum": ["anthropic", "openai", "bedrock", "vertex", "deepseek", "custom"],
@@ -25,7 +15,7 @@
     "base_url": {
       "type": "string",
       "format": "uri",
-      "description": "Override the provider's HTTP endpoint (e.g. corporate proxy or local Ollama).",
+      "description": "Override the provider's HTTP endpoint (e.g. corporate proxy).",
       "default": null
     },
     "api_key": {
@@ -50,7 +40,7 @@
     },
     "advisor_model": {
       "type": "string",
-      "description": "Alias of `smallModel` accepted for CC-compat. Use `smallModel` in new configs.",
+      "description": "Alias of `small_model` accepted for CC-compat. Use `small_model` in new configs.",
       "default": null
     },
     "available_models": {
@@ -114,7 +104,7 @@
     "permission_mode": {
       "type": "string",
       "enum": ["default", "acceptEdits", "accept-edits", "trust-project", "dontAsk", "dont-ask", "bypassPermissions", "dangerously", "plan"],
-      "description": "Convenience alias for `permissions.defaultMode`.",
+      "description": "Convenience alias for `permissions.default_mode`.",
       "default": null
     },
     "system_prompt": {
@@ -164,7 +154,7 @@
     "env": {
       "type": "object",
       "additionalProperties": { "type": "string" },
-      "description": "Environment variables exported to Crab and to spawned child processes.",
+      "description": "Reserved for future startup-time env injection. Currently parsed and validated but NOT injected at runtime (workspace forbids unsafe_code which Rust 2024 requires for std::env::set_var). Plugin layer rejects this field for security.",
       "default": null
     },
     "theme": {
