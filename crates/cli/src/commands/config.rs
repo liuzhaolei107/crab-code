@@ -133,16 +133,13 @@ fn cmd_set(key: &str, value: &str, global: bool) -> anyhow::Result<()> {
 }
 
 /// `crab config edit` — open the config file in $EDITOR.
+///
+/// Per `docs/config.md` §10.2 the CLI never creates config dirs or files just
+/// to read them. We hand the path to the editor as-is; the editor (or the OS)
+/// creates the file when the user actually saves a non-empty buffer. The
+/// writer module owns first-time directory creation for `crab config set`.
 fn cmd_edit(global: bool) -> anyhow::Result<()> {
     let path = target_config_path(global)?;
-
-    // Ensure the file exists (create empty TOML file if not)
-    if !path.exists() {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(&path, "")?;
-    }
 
     let editor = std::env::var("EDITOR")
         .or_else(|_| std::env::var("VISUAL"))
