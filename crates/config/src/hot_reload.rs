@@ -1,7 +1,7 @@
 //! Configuration hot-reload — monitors settings files and reloads on change.
 //!
 //! Uses polling (file metadata mtime) to detect changes, with configurable
-//! debounce interval. Publishes updated `Settings` via `tokio::sync::watch`.
+//! debounce interval. Publishes updated `Config` via `tokio::sync::watch`.
 //!
 //! No external file-watcher crate needed — the poll interval is intentionally
 //! coarse (default 2 seconds) to keep overhead negligible.
@@ -12,7 +12,7 @@ use std::time::{Duration, SystemTime};
 
 use tokio::sync::watch;
 
-use crate::settings::Settings;
+use crate::config::Config;
 
 // ── Configuration ─────────────────────────────────────────────────────
 
@@ -33,9 +33,9 @@ impl HotReloadConfig {
     /// Create a config with default intervals for a given project directory.
     #[must_use]
     pub fn new(project_dir: Option<&Path>) -> Self {
-        let global_path = crate::settings::global_config_dir().join("settings.json");
+        let global_path = crate::config::global_config_dir().join("settings.json");
         let project_path =
-            project_dir.map(|d| crate::settings::project_config_dir(d).join("settings.json"));
+            project_dir.map(|d| crate::config::project_config_dir(d).join("settings.json"));
         Self {
             poll_interval: Duration::from_secs(2),
             debounce: Duration::from_millis(500),
@@ -95,8 +95,8 @@ impl FileState {
 /// Handle returned by `start_watching()`. Provides a `watch::Receiver`
 /// for subscribers and a way to stop the background task.
 pub struct ConfigWatcher {
-    /// Receives the latest `Settings` whenever a reload occurs.
-    rx: watch::Receiver<Arc<Settings>>,
+    /// Receives the latest `Config` whenever a reload occurs.
+    rx: watch::Receiver<Arc<Config>>,
     /// Sending a message here signals the watcher to stop.
     stop_tx: watch::Sender<bool>,
 }
@@ -112,13 +112,13 @@ impl std::fmt::Debug for ConfigWatcher {
 impl ConfigWatcher {
     /// Get a clone of the receiver for subscribing to config changes.
     #[must_use]
-    pub fn subscribe(&self) -> watch::Receiver<Arc<Settings>> {
+    pub fn subscribe(&self) -> watch::Receiver<Arc<Config>> {
         self.rx.clone()
     }
 
     /// Get the current settings value.
     #[must_use]
-    pub fn current(&self) -> Arc<Settings> {
+    pub fn current(&self) -> Arc<Config> {
         self.rx.borrow().clone()
     }
 
@@ -133,7 +133,7 @@ impl ConfigWatcher {
 /// Spawns a background tokio task that polls file mtimes and reloads
 /// settings when changes are detected (with debouncing).
 ///
-/// Returns a `ConfigWatcher` with a `watch::Receiver<Arc<Settings>>`.
+/// Returns a `ConfigWatcher` with a `watch::Receiver<Arc<Config>>`.
 pub fn start_watching(config: HotReloadConfig) -> ConfigWatcher {
     let initial = load_current_settings(&config);
     let (settings_tx, settings_rx) = watch::channel(Arc::new(initial));
@@ -173,7 +173,7 @@ pub fn start_watching(config: HotReloadConfig) -> ConfigWatcher {
 }
 
 /// Reload logic — parameterized to use the same merge chain as `settings.rs`.
-fn load_current_settings(config: &HotReloadConfig) -> Settings {
+fn load_current_settings(config: &HotReloadConfig) -> Config {
     let project_dir = config
         .project_path
         .as_ref()
@@ -181,15 +181,15 @@ fn load_current_settings(config: &HotReloadConfig) -> Settings {
         .and_then(|p| p.parent())
         .map(PathBuf::from);
 
-    crate::settings::load_merged_settings(project_dir.as_ref()).unwrap_or_default()
+    crate::config::load_merged_config(project_dir.as_ref()).unwrap_or_default()
 }
 
 // ── Standalone reload function (non-async) ────────────────────────────
 
 /// Manually reload settings from disk. Useful for one-shot reloads
 /// without the background watcher.
-pub fn reload_settings(project_dir: Option<&PathBuf>) -> crab_core::Result<Settings> {
-    crate::settings::load_merged_settings(project_dir)
+pub fn reload_config(project_dir: Option<&PathBuf>) -> crab_core::Result<Config> {
+    crate::config::load_merged_config(project_dir)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────
@@ -329,16 +329,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ── reload_settings ───────────────────────────────────────────────
+    // ── reload_config ───────────────────────────────────────────────
 
     #[test]
-    fn reload_settings_without_project() {
-        let result = reload_settings(None);
+    fn reload_config_without_project() {
+        let result = reload_config(None);
         assert!(result.is_ok());
     }
 
     #[test]
-    fn reload_settings_with_temp_project() {
+    fn reload_config_with_temp_project() {
         let dir = std::env::temp_dir().join(format!(
             "crab-hotreload-reload-{}",
             std::time::SystemTime::now()
@@ -354,7 +354,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = reload_settings(Some(&dir)).unwrap();
+        let result = reload_config(Some(&dir)).unwrap();
         assert_eq!(result.model.as_deref(), Some("reload-test"));
 
         let _ = std::fs::remove_dir_all(&dir);

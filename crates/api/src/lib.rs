@@ -159,7 +159,7 @@ impl LlmBackend {
 /// - `"vertex"` → `VertexClient` (requires `vertex` feature)
 /// - Everything else (including `None`) → `AnthropicClient`
 #[must_use]
-pub fn create_backend(settings: &crab_config::Settings) -> LlmBackend {
+pub fn create_backend(settings: &crab_config::Config) -> LlmBackend {
     match settings.api_provider.as_deref() {
         Some("openai" | "ollama" | "deepseek" | "vllm") => {
             let base_url = settings

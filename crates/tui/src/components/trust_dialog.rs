@@ -43,8 +43,8 @@ impl TrustContext {
         let has_settings = project_dir.join(".crab").join("settings.json").exists();
         let has_agents_md = project_dir.join("AGENTS.md").exists();
 
-        let project_settings = crab_config::settings::load_project(project_dir).unwrap_or_default();
-        let local_settings = crab_config::settings::load_local(project_dir).unwrap_or_default();
+        let project_settings = crab_config::config::load_project(project_dir).unwrap_or_default();
+        let local_settings = crab_config::config::load_local(project_dir).unwrap_or_default();
         let merged = project_settings.merge(&local_settings);
 
         let mcp_servers = merged

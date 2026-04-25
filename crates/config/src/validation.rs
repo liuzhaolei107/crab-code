@@ -1,6 +1,6 @@
-//! Settings schema validation.
+//! Config schema validation.
 //!
-//! Validates settings JSON values against expected types, ranges, and
+//! Validates config JSON values against expected types, ranges, and
 //! inter-field constraints. Returns all errors found (not just the first),
 //! with optional suggestions for common mistakes.
 
@@ -29,9 +29,9 @@ impl fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-/// Known top-level settings fields and their expected types.
+/// Known top-level config fields and their expected types.
 ///
-/// Must stay in sync with [`crate::settings::Settings`] (camelCase).
+/// Must stay in sync with [`crate::config::Config`] (camelCase).
 const KNOWN_FIELDS: &[(&str, &str)] = &[
     // ── Schema / metadata ──
     ("$schema", "string"),
@@ -102,16 +102,16 @@ const VALID_PROVIDERS: &[&str] = &[
     "custom",
 ];
 
-/// Validate an entire settings JSON value.
+/// Validate an entire config JSON value.
 ///
-/// Returns an empty `Vec` if the settings are valid.
-pub fn validate_settings(settings: &serde_json::Value) -> Vec<ValidationError> {
+/// Returns an empty `Vec` if the config is valid.
+pub fn validate_config(config: &serde_json::Value) -> Vec<ValidationError> {
     let mut errors = Vec::new();
 
-    let Some(obj) = settings.as_object() else {
+    let Some(obj) = config.as_object() else {
         errors.push(ValidationError {
             field: "<root>".into(),
-            message: "settings must be a JSON object".into(),
+            message: "config must be a JSON object".into(),
             suggestion: None,
         });
         return errors;
@@ -311,7 +311,7 @@ fn validate_hook_entry_inner(trigger: &str, entry: &serde_json::Value) -> Vec<Va
     errors
 }
 
-/// Validate a raw settings file from disk.
+/// Validate a raw config file from disk.
 ///
 /// Reads the file, parses JSONC, and validates the raw JSON object.
 /// Each error's `field` is prefixed with the source label (e.g. `[global]`).
@@ -348,7 +348,7 @@ pub fn validate_raw_file(path: &std::path::Path, source_label: &str) -> Vec<Vali
         }
     };
 
-    validate_settings(&json)
+    validate_config(&json)
         .into_iter()
         .map(|mut e| {
             e.field = format!("[{source_label}] {}", e.field);
@@ -357,22 +357,22 @@ pub fn validate_raw_file(path: &std::path::Path, source_label: &str) -> Vec<Vali
         .collect()
 }
 
-/// Validate all settings files in the merge chain.
+/// Validate all config files in the merge chain.
 ///
 /// Validates each raw file independently so that `Option::None` fields
 /// (absent from the file) never appear as false-positive `null` errors.
 /// Returns warnings with source-prefixed field paths.
-pub fn validate_all_settings_files(project_dir: Option<&std::path::Path>) -> Vec<ValidationError> {
+pub fn validate_all_config_files(project_dir: Option<&std::path::Path>) -> Vec<ValidationError> {
     let mut warnings = Vec::new();
 
-    let global_path = crate::settings::global_config_dir().join("settings.json");
+    let global_path = crate::config::global_config_dir().join("settings.json");
     warnings.extend(validate_raw_file(&global_path, "global"));
 
     if let Some(dir) = project_dir {
-        let project_path = crate::settings::project_config_dir(dir).join("settings.json");
+        let project_path = crate::config::project_config_dir(dir).join("settings.json");
         warnings.extend(validate_raw_file(&project_path, "project"));
 
-        let local_path = crate::settings::project_config_dir(dir).join("settings.local.json");
+        let local_path = crate::config::project_config_dir(dir).join("settings.local.json");
         warnings.extend(validate_raw_file(&local_path, "local"));
     }
 
@@ -427,14 +427,14 @@ mod tests {
             "maxTokens": 4096,
             "permissionMode": "default"
         });
-        let errors = validate_settings(&settings);
+        let errors = validate_config(&settings);
         assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     }
 
     #[test]
     fn validate_unknown_field() {
         let settings = serde_json::json!({"unknownField": true});
-        let errors = validate_settings(&settings);
+        let errors = validate_config(&settings);
         assert_eq!(errors.len(), 1);
         assert!(errors[0].message.contains("unknown"));
     }
@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn validate_wrong_type() {
         let settings = serde_json::json!({"maxTokens": "not a number"});
-        let errors = validate_settings(&settings);
+        let errors = validate_config(&settings);
         assert!(!errors.is_empty());
         assert!(errors[0].message.contains("expected number"));
     }
@@ -450,7 +450,7 @@ mod tests {
     #[test]
     fn validate_bad_permission_mode() {
         let settings = serde_json::json!({"permissionMode": "invalid"});
-        let errors = validate_settings(&settings);
+        let errors = validate_config(&settings);
         assert!(!errors.is_empty());
         assert!(errors[0].message.contains("unknown permission mode"));
     }
@@ -507,14 +507,14 @@ mod tests {
             "smallModel": null,
             "maxTokens": null
         });
-        let errors = validate_settings(&settings);
+        let errors = validate_config(&settings);
         assert!(errors.is_empty(), "null values should be valid: {errors:?}");
     }
 
     #[test]
     fn validate_api_key_is_known_field() {
         let settings = serde_json::json!({"apiKey": "sk-test"});
-        let errors = validate_settings(&settings);
+        let errors = validate_config(&settings);
         assert!(
             errors.is_empty(),
             "apiKey should be a known field: {errors:?}"
@@ -523,7 +523,7 @@ mod tests {
 
     #[test]
     fn validate_non_object_root() {
-        let errors = validate_settings(&serde_json::json!("not an object"));
+        let errors = validate_config(&serde_json::json!("not an object"));
         assert!(!errors.is_empty());
     }
 }

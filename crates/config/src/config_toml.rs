@@ -1,7 +1,7 @@
 //! Multi-provider TOML configuration support.
 //!
 //! Loads `~/.config/crab-code/config.toml` which supports multiple provider
-//! profiles. The active provider's settings are merged into a `Settings` struct.
+//! profiles. The active provider's settings are merged into a `Config` struct.
 //!
 //! Example `config.toml`:
 //! ```toml
@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::Settings;
+use crate::Config;
 
 /// Top-level structure of `config.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -74,28 +74,28 @@ pub fn load_config_toml() -> crab_core::Result<ConfigToml> {
     load_config_toml_from(&config_toml_path())
 }
 
-/// Convert a `ConfigToml` into `Settings` by selecting the active provider.
+/// Convert a `ConfigToml` into `Config` by selecting the active provider.
 ///
 /// If `provider_override` is `Some`, that profile is used.
 /// Otherwise, `default_provider` from the config is used.
-/// If neither is set, returns default (empty) settings with just
+/// If neither is set, returns default (empty) config with just
 /// the `default_provider` as `api_provider`.
 #[must_use]
-pub fn config_toml_to_settings(config: &ConfigToml, provider_override: Option<&str>) -> Settings {
+pub fn config_toml_to_config(config: &ConfigToml, provider_override: Option<&str>) -> Config {
     let provider_name = provider_override
         .or(config.default_provider.as_deref())
         .unwrap_or("anthropic");
 
     let profile = config.providers.get(provider_name);
 
-    Settings {
+    Config {
         api_provider: Some(provider_name.to_string()),
         api_base_url: profile.and_then(|p| p.api_base_url.clone()),
         api_key: profile.and_then(|p| p.api_key.clone()),
         model: profile.and_then(|p| p.model.clone()),
         small_model: profile.and_then(|p| p.small_model.clone()),
         max_tokens: profile.and_then(|p| p.max_tokens),
-        ..Settings::default()
+        ..Config::default()
     }
 }
 
@@ -156,7 +156,7 @@ max_tokens = 8192
     }
 
     #[test]
-    fn config_toml_to_settings_uses_default_provider() {
+    fn config_toml_to_config_uses_default_provider() {
         let config = ConfigToml {
             default_provider: Some("openai".into()),
             providers: HashMap::from([(
@@ -169,14 +169,14 @@ max_tokens = 8192
             )]),
         };
 
-        let settings = config_toml_to_settings(&config, None);
-        assert_eq!(settings.api_provider.as_deref(), Some("openai"));
-        assert_eq!(settings.model.as_deref(), Some("gpt-4o"));
-        assert_eq!(settings.api_key.as_deref(), Some("sk-oai"));
+        let cfg = config_toml_to_config(&config, None);
+        assert_eq!(cfg.api_provider.as_deref(), Some("openai"));
+        assert_eq!(cfg.model.as_deref(), Some("gpt-4o"));
+        assert_eq!(cfg.api_key.as_deref(), Some("sk-oai"));
     }
 
     #[test]
-    fn config_toml_to_settings_provider_override() {
+    fn config_toml_to_config_provider_override() {
         let config = ConfigToml {
             default_provider: Some("openai".into()),
             providers: HashMap::from([
@@ -197,29 +197,29 @@ max_tokens = 8192
             ]),
         };
 
-        let settings = config_toml_to_settings(&config, Some("anthropic"));
-        assert_eq!(settings.api_provider.as_deref(), Some("anthropic"));
-        assert_eq!(settings.model.as_deref(), Some("claude-3"));
+        let cfg = config_toml_to_config(&config, Some("anthropic"));
+        assert_eq!(cfg.api_provider.as_deref(), Some("anthropic"));
+        assert_eq!(cfg.model.as_deref(), Some("claude-3"));
     }
 
     #[test]
-    fn config_toml_to_settings_missing_profile_returns_defaults() {
+    fn config_toml_to_config_missing_profile_returns_defaults() {
         let config = ConfigToml {
             default_provider: Some("unknown".into()),
             providers: HashMap::new(),
         };
 
-        let settings = config_toml_to_settings(&config, None);
-        assert_eq!(settings.api_provider.as_deref(), Some("unknown"));
-        assert!(settings.model.is_none());
-        assert!(settings.api_key.is_none());
+        let cfg = config_toml_to_config(&config, None);
+        assert_eq!(cfg.api_provider.as_deref(), Some("unknown"));
+        assert!(cfg.model.is_none());
+        assert!(cfg.api_key.is_none());
     }
 
     #[test]
-    fn config_toml_to_settings_no_default_falls_to_anthropic() {
+    fn config_toml_to_config_no_default_falls_to_anthropic() {
         let config = ConfigToml::default();
-        let settings = config_toml_to_settings(&config, None);
-        assert_eq!(settings.api_provider.as_deref(), Some("anthropic"));
+        let cfg = config_toml_to_config(&config, None);
+        assert_eq!(cfg.api_provider.as_deref(), Some("anthropic"));
     }
 
     #[test]

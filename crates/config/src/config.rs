@@ -8,14 +8,14 @@ const CONFIG_DIR: &str = ".crab";
 /// Settings file name within config directories.
 const SETTINGS_FILE: &str = "settings.json";
 
-/// Application settings, loaded from `~/.crab/settings.json` (global)
+/// Application configuration, loaded from `~/.crab/settings.json` (global)
 /// and `.crab/settings.json` (project-level).
 ///
 /// All fields are `Option` to support three-level merge: global → project → CLI overrides.
 /// Uses `camelCase` for JSON compatibility.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
-pub struct Settings {
+pub struct Config {
     // ── Provider / auth ──
     pub api_provider: Option<String>,
     pub api_base_url: Option<String>,
@@ -106,8 +106,8 @@ impl Default for GitContextConfig {
     }
 }
 
-impl Settings {
-    /// Merge another `Settings` on top of `self`.
+impl Config {
+    /// Merge another `Config` on top of `self`.
     /// Non-`None` fields in `other` override fields in `self`.
     #[must_use]
     pub fn merge(self, other: &Self) -> Self {
@@ -169,7 +169,7 @@ impl Settings {
     }
 
     /// Resolve `small_model` / `advisor_model` aliasing.
-    /// Both `smallModel` and `advisorModel` are accepted in settings JSON.
+    /// Both `smallModel` and `advisorModel` are accepted in the config file.
     #[must_use]
     pub fn effective_small_model(&self) -> Option<&str> {
         self.small_model
@@ -207,11 +207,11 @@ pub fn project_config_dir(project_dir: &Path) -> PathBuf {
     project_dir.join(CONFIG_DIR)
 }
 
-/// Parse JSONC (JSON with comments) into a `Settings`.
+/// Parse JSONC (JSON with comments) into a `Config`.
 ///
 /// Applies schema migrations (if needed) before deserialization so that
-/// older settings files are transparently upgraded.
-fn parse_jsonc(content: &str) -> crab_core::Result<Settings> {
+/// older config files are transparently upgraded.
+fn parse_jsonc(content: &str) -> crab_core::Result<Config> {
     let mut json = jsonc_parser::parse_to_serde_value::<serde_json::Value>(
         content,
         &jsonc_parser::ParseOptions::default(),
@@ -219,15 +219,15 @@ fn parse_jsonc(content: &str) -> crab_core::Result<Settings> {
     .map_err(|e| crab_core::Error::Config(format!("JSONC parse error: {e}")))?;
     crate::migration::migrate_settings(&mut json);
     serde_json::from_value(json)
-        .map_err(|e| crab_core::Error::Config(format!("settings deserialization error: {e}")))
+        .map_err(|e| crab_core::Error::Config(format!("config deserialization error: {e}")))
 }
 
-/// Load settings from a specific JSON/JSONC file.
-/// Returns `Ok(Settings::default())` if the file does not exist.
-fn load_from_file(path: &Path) -> crab_core::Result<Settings> {
+/// Load config from a specific JSON/JSONC file.
+/// Returns `Ok(Config::default())` if the file does not exist.
+fn load_from_file(path: &Path) -> crab_core::Result<Config> {
     match std::fs::read_to_string(path) {
         Ok(content) => parse_jsonc(&content),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Settings::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
         Err(e) => Err(crab_core::Error::Config(format!(
             "failed to read {}: {e}",
             path.display()
@@ -235,34 +235,34 @@ fn load_from_file(path: &Path) -> crab_core::Result<Settings> {
     }
 }
 
-/// Load settings from an explicit file path. Unlike the internal `load_from_file`,
+/// Load config from an explicit file path. Unlike the internal `load_from_file`,
 /// this returns an error if the file does not exist.
-pub fn load_settings_from_path(path: &Path) -> crab_core::Result<Settings> {
+pub fn load_config_from_path(path: &Path) -> crab_core::Result<Config> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| crab_core::Error::Config(format!("failed to read {}: {e}", path.display())))?;
     parse_jsonc(&content)
 }
 
-/// Load global settings from `~/.crab/settings.json`.
-pub fn load_global() -> crab_core::Result<Settings> {
+/// Load global config from `~/.crab/settings.json`.
+pub fn load_global() -> crab_core::Result<Config> {
     let path = global_config_dir().join(SETTINGS_FILE);
     load_from_file(&path)
 }
 
-/// Load project-level settings from `<project_dir>/.crab/settings.json`.
-pub fn load_project(project_dir: &Path) -> crab_core::Result<Settings> {
+/// Load project-level config from `<project_dir>/.crab/settings.json`.
+pub fn load_project(project_dir: &Path) -> crab_core::Result<Config> {
     let path = project_config_dir(project_dir).join(SETTINGS_FILE);
     load_from_file(&path)
 }
 
-/// Load project-local settings from `<project_dir>/.crab/settings.local.json`.
+/// Load project-local config from `<project_dir>/.crab/settings.local.json`.
 /// This file is intended to be gitignored and holds per-developer overrides.
-pub fn load_local(project_dir: &Path) -> crab_core::Result<Settings> {
+pub fn load_local(project_dir: &Path) -> crab_core::Result<Config> {
     let path = project_config_dir(project_dir).join("settings.local.json");
     load_from_file(&path)
 }
 
-/// Load and merge settings with full priority chain:
+/// Load and merge config with full priority chain:
 ///
 /// `config.toml defaults → global settings.json → project settings.json → env vars`
 ///
@@ -274,19 +274,19 @@ pub fn load_local(project_dir: &Path) -> crab_core::Result<Settings> {
 ///
 /// Provider-specific API key env vars (used when `CRAB_API_KEY` is not set):
 /// - `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`
-pub fn load_merged_settings(project_dir: Option<&PathBuf>) -> crab_core::Result<Settings> {
-    load_merged_settings_with_env(project_dir, |k| std::env::var(k))
+pub fn load_merged_config(project_dir: Option<&PathBuf>) -> crab_core::Result<Config> {
+    load_merged_config_with_env(project_dir, |k| std::env::var(k))
 }
 
-/// Which setting sources to include in the merge chain.
+/// Which config sources to include in the merge chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingSource {
+pub enum ConfigSource {
     User,
     Project,
     Local,
 }
 
-impl SettingSource {
+impl ConfigSource {
     /// Parse a comma-separated string like "user,project,local".
     pub fn parse_list(s: &str) -> Vec<Self> {
         s.split(',')
@@ -300,68 +300,67 @@ impl SettingSource {
     }
 }
 
-/// Load and merge settings with configurable source layers.
+/// Load and merge config with configurable source layers.
 ///
 /// When `sources` is `None`, all layers are included:
 /// config.toml → user → project → local → env vars
 ///
 /// When `sources` is `Some(list)`, only the listed layers are included.
-pub fn load_merged_settings_with_sources(
+pub fn load_merged_config_with_sources(
     project_dir: Option<&PathBuf>,
-    sources: Option<&[SettingSource]>,
-) -> crab_core::Result<Settings> {
-    load_merged_settings_with_env_and_sources(project_dir, |k| std::env::var(k), sources)
+    sources: Option<&[ConfigSource]>,
+) -> crab_core::Result<Config> {
+    load_merged_config_with_env_and_sources(project_dir, |k| std::env::var(k), sources)
 }
 
-/// Load and merge settings with validation.
+/// Load and merge config with validation.
 ///
-/// Validates each raw settings file from disk independently (global,
+/// Validates each raw config file from disk independently (global,
 /// project, local) so that absent `Option` fields don't produce
 /// false-positive `null` type errors. Validation warnings never block
-/// loading — the `Settings` value is always returned alongside any
+/// loading — the `Config` value is always returned alongside any
 /// warnings found.
-pub fn load_merged_settings_validated(
+pub fn load_merged_config_validated(
     project_dir: Option<&PathBuf>,
-    sources: Option<&[SettingSource]>,
-) -> crab_core::Result<(Settings, Vec<crate::validation::ValidationError>)> {
-    let settings = load_merged_settings_with_sources(project_dir, sources)?;
-    let warnings =
-        crate::validation::validate_all_settings_files(project_dir.map(PathBuf::as_path));
-    Ok((settings, warnings))
+    sources: Option<&[ConfigSource]>,
+) -> crab_core::Result<(Config, Vec<crate::validation::ValidationError>)> {
+    let config = load_merged_config_with_sources(project_dir, sources)?;
+    let warnings = crate::validation::validate_all_config_files(project_dir.map(PathBuf::as_path));
+    Ok((config, warnings))
 }
 
 /// Inner merge implementation, parameterized over env var lookup for testability.
 ///
 /// Merge chain: config.toml → user settings.json → project settings.json
 ///              → local settings.local.json → env vars
-fn load_merged_settings_with_env<F>(
+fn load_merged_config_with_env<F>(
     project_dir: Option<&PathBuf>,
     env_lookup: F,
-) -> crab_core::Result<Settings>
+) -> crab_core::Result<Config>
 where
     F: Fn(&str) -> std::result::Result<String, std::env::VarError>,
 {
-    load_merged_settings_with_env_and_sources(project_dir, env_lookup, None)
+    load_merged_config_with_env_and_sources(project_dir, env_lookup, None)
 }
 
 /// Core merge implementation with source filtering.
-fn load_merged_settings_with_env_and_sources<F>(
+fn load_merged_config_with_env_and_sources<F>(
     project_dir: Option<&PathBuf>,
     env_lookup: F,
-    sources: Option<&[SettingSource]>,
-) -> crab_core::Result<Settings>
+    sources: Option<&[ConfigSource]>,
+) -> crab_core::Result<Config>
 where
     F: Fn(&str) -> std::result::Result<String, std::env::VarError>,
 {
     let include_all = sources.is_none();
-    let has = |s: SettingSource| include_all || sources.is_some_and(|list| list.contains(&s));
+    let has = |s: ConfigSource| include_all || sources.is_some_and(|list| list.contains(&s));
 
     // 1. config.toml defaults (always loaded, lowest priority)
     let config_toml = crate::config_toml::load_config_toml()?;
-    let merged = crate::config_toml::config_toml_to_settings(&config_toml, None);
+    let merged = crate::config_toml::config_toml_to_config(&config_toml, None);
 
     // 2. User (~/.crab/settings.json)
-    let merged = if has(SettingSource::User) {
+    let merged = if has(ConfigSource::User) {
         let global = load_global()?;
         merged.merge(&global)
     } else {
@@ -369,7 +368,7 @@ where
     };
 
     // 3. Project (.crab/settings.json)
-    let merged = if has(SettingSource::Project) {
+    let merged = if has(ConfigSource::Project) {
         match project_dir {
             Some(dir) => {
                 let project = load_project(dir)?;
@@ -382,7 +381,7 @@ where
     };
 
     // 4. Local (.crab/settings.local.json)
-    let merged = if has(SettingSource::Local) {
+    let merged = if has(ConfigSource::Local) {
         match project_dir {
             Some(dir) => {
                 let local = load_local(dir)?;
@@ -395,12 +394,12 @@ where
     };
 
     // 5. Environment variable overrides (always applied, highest priority).
-    //    The env_lookup falls back to settings.env (CC-compatible) so that
+    //    The env_lookup falls back to config.env (CC-compatible) so that
     //    `{"env": {"ANTHROPIC_API_KEY": "sk-..."}}` in settings.json works.
-    let settings_env = merged.env.clone();
+    let config_env = merged.env.clone();
     let env_with_fallback = move |key: &str| -> std::result::Result<String, std::env::VarError> {
         env_lookup(key).or_else(|_| {
-            settings_env
+            config_env
                 .as_ref()
                 .and_then(|m| m.get(key).cloned())
                 .ok_or(std::env::VarError::NotPresent)
@@ -410,11 +409,11 @@ where
     Ok(merged.merge(&env_overlay))
 }
 
-/// Build a `Settings` from environment variables.
+/// Build a `Config` from environment variables.
 ///
 /// Checks generic `CRAB_*` vars first, then falls back to provider-specific
 /// API key vars based on the current provider.
-fn build_env_overlay<F>(env_lookup: &F, current_provider: Option<&str>) -> Settings
+fn build_env_overlay<F>(env_lookup: &F, current_provider: Option<&str>) -> Config
 where
     F: Fn(&str) -> std::result::Result<String, std::env::VarError>,
 {
@@ -441,12 +440,12 @@ where
         .ok()
         .or_else(|| provider_api_key_env(effective_provider, env_lookup));
 
-    Settings {
+    Config {
         api_provider,
         api_base_url,
         api_key,
         model,
-        ..Settings::default()
+        ..Config::default()
     }
 }
 
@@ -480,8 +479,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_settings_all_none() {
-        let s = Settings::default();
+    fn default_config_all_none() {
+        let s = Config::default();
         assert!(s.api_provider.is_none());
         assert!(s.api_key.is_none());
         assert!(s.model.is_none());
@@ -490,13 +489,13 @@ mod tests {
 
     #[test]
     fn merge_other_overrides_self() {
-        let base = Settings {
+        let base = Config {
             api_provider: Some("anthropic".into()),
             model: Some("old-model".into()),
             max_tokens: Some(1024),
             ..Default::default()
         };
-        let overlay = Settings {
+        let overlay = Config {
             model: Some("new-model".into()),
             theme: Some("dark".into()),
             ..Default::default()
@@ -510,11 +509,11 @@ mod tests {
 
     #[test]
     fn merge_none_does_not_clear() {
-        let base = Settings {
+        let base = Config {
             api_key: Some("sk-123".into()),
             ..Default::default()
         };
-        let empty = Settings::default();
+        let empty = Config::default();
         let merged = base.merge(&empty);
         assert_eq!(merged.api_key.as_deref(), Some("sk-123"));
     }
@@ -535,7 +534,7 @@ mod tests {
     #[test]
     fn parse_jsonc_empty_object() {
         let s = parse_jsonc("{}").unwrap();
-        assert_eq!(s, Settings::default());
+        assert_eq!(s, Config::default());
     }
 
     #[test]
@@ -556,7 +555,7 @@ mod tests {
     #[test]
     fn load_from_nonexistent_file_returns_default() {
         let s = load_from_file(Path::new("/nonexistent/path/settings.json")).unwrap();
-        assert_eq!(s, Settings::default());
+        assert_eq!(s, Config::default());
     }
 
     #[test]
@@ -593,7 +592,7 @@ mod tests {
     #[test]
     fn load_merged_without_project() {
         // Should not panic even if ~/.crab/ doesn't exist
-        let result = load_merged_settings(None);
+        let result = load_merged_config(None);
         assert!(result.is_ok());
     }
 
@@ -608,27 +607,27 @@ mod tests {
         )
         .unwrap();
 
-        let result = load_merged_settings(Some(&dir)).unwrap();
+        let result = load_merged_config(Some(&dir)).unwrap();
         assert_eq!(result.model.as_deref(), Some("project-model"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn settings_roundtrip_serde() {
-        let s = Settings {
+    fn config_roundtrip_serde() {
+        let s = Config {
             api_provider: Some("anthropic".into()),
             max_tokens: Some(4096),
             ..Default::default()
         };
         let json = serde_json::to_string(&s).unwrap();
-        let deserialized: Settings = serde_json::from_str(&json).unwrap();
+        let deserialized: Config = serde_json::from_str(&json).unwrap();
         assert_eq!(s, deserialized);
     }
 
     #[test]
     fn merge_all_fields_override() {
-        let base = Settings {
+        let base = Config {
             api_provider: Some("anthropic".into()),
             api_base_url: Some("http://old".into()),
             api_key: Some("sk-old".into()),
@@ -646,7 +645,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let overlay = Settings {
+        let overlay = Config {
             api_provider: Some("openai".into()),
             api_base_url: Some("http://new".into()),
             api_key: Some("sk-new".into()),
@@ -712,8 +711,8 @@ mod tests {
     }
 
     #[test]
-    fn settings_all_fields_serde_roundtrip() {
-        let s = Settings {
+    fn config_all_fields_serde_roundtrip() {
+        let s = Config {
             api_provider: Some("anthropic".into()),
             api_base_url: Some("http://localhost:8080".into()),
             api_key: Some("sk-test".into()),
@@ -730,17 +729,17 @@ mod tests {
             ..Default::default()
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
-        let deserialized: Settings = serde_json::from_str(&json).unwrap();
+        let deserialized: Config = serde_json::from_str(&json).unwrap();
         assert_eq!(s, deserialized);
     }
 
     #[test]
     fn merge_is_not_commutative() {
-        let a = Settings {
+        let a = Config {
             model: Some("model-a".into()),
             ..Default::default()
         };
-        let b = Settings {
+        let b = Config {
             model: Some("model-b".into()),
             ..Default::default()
         };
@@ -760,7 +759,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = load_merged_settings(Some(&dir)).unwrap();
+        let result = load_merged_config(Some(&dir)).unwrap();
         assert_eq!(result.model.as_deref(), Some("project-model"));
         assert_eq!(result.theme.as_deref(), Some("dark"));
 
@@ -924,13 +923,13 @@ mod tests {
         )
         .unwrap();
 
-        // Env vars should override project settings
+        // Env vars should override project config
         let env = fake_env(HashMap::from([
             ("CRAB_MODEL", "env-model"),
             ("CRAB_API_KEY", "env-key"),
         ]));
 
-        let result = load_merged_settings_with_env(Some(&dir), env).unwrap();
+        let result = load_merged_config_with_env(Some(&dir), env).unwrap();
         assert_eq!(result.model.as_deref(), Some("env-model")); // env wins
         assert_eq!(result.api_key.as_deref(), Some("env-key")); // env wins
 
@@ -938,7 +937,7 @@ mod tests {
     }
 
     #[test]
-    fn load_merged_no_env_preserves_settings() {
+    fn load_merged_no_env_preserves_config() {
         let dir = std::env::temp_dir().join("crab-config-test-no-env");
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
@@ -948,7 +947,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = load_merged_settings_with_env(Some(&dir), no_env).unwrap();
+        let result = load_merged_config_with_env(Some(&dir), no_env).unwrap();
         assert_eq!(result.model.as_deref(), Some("project-model"));
         assert_eq!(result.theme.as_deref(), Some("dark"));
 
@@ -983,7 +982,7 @@ mod tests {
             ("CRAB_MODEL", "env-model"),
         ]));
 
-        let result = load_merged_settings_with_env(Some(&dir), env).unwrap();
+        let result = load_merged_config_with_env(Some(&dir), env).unwrap();
         assert_eq!(result.api_provider.as_deref(), Some("openai")); // env wins
         assert_eq!(result.model.as_deref(), Some("env-model")); // env wins
         assert_eq!(result.api_key.as_deref(), Some("project-key")); // project preserved
@@ -992,31 +991,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ── load_settings_from_path tests ──
+    // ── load_config_from_path tests ──
 
     #[test]
-    fn load_settings_from_path_reads_file() {
+    fn load_config_from_path_reads_file() {
         let dir = std::env::temp_dir().join("crab-config-test-from-path");
         let _ = std::fs::create_dir_all(&dir);
         let file = dir.join("custom.json");
         std::fs::write(&file, r#"{"model": "custom-model"}"#).unwrap();
 
-        let s = load_settings_from_path(&file).unwrap();
+        let s = load_config_from_path(&file).unwrap();
         assert_eq!(s.model.as_deref(), Some("custom-model"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn load_settings_from_path_errors_on_missing_file() {
-        let result = load_settings_from_path(Path::new("/nonexistent/custom.json"));
+    fn load_config_from_path_errors_on_missing_file() {
+        let result = load_config_from_path(Path::new("/nonexistent/custom.json"));
         assert!(result.is_err());
     }
 
     // ── load_local tests ──
 
     #[test]
-    fn load_local_reads_settings_local_json() {
+    fn load_local_reads_local_config() {
         let dir = std::env::temp_dir().join("crab-config-test-local");
         let crab_dir = dir.join(".crab");
         let _ = std::fs::create_dir_all(&crab_dir);
@@ -1038,39 +1037,39 @@ mod tests {
         let _ = std::fs::create_dir_all(&dir);
 
         let s = load_local(&dir).unwrap();
-        assert_eq!(s, Settings::default());
+        assert_eq!(s, Config::default());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ── SettingSource tests ──
+    // ── ConfigSource tests ──
 
     #[test]
-    fn setting_source_parse_list_all() {
-        let sources = SettingSource::parse_list("user,project,local");
+    fn config_source_parse_list_all() {
+        let sources = ConfigSource::parse_list("user,project,local");
         assert_eq!(
             sources,
             vec![
-                SettingSource::User,
-                SettingSource::Project,
-                SettingSource::Local
+                ConfigSource::User,
+                ConfigSource::Project,
+                ConfigSource::Local
             ]
         );
     }
 
     #[test]
-    fn setting_source_parse_list_single() {
-        let sources = SettingSource::parse_list("project");
-        assert_eq!(sources, vec![SettingSource::Project]);
+    fn config_source_parse_list_single() {
+        let sources = ConfigSource::parse_list("project");
+        assert_eq!(sources, vec![ConfigSource::Project]);
     }
 
     #[test]
-    fn setting_source_parse_list_unknown_ignored() {
-        let sources = SettingSource::parse_list("user,unknown,local");
-        assert_eq!(sources, vec![SettingSource::User, SettingSource::Local]);
+    fn config_source_parse_list_unknown_ignored() {
+        let sources = ConfigSource::parse_list("user,unknown,local");
+        assert_eq!(sources, vec![ConfigSource::User, ConfigSource::Local]);
     }
 
-    // ── Source-filtered settings loading ──
+    // ── Source-filtered config loading ──
 
     #[test]
     fn load_merged_with_sources_skips_project() {
@@ -1084,10 +1083,10 @@ mod tests {
         .unwrap();
 
         // Only load user, not project — project model should not appear
-        let result = load_merged_settings_with_env_and_sources(
+        let result = load_merged_config_with_env_and_sources(
             Some(&dir),
             no_env,
-            Some(&[SettingSource::User]),
+            Some(&[ConfigSource::User]),
         )
         .unwrap();
         // Model should NOT be "project-model" since we skipped the project source
@@ -1113,7 +1112,7 @@ mod tests {
         .unwrap();
 
         // Load all sources — local should override project
-        let result = load_merged_settings_with_env_and_sources(
+        let result = load_merged_config_with_env_and_sources(
             Some(&dir),
             no_env,
             None, // all sources

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use anyhow::Context;
 
 use crab_agent::SessionConfig;
-use crab_config::settings;
+use crab_config::config;
 use crab_core::model::ModelId;
 use crab_core::permission::{PermissionMode, PermissionPolicy};
 
@@ -95,8 +95,8 @@ impl Default for ChatConfig {
 /// TUI/REPL loop fails.
 pub async fn run_chat(config: ChatConfig) -> anyhow::Result<()> {
     // 1. Load merged settings
-    let merged_settings = settings::load_merged_settings(Some(&config.project_dir))
-        .context("failed to load settings")?;
+    let merged_settings =
+        config::load_merged_config(Some(&config.project_dir)).context("failed to load settings")?;
 
     // 2. Resolve effective model and provider
     let provider = if config.provider == "anthropic" {
@@ -121,7 +121,7 @@ pub async fn run_chat(config: ChatConfig) -> anyhow::Result<()> {
         });
 
     // 3. Build effective settings for backend creation
-    let effective_settings = crab_config::Settings {
+    let effective_settings = crab_config::Config {
         api_provider: Some(provider.clone()),
         api_base_url: merged_settings.api_base_url.clone(),
         api_key: merged_settings.api_key.clone(),
@@ -145,7 +145,7 @@ pub async fn run_chat(config: ChatConfig) -> anyhow::Result<()> {
     };
 
     // 5. Set up directories
-    let global_dir = settings::global_config_dir();
+    let global_dir = config::global_config_dir();
     let sessions_dir = global_dir.join("sessions");
 
     let effective_sessions_dir = if config.no_session_persistence || config.bare_mode {

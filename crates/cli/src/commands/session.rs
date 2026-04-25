@@ -9,7 +9,7 @@ use crab_session::{ExportFormat, SessionHistory};
 
 /// Resolve the sessions directory (`~/.crab/sessions/`).
 fn sessions_dir() -> PathBuf {
-    crab_config::settings::global_config_dir().join("sessions")
+    crab_config::config::global_config_dir().join("sessions")
 }
 
 /// List all saved session IDs.

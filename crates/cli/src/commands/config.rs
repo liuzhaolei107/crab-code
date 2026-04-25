@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 
-use crab_config::settings;
+use crab_config::config;
 
 /// Actions available under `crab config`.
 #[derive(Subcommand)]
@@ -50,7 +50,7 @@ pub fn run(action: &ConfigAction) -> anyhow::Result<()> {
 /// `crab config list` — print all effective settings as pretty JSON.
 fn cmd_list() -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().ok();
-    let merged = settings::load_merged_settings(working_dir.as_ref())?;
+    let merged = config::load_merged_config(working_dir.as_ref())?;
     let json = serde_json::to_string_pretty(&merged)?;
     println!("{json}");
     Ok(())
@@ -59,7 +59,7 @@ fn cmd_list() -> anyhow::Result<()> {
 /// `crab config get <key>` — print a single setting value.
 fn cmd_get(key: &str) -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().ok();
-    let merged = settings::load_merged_settings(working_dir.as_ref())?;
+    let merged = config::load_merged_config(working_dir.as_ref())?;
     let value = settings_to_map(&merged);
 
     match value.get(key) {
@@ -156,10 +156,10 @@ fn cmd_edit(global: bool) -> anyhow::Result<()> {
 /// `crab config path` — show config file paths and existence status.
 #[allow(clippy::unnecessary_wraps)]
 fn cmd_path() -> anyhow::Result<()> {
-    let global_dir = settings::global_config_dir();
+    let global_dir = config::global_config_dir();
     let global_settings = global_dir.join("settings.json");
     let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let project_dir = settings::project_config_dir(&working_dir);
+    let project_dir = config::project_config_dir(&working_dir);
     let project_settings = project_dir.join("settings.json");
 
     println!(
@@ -179,7 +179,7 @@ fn cmd_path() -> anyhow::Result<()> {
 // ── Helpers ────────────────────────────────────────────────────────────
 
 /// Convert `Settings` to a JSON map for key lookup.
-fn settings_to_map(s: &crab_config::Settings) -> serde_json::Map<String, serde_json::Value> {
+fn settings_to_map(s: &crab_config::Config) -> serde_json::Map<String, serde_json::Value> {
     let v = serde_json::to_value(s).unwrap_or_default();
     match v {
         serde_json::Value::Object(m) => m,
@@ -207,10 +207,10 @@ fn known_settings_keys() -> Vec<&'static str> {
 /// Resolve the target settings.json path.
 fn target_settings_path(global: bool) -> anyhow::Result<PathBuf> {
     if global {
-        Ok(settings::global_config_dir().join("settings.json"))
+        Ok(config::global_config_dir().join("settings.json"))
     } else {
         let working_dir = std::env::current_dir()?;
-        Ok(settings::project_config_dir(&working_dir).join("settings.json"))
+        Ok(config::project_config_dir(&working_dir).join("settings.json"))
     }
 }
 
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn settings_to_map_roundtrip() {
-        let s = crab_config::Settings {
+        let s = crab_config::Config {
             model: Some("test-model".into()),
             theme: Some("dark".into()),
             ..Default::default()
@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn settings_to_map_none_fields_are_null() {
-        let s = crab_config::Settings::default();
+        let s = crab_config::Config::default();
         let map = settings_to_map(&s);
         assert!(map.get("model").is_some_and(serde_json::Value::is_null));
     }

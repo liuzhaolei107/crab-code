@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::settings::{self, Settings};
+use crate::config::{self, Config};
 
 /// Cached, lazily-loaded settings.
 ///
@@ -18,7 +18,7 @@ pub struct SettingsCache {
     /// The project directory used for loading project-level settings.
     project_dir: Option<PathBuf>,
     /// Cached merged settings, `None` until first access or after invalidation.
-    cached: Mutex<Option<Settings>>,
+    cached: Mutex<Option<Config>>,
 }
 
 impl SettingsCache {
@@ -37,17 +37,17 @@ impl SettingsCache {
     /// # Errors
     ///
     /// Returns an error if settings files cannot be read or parsed.
-    pub fn get_or_load(&self) -> crab_core::Result<Settings> {
+    pub fn get_or_load(&self) -> crab_core::Result<Config> {
         let mut guard = self.cached.lock().unwrap();
         if let Some(ref cached) = *guard {
             return Ok(cached.clone());
         }
 
         // Load and merge: global → project → local (each layer optional)
-        let global = settings::load_global().unwrap_or_default();
+        let global = config::load_global().unwrap_or_default();
 
         let merged = if let Some(ref project_dir) = self.project_dir {
-            let project = settings::load_project(project_dir).unwrap_or_default();
+            let project = config::load_project(project_dir).unwrap_or_default();
             global.merge(&project)
         } else {
             global

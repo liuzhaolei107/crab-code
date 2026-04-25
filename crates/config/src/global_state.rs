@@ -1,6 +1,6 @@
 //! Persistent global state (`~/.crab/state.json`).
 //!
-//! Separate from `Settings` (user-editable config): `GlobalState` is
+//! Separate from `Config` (user-editable config): `GlobalState` is
 //! read/written programmatically to track runtime state such as onboarding
 //! completion and per-project trust records.
 
@@ -40,7 +40,7 @@ pub struct ProjectTrust {
 /// Path to `~/.crab/state.json`.
 #[must_use]
 pub fn state_path() -> PathBuf {
-    crate::settings::global_config_dir().join(STATE_FILE)
+    crate::config::global_config_dir().join(STATE_FILE)
 }
 
 /// Load global state from disk. Returns `Default` if the file is missing

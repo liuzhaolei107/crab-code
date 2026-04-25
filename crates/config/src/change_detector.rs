@@ -54,7 +54,7 @@ impl ChangeDetector {
         let sources = [
             (
                 "global",
-                crate::settings::global_config_dir().join("settings.json"),
+                crate::config::global_config_dir().join("settings.json"),
             ),
             // Project source is checked if we have a project dir
             // (callers can use check_source() for project-specific paths)

@@ -68,9 +68,9 @@ pub fn parse_hooks(value: &serde_json::Value) -> crab_core::Result<Vec<Hook>> {
     Ok(hooks)
 }
 
-/// Load hooks from a `Settings` struct.
-pub fn load_hooks(settings: &crate::Settings) -> crab_core::Result<Vec<Hook>> {
-    settings
+/// Load hooks from a `Config` struct.
+pub fn load_hooks(config: &crate::Config) -> crab_core::Result<Vec<Hook>> {
+    config
         .hooks
         .as_ref()
         .map_or_else(|| Ok(Vec::new()), parse_hooks)
@@ -153,14 +153,14 @@ mod tests {
 
     #[test]
     fn load_hooks_from_settings_none() {
-        let settings = crate::Settings::default();
+        let settings = crate::Config::default();
         let hooks = load_hooks(&settings).unwrap();
         assert!(hooks.is_empty());
     }
 
     #[test]
     fn load_hooks_from_settings_with_hooks() {
-        let settings = crate::Settings {
+        let settings = crate::Config {
             hooks: Some(serde_json::json!([{
                 "trigger": "user_prompt_submit",
                 "command": "echo hi"
@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn load_hooks_prompt_submit_alias_compat() {
-        let settings = crate::Settings {
+        let settings = crate::Config {
             hooks: Some(serde_json::json!([{
                 "trigger": "prompt_submit",
                 "command": "echo hi"

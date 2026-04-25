@@ -351,7 +351,7 @@ fn reload_settings(app: &mut App, rt: Option<&mut AgentRuntime>) -> Vec<String> 
         Some(std::path::PathBuf::from(&app.working_dir))
     };
 
-    match crab_config::settings::load_merged_settings_validated(project_dir.as_ref(), None) {
+    match crab_config::config::load_merged_config_validated(project_dir.as_ref(), None) {
         Ok((settings, errors)) => {
             if let Some(rt) = rt {
                 if let Some(ref model) = settings.model {

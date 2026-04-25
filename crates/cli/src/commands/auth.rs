@@ -35,7 +35,7 @@ impl ProviderStatus {
 }
 
 /// Check which providers have API keys available.
-fn check_providers(settings: &crab_config::Settings) -> Vec<ProviderStatus> {
+fn check_providers(settings: &crab_config::Config) -> Vec<ProviderStatus> {
     let checks = [
         ("anthropic", "ANTHROPIC_API_KEY"),
         ("openai", "OPENAI_API_KEY"),
@@ -62,8 +62,7 @@ fn check_providers(settings: &crab_config::Settings) -> Vec<ProviderStatus> {
 
 pub fn run(action: &AuthAction) -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().unwrap_or_default();
-    let settings =
-        crab_config::settings::load_merged_settings(Some(&working_dir)).unwrap_or_default();
+    let settings = crab_config::config::load_merged_config(Some(&working_dir)).unwrap_or_default();
 
     match action {
         AuthAction::Login => run_login(&settings),
@@ -73,7 +72,7 @@ pub fn run(action: &AuthAction) -> anyhow::Result<()> {
     }
 }
 
-fn run_login(settings: &crab_config::Settings) -> anyhow::Result<()> {
+fn run_login(settings: &crab_config::Config) -> anyhow::Result<()> {
     let providers = check_providers(settings);
     let any_configured = providers.iter().any(ProviderStatus::is_configured);
 
@@ -108,7 +107,7 @@ fn run_login(settings: &crab_config::Settings) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_status(settings: &crab_config::Settings, json_output: bool) -> anyhow::Result<()> {
+fn run_status(settings: &crab_config::Config, json_output: bool) -> anyhow::Result<()> {
     let providers = check_providers(settings);
 
     if json_output {
@@ -143,7 +142,7 @@ fn run_status(settings: &crab_config::Settings, json_output: bool) -> anyhow::Re
 }
 
 fn run_logout() -> anyhow::Result<()> {
-    let global_dir = crab_config::settings::global_config_dir();
+    let global_dir = crab_config::config::global_config_dir();
     let settings_path = global_dir.join("settings.json");
 
     if !settings_path.exists() {
@@ -181,7 +180,7 @@ fn run_setup_token() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let global_dir = crab_config::settings::global_config_dir();
+    let global_dir = crab_config::config::global_config_dir();
     std::fs::create_dir_all(&global_dir)?;
     let settings_path = global_dir.join("settings.json");
 
@@ -209,7 +208,7 @@ mod tests {
 
     #[test]
     fn check_providers_returns_two() {
-        let settings = crab_config::Settings::default();
+        let settings = crab_config::Config::default();
         let providers = check_providers(&settings);
         assert_eq!(providers.len(), 2);
         assert_eq!(providers[0].provider, "anthropic");
@@ -218,7 +217,7 @@ mod tests {
 
     #[test]
     fn provider_status_with_settings_key() {
-        let settings = crab_config::Settings {
+        let settings = crab_config::Config {
             api_key: Some("sk-test".into()),
             api_provider: Some("anthropic".into()),
             ..Default::default()
@@ -231,7 +230,7 @@ mod tests {
 
     #[test]
     fn provider_status_no_key() {
-        let settings = crab_config::Settings::default();
+        let settings = crab_config::Config::default();
         let providers = check_providers(&settings);
         // Without env vars set, both should show not configured via settings
         assert!(!providers[0].has_settings);
@@ -240,7 +239,7 @@ mod tests {
 
     #[test]
     fn run_status_json_output() {
-        let settings = crab_config::Settings {
+        let settings = crab_config::Config {
             api_key: Some("sk-test".into()),
             api_provider: Some("anthropic".into()),
             ..Default::default()
@@ -252,14 +251,14 @@ mod tests {
 
     #[test]
     fn run_status_text_output() {
-        let settings = crab_config::Settings::default();
+        let settings = crab_config::Config::default();
         let result = run_status(&settings, false);
         assert!(result.is_ok());
     }
 
     #[test]
     fn run_login_doesnt_panic() {
-        let settings = crab_config::Settings::default();
+        let settings = crab_config::Config::default();
         let result = run_login(&settings);
         assert!(result.is_ok());
     }

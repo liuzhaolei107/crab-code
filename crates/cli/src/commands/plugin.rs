@@ -46,7 +46,7 @@ pub fn run(action: &PluginAction) -> anyhow::Result<()> {
 }
 
 fn plugins_dir() -> PathBuf {
-    crab_config::settings::global_config_dir().join("plugins")
+    crab_config::config::global_config_dir().join("plugins")
 }
 
 fn run_list() -> anyhow::Result<()> {

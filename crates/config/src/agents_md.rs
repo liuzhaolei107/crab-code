@@ -28,7 +28,7 @@ pub fn collect_agents_md(project_dir: &Path) -> Vec<AgentsMd> {
     let mut results = Vec::new();
 
     // 1. Global: ~/.crab/AGENTS.md + ~/.crab/rules/*.md
-    let global_dir = crate::settings::global_config_dir();
+    let global_dir = crate::config::global_config_dir();
     if let Some(md) = read_agents_md(&global_dir.join("AGENTS.md"), AgentsMdSource::Global) {
         results.push(md);
     }

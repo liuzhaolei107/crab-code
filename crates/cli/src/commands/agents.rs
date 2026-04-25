@@ -7,7 +7,7 @@ pub fn run() -> anyhow::Result<()> {
     // Check project-level agents directory
     let project_agents = working_dir.join(".crab").join("agents");
     // Check global agents directory
-    let global_agents = crab_config::settings::global_config_dir().join("agents");
+    let global_agents = crab_config::config::global_config_dir().join("agents");
 
     let mut found_any = false;
 

@@ -1,9 +1,9 @@
-//! Settings schema migration — versioned upgrade chain.
+//! Config schema migration — versioned upgrade chain.
 //!
-//! Each time settings are loaded from disk, `migrate_settings()` checks
+//! Each time config is loaded from disk, `migrate_settings()` checks
 //! the `schemaVersion` field and applies any pending migrations in order.
 //! Migrations are pure `fn(&mut Value)` transforms on the raw JSON before
-//! it is deserialized into `Settings`.
+//! it is deserialized into `Config`.
 
 use serde_json::Value;
 

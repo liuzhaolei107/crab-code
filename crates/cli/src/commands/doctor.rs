@@ -11,9 +11,8 @@ struct Check {
 /// Run all diagnostic checks and print results.
 pub fn run() -> anyhow::Result<()> {
     let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let global_dir = crab_config::settings::global_config_dir();
-    let settings =
-        crab_config::settings::load_merged_settings(Some(&working_dir)).unwrap_or_default();
+    let global_dir = crab_config::config::global_config_dir();
+    let settings = crab_config::config::load_merged_config(Some(&working_dir)).unwrap_or_default();
 
     let checks = vec![
         check_api_key(&settings),
@@ -64,7 +63,7 @@ pub fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn check_api_key(settings: &crab_config::Settings) -> Check {
+fn check_api_key(settings: &crab_config::Config) -> Check {
     let has_settings_key = settings.api_key.as_ref().is_some_and(|k| !k.is_empty());
     let has_anthropic_env = std::env::var("ANTHROPIC_API_KEY").is_ok_and(|v| !v.is_empty());
     let has_openai_env = std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.is_empty());
@@ -361,7 +360,7 @@ fn check_update_available() -> Check {
     }
 }
 
-fn check_mcp_config(settings: &crab_config::Settings) -> Check {
+fn check_mcp_config(settings: &crab_config::Config) -> Check {
     match &settings.mcp_servers {
         None => Check {
             name: "MCP servers",
@@ -392,7 +391,7 @@ mod tests {
 
     #[test]
     fn check_api_key_with_settings() {
-        let settings = crab_config::Settings {
+        let settings = crab_config::Config {
             api_key: Some("sk-test".into()),
             ..Default::default()
         };
@@ -403,7 +402,7 @@ mod tests {
 
     #[test]
     fn check_api_key_without_any() {
-        let settings = crab_config::Settings::default();
+        let settings = crab_config::Config::default();
         // May or may not pass depending on env vars in CI
         let result = check_api_key(&settings);
         // Just verify it runs without panic
@@ -443,14 +442,14 @@ mod tests {
 
     #[test]
     fn check_mcp_no_config() {
-        let settings = crab_config::Settings::default();
+        let settings = crab_config::Config::default();
         let result = check_mcp_config(&settings);
         assert!(result.passed);
     }
 
     #[test]
     fn check_mcp_with_servers() {
-        let settings = crab_config::Settings {
+        let settings = crab_config::Config {
             mcp_servers: Some(serde_json::json!({
                 "playwright": { "command": "npx", "args": ["playwright"] }
             })),
@@ -463,7 +462,7 @@ mod tests {
 
     #[test]
     fn check_mcp_invalid_format() {
-        let settings = crab_config::Settings {
+        let settings = crab_config::Config {
             mcp_servers: Some(serde_json::json!("not an object")),
             ..Default::default()
         };

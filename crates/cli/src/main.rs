@@ -565,7 +565,7 @@ fn resolve_tool_filters(
 
 /// Load a `--settings` argument: if it looks like JSON (starts with `{`),
 /// parse it directly; otherwise treat it as a file path and read it.
-fn load_settings_arg(arg: &str) -> anyhow::Result<crab_config::Settings> {
+fn load_settings_arg(arg: &str) -> anyhow::Result<crab_config::Config> {
     let content = if arg.trim_start().starts_with('{') {
         arg.to_string()
     } else {
@@ -671,12 +671,9 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
     let sources = cli
         .setting_sources
         .as_ref()
-        .map(|s| crab_config::settings::SettingSource::parse_list(s));
+        .map(|s| crab_config::config::ConfigSource::parse_list(s));
     let (mut settings, validation_warnings) =
-        crab_config::settings::load_merged_settings_validated(
-            Some(&working_dir),
-            sources.as_deref(),
-        )?;
+        crab_config::config::load_merged_config_validated(Some(&working_dir), sources.as_deref())?;
     for w in &validation_warnings {
         tracing::warn!("settings validation: {w}");
     }
@@ -728,7 +725,7 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
         });
 
     // Build effective settings — just override provider and model from CLI
-    let effective_settings = crab_config::Settings {
+    let effective_settings = crab_config::Config {
         api_provider: Some(provider.clone()),
         model: Some(model_id.clone()),
         ..settings.clone()
@@ -796,7 +793,7 @@ async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result<()>
             .unwrap_or(PermissionMode::Default)
     };
 
-    let global_dir = crab_config::settings::global_config_dir();
+    let global_dir = crab_config::config::global_config_dir();
     let sessions_dir = global_dir.join("sessions");
 
     // --no-session-persistence disables session saving
@@ -974,7 +971,7 @@ fn build_skill_dirs(working_dir: &std::path::Path) -> Vec<PathBuf> {
     // Global skills: ~/.crab/skills/
     // Project skills: <project>/.crab/skills/
     vec![
-        crab_config::settings::global_config_dir().join("skills"),
+        crab_config::config::global_config_dir().join("skills"),
         working_dir.join(".crab").join("skills"),
     ]
 }

@@ -79,7 +79,7 @@ impl AuthProvider for ApiKeyProvider {
 ///
 /// Falls back to an empty key if resolution fails (the API call will error with 401).
 #[must_use]
-pub fn create_auth_provider(settings: &crab_config::Settings) -> Box<dyn AuthProvider> {
+pub fn create_auth_provider(settings: &crab_config::Config) -> Box<dyn AuthProvider> {
     let key = api_key::resolve_api_key(
         settings.api_key.as_deref(),
         settings.api_provider.as_deref(),
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn create_auth_provider_with_explicit_key() {
-        let settings = crab_config::Settings {
+        let settings = crab_config::Config {
             api_key: Some("explicit-key".into()),
             ..Default::default()
         };
@@ -167,7 +167,7 @@ mod tests {
     fn create_auth_provider_with_default_settings() {
         // With default settings (no api_key), create_auth_provider returns a provider
         // that resolves to whatever the env/keychain yields (or empty fallback).
-        let settings = crab_config::Settings::default();
+        let settings = crab_config::Config::default();
         let provider = create_auth_provider(&settings);
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(provider.get_auth()).unwrap();

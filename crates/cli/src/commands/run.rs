@@ -16,7 +16,7 @@ use std::sync::Arc;
 use anyhow::Context;
 
 use crab_agent::{AgentSession, SessionConfig};
-use crab_config::settings;
+use crab_config::config;
 use crab_core::event::Event;
 use crab_core::model::ModelId;
 use crab_core::permission::{PermissionMode, PermissionPolicy};
@@ -107,8 +107,8 @@ impl Default for RunConfig {
 /// Returns an error if settings loading, backend creation, or the query fails.
 pub async fn run_once(config: RunConfig) -> anyhow::Result<()> {
     // 1. Load settings
-    let merged_settings = settings::load_merged_settings(Some(&config.project_dir))
-        .context("failed to load settings")?;
+    let merged_settings =
+        config::load_merged_config(Some(&config.project_dir)).context("failed to load settings")?;
 
     // 2. Resolve provider and model
     let provider = if config.provider == "anthropic" {
@@ -133,7 +133,7 @@ pub async fn run_once(config: RunConfig) -> anyhow::Result<()> {
         });
 
     // 3. Build backend
-    let effective_settings = crab_config::Settings {
+    let effective_settings = crab_config::Config {
         api_provider: Some(provider.clone()),
         api_base_url: merged_settings.api_base_url.clone(),
         api_key: merged_settings.api_key.clone(),
@@ -164,7 +164,7 @@ pub async fn run_once(config: RunConfig) -> anyhow::Result<()> {
         effective_settings.system_prompt.as_deref(),
     );
 
-    let global_dir = settings::global_config_dir();
+    let global_dir = config::global_config_dir();
     let session_id = crab_core::common::utils::id::new_ulid();
 
     // 6. Build session config

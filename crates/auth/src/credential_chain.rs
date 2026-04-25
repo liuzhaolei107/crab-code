@@ -188,7 +188,7 @@ impl Default for CredentialChainBuilder {
 /// 3. System keychain
 /// 4. Cloud-specific auth (Bedrock `SigV4` / Vertex `OAuth2` / Workload Identity)
 #[must_use]
-pub fn build_default_chain(settings: &crab_config::Settings) -> CredentialChain {
+pub fn build_default_chain(settings: &crab_config::Config) -> CredentialChain {
     let provider_name = settings.api_provider.as_deref().unwrap_or("anthropic");
 
     let mut builder = CredentialChainBuilder::new();
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn build_default_chain_with_explicit_key() {
-        let settings = crab_config::Settings {
+        let settings = crab_config::Config {
             api_key: Some("explicit-key".into()),
             api_provider: Some("anthropic".into()),
             ..Default::default()
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn build_default_chain_empty_key_skipped() {
-        let settings = crab_config::Settings {
+        let settings = crab_config::Config {
             api_key: Some(String::new()),
             ..Default::default()
         };
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn build_default_chain_no_settings() {
-        let settings = crab_config::Settings::default();
+        let settings = crab_config::Config::default();
         let chain = build_default_chain(&settings);
         // May or may not have providers depending on env/keychain
         let _ = chain.len();

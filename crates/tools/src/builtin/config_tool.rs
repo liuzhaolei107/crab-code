@@ -132,7 +132,7 @@ fn set_dot_path(root: &mut Value, key: &str, new_value: Value) {
 
 /// Read a setting value by dot-separated key path.
 async fn get_setting(key: &str) -> Result<ToolOutput> {
-    let settings = crab_config::settings::load_merged_settings(None)
+    let settings = crab_config::config::load_merged_config(None)
         .map_err(|e| crab_core::Error::Config(format!("failed to load merged settings: {e}")))?;
     let json = serde_json::to_value(&settings)
         .map_err(|e| crab_core::Error::Config(format!("failed to serialize settings: {e}")))?;
@@ -187,7 +187,7 @@ async fn set_setting(key: &str, value: &Value) -> Result<ToolOutput> {
 
 /// List all current settings.
 async fn list_settings() -> Result<ToolOutput> {
-    let settings = crab_config::settings::load_merged_settings(None)
+    let settings = crab_config::config::load_merged_config(None)
         .map_err(|e| crab_core::Error::Config(format!("failed to load merged settings: {e}")))?;
     let json = serde_json::to_string_pretty(&settings)
         .map_err(|e| crab_core::Error::Config(format!("failed to serialize settings: {e}")))?;
