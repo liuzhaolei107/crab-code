@@ -7,12 +7,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crab_tools::builtin::bash::BASH_TOOL_NAME;
-use crab_tools::builtin::edit::EDIT_TOOL_NAME;
-use crab_tools::builtin::glob::GLOB_TOOL_NAME;
-use crab_tools::builtin::grep::GREP_TOOL_NAME;
-use crab_tools::builtin::read::READ_TOOL_NAME;
-use crab_tools::builtin::write::WRITE_TOOL_NAME;
+use crab_core::tool::{
+    BASH_TOOL_NAME, EDIT_TOOL_NAME, GLOB_TOOL_NAME, GREP_TOOL_NAME, READ_TOOL_NAME,
+    WRITE_TOOL_NAME,
+};
 
 use crate::history::SessionHistory;
 

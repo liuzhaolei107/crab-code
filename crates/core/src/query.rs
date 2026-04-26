@@ -19,16 +19,6 @@ pub enum QuerySource {
     SessionMemory,
 }
 
-/// Phase the query loop is currently executing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum QueryPhase {
-    Submitting,
-    Streaming,
-    ToolExecution,
-    Finalizing,
-    Done,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,13 +36,5 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let back: QuerySource = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
-    }
-
-    #[test]
-    fn phase_serde_roundtrip() {
-        let p = QueryPhase::Streaming;
-        let json = serde_json::to_string(&p).unwrap();
-        let back: QueryPhase = serde_json::from_str(&json).unwrap();
-        assert_eq!(p, back);
     }
 }

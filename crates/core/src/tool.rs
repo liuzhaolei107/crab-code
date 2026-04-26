@@ -8,6 +8,13 @@ use tokio_util::sync::CancellationToken;
 use crate::permission::{PermissionMode, PermissionPolicy};
 use crate::Result;
 
+pub const BASH_TOOL_NAME: &str = "Bash";
+pub const READ_TOOL_NAME: &str = "Read";
+pub const WRITE_TOOL_NAME: &str = "Write";
+pub const EDIT_TOOL_NAME: &str = "Edit";
+pub const GLOB_TOOL_NAME: &str = "Glob";
+pub const GREP_TOOL_NAME: &str = "Grep";
+
 /// Tool source classification — determines the permission matrix column.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToolSource {
