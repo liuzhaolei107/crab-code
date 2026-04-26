@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crab_common::Error;
+use crab_core::Error;
 
 /// Validate a memory file key for safety.
 ///
@@ -15,7 +15,7 @@ use crab_common::Error;
 /// - absolute paths (Unix `/foo`, Windows `C:\foo`)
 /// - `..` path-traversal substrings
 /// - URL-encoded traversal (`%2e%2e`, `%2f`, case-insensitive)
-pub fn validate_memory_key(key: &str) -> crab_common::Result<String> {
+pub fn validate_memory_key(key: &str) -> crab_core::Result<String> {
     if key.contains('\0') {
         return Err(Error::Permission("memory key contains null byte".into()));
     }
@@ -50,7 +50,7 @@ pub fn validate_memory_key(key: &str) -> crab_common::Result<String> {
 /// Uses [`dunce::canonicalize`] on both inputs and verifies the prefix
 /// relationship on the canonical paths. Because canonical paths retain
 /// separators, a sibling like `team-evil` cannot match a `team` prefix.
-pub fn validate_team_mem_path(path: &Path, team_dir: &Path) -> crab_common::Result<PathBuf> {
+pub fn validate_team_mem_path(path: &Path, team_dir: &Path) -> crab_core::Result<PathBuf> {
     let canonical_path = dunce::canonicalize(path).map_err(|e| {
         Error::Permission(format!(
             "failed to canonicalize memory path {}: {e}",

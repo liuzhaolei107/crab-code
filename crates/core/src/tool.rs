@@ -6,7 +6,7 @@ use std::pin::Pin;
 use tokio_util::sync::CancellationToken;
 
 use crate::permission::{PermissionMode, PermissionPolicy};
-use crab_common::Result;
+use crate::Result;
 
 /// Tool source classification — determines the permission matrix column.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

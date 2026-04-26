@@ -65,7 +65,7 @@ impl LocalExporter {
     }
 
     /// Export a batch of span records to the spans file.
-    pub fn export_spans(&self, spans: &[SpanRecord]) -> crab_common::Result<()> {
+    pub fn export_spans(&self, spans: &[SpanRecord]) -> crab_core::Result<()> {
         if spans.is_empty() {
             return Ok(());
         }
@@ -86,7 +86,7 @@ impl LocalExporter {
     }
 
     /// Export a batch of metric records to the metrics file.
-    pub fn export_metrics(&self, metrics: &[MetricRecord]) -> crab_common::Result<()> {
+    pub fn export_metrics(&self, metrics: &[MetricRecord]) -> crab_core::Result<()> {
         if metrics.is_empty() {
             return Ok(());
         }
@@ -112,7 +112,7 @@ impl LocalExporter {
     }
 
     /// List all telemetry files in the output directory.
-    pub fn list_files(&self) -> crab_common::Result<Vec<PathBuf>> {
+    pub fn list_files(&self) -> crab_core::Result<Vec<PathBuf>> {
         let mut files = Vec::new();
         let Ok(entries) = fs::read_dir(&self.output_dir) else {
             return Ok(files);
@@ -128,7 +128,7 @@ impl LocalExporter {
     }
 
     /// Delete telemetry files older than the given number of days.
-    pub fn cleanup_older_than(&self, days: u32) -> crab_common::Result<u32> {
+    pub fn cleanup_older_than(&self, days: u32) -> crab_core::Result<u32> {
         let cutoff = SystemTime::now() - Duration::from_secs(u64::from(days) * 86400);
         let mut removed = 0u32;
         let Ok(entries) = fs::read_dir(&self.output_dir) else {

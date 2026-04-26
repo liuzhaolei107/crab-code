@@ -226,14 +226,14 @@ impl CostTracker {
     // ── Persistence ───────────────────────────────────────────────────
 
     /// Load records from disk, appending to any in-memory records.
-    pub fn load(&mut self) -> crab_common::Result<()> {
+    pub fn load(&mut self) -> crab_core::Result<()> {
         let store = load_cost_store(&self.store_path)?;
         self.records.extend(store.records);
         Ok(())
     }
 
     /// Save all records to disk.
-    pub fn save(&self) -> crab_common::Result<()> {
+    pub fn save(&self) -> crab_core::Result<()> {
         let store = CostStore {
             records: self.records.clone(),
         };
@@ -257,29 +257,29 @@ struct CostStore {
     records: Vec<UsageRecord>,
 }
 
-fn load_cost_store(path: &Path) -> crab_common::Result<CostStore> {
+fn load_cost_store(path: &Path) -> crab_core::Result<CostStore> {
     match std::fs::read_to_string(path) {
         Ok(content) => serde_json::from_str(&content).map_err(|e| {
-            crab_common::Error::Config(format!("failed to parse {}: {e}", path.display()))
+            crab_core::Error::Config(format!("failed to parse {}: {e}", path.display()))
         }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(CostStore::default()),
-        Err(e) => Err(crab_common::Error::Config(format!(
+        Err(e) => Err(crab_core::Error::Config(format!(
             "failed to read {}: {e}",
             path.display()
         ))),
     }
 }
 
-fn save_cost_store(path: &Path, store: &CostStore) -> crab_common::Result<()> {
+fn save_cost_store(path: &Path, store: &CostStore) -> crab_core::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
-            crab_common::Error::Config(format!("failed to create {}: {e}", parent.display()))
+            crab_core::Error::Config(format!("failed to create {}: {e}", parent.display()))
         })?;
     }
     let json = serde_json::to_string_pretty(store)
-        .map_err(|e| crab_common::Error::Config(format!("failed to serialize costs: {e}")))?;
+        .map_err(|e| crab_core::Error::Config(format!("failed to serialize costs: {e}")))?;
     std::fs::write(path, json)
-        .map_err(|e| crab_common::Error::Config(format!("failed to write {}: {e}", path.display())))
+        .map_err(|e| crab_core::Error::Config(format!("failed to write {}: {e}", path.display())))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────

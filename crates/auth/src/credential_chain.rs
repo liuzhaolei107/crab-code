@@ -66,7 +66,7 @@ impl CredentialChain {
 impl AuthProvider for CredentialChain {
     fn get_auth(
         &self,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         Box::pin(async move {
             // Try cached provider first
             {
@@ -99,11 +99,11 @@ impl AuthProvider for CredentialChain {
             }
 
             Err(last_error
-                .unwrap_or_else(|| crab_common::Error::Auth("credential chain is empty".into())))
+                .unwrap_or_else(|| crab_core::Error::Auth("credential chain is empty".into())))
         })
     }
 
-    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>> {
+    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>> {
         Box::pin(async move {
             // Clear cached index so next get_auth re-probes
             let mut guard = self.cached_index.lock().await;
@@ -210,12 +210,12 @@ mod tests {
     impl AuthProvider for SuccessProvider {
         fn get_auth(
             &self,
-        ) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>> {
+        ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
             let key = self.0.clone();
             Box::pin(async move { Ok(AuthMethod::ApiKey(key)) })
         }
 
-        fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>> {
+        fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>> {
             Box::pin(async { Ok(()) })
         }
     }
@@ -226,11 +226,11 @@ mod tests {
     impl AuthProvider for FailProvider {
         fn get_auth(
             &self,
-        ) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>> {
-            Box::pin(async { Err(crab_common::Error::Auth("fail".into())) })
+        ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
+            Box::pin(async { Err(crab_core::Error::Auth("fail".into())) })
         }
 
-        fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>> {
+        fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>> {
             Box::pin(async { Ok(()) })
         }
     }

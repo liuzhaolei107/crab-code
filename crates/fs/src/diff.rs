@@ -63,17 +63,17 @@ impl<'a> EditOptions<'a> {
 ///
 /// - `old_string` not found in `file_content`.
 /// - `old_string` matches multiple times and `replace_all` is `false`.
-pub fn apply_edit(opts: &EditOptions<'_>) -> crab_common::Result<EditResult> {
+pub fn apply_edit(opts: &EditOptions<'_>) -> crab_core::Result<EditResult> {
     let count = opts.file_content.matches(opts.old_string).count();
 
     if count == 0 {
-        return Err(crab_common::Error::Other(
+        return Err(crab_core::Error::Other(
             "old_string not found in file content".into(),
         ));
     }
 
     if count > 1 && !opts.replace_all {
-        return Err(crab_common::Error::Other(format!(
+        return Err(crab_core::Error::Other(format!(
             "old_string matches {count} times; use replace_all or provide more context"
         )));
     }
@@ -109,7 +109,7 @@ pub fn apply_edit_simple(
     file_content: &str,
     old_string: &str,
     new_string: &str,
-) -> crab_common::Result<EditResult> {
+) -> crab_core::Result<EditResult> {
     apply_edit(&EditOptions::new(file_content, old_string, new_string))
 }
 

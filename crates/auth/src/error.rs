@@ -10,10 +10,10 @@ pub enum AuthError {
     Auth { message: String },
 
     #[error(transparent)]
-    Common(#[from] crab_common::Error),
+    Common(#[from] crab_core::Error),
 }
 
-impl From<AuthError> for crab_common::Error {
+impl From<AuthError> for crab_core::Error {
     fn from(err: AuthError) -> Self {
         match err {
             AuthError::NoApiKey { hint } => Self::Auth(hint),

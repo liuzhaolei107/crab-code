@@ -36,7 +36,7 @@ use crate::types::{Skill, SkillContext, SkillSource, SkillTrigger};
 pub fn parse_skill_content(
     content: &str,
     source_path: Option<&Path>,
-) -> crab_common::Result<Skill> {
+) -> crab_core::Result<Skill> {
     let (frontmatter, body) = split_frontmatter(content)?;
     let yaml = parse_simple_yaml(&frontmatter);
 
@@ -56,9 +56,9 @@ pub fn parse_skill_content(
 }
 
 /// Load a skill from a markdown file on disk.
-pub fn load_skill_file(path: &Path) -> crab_common::Result<Skill> {
+pub fn load_skill_file(path: &Path) -> crab_core::Result<Skill> {
     let content = std::fs::read_to_string(path)
-        .map_err(|e| crab_common::Error::Other(format!("failed to read skill file: {e}")))?;
+        .map_err(|e| crab_core::Error::Other(format!("failed to read skill file: {e}")))?;
 
     parse_skill_content(&content, Some(path))
 }
@@ -66,10 +66,10 @@ pub fn load_skill_file(path: &Path) -> crab_common::Result<Skill> {
 // ─── Frontmatter splitting ─────────────────────────────────────────────
 
 /// Split frontmatter from body. Frontmatter is delimited by `---` lines.
-pub fn split_frontmatter(content: &str) -> crab_common::Result<(String, String)> {
+pub fn split_frontmatter(content: &str) -> crab_core::Result<(String, String)> {
     let trimmed = content.trim_start();
     if !trimmed.starts_with("---") {
-        return Err(crab_common::Error::Other(
+        return Err(crab_core::Error::Other(
             "skill file must start with '---' frontmatter delimiter".into(),
         ));
     }
@@ -77,7 +77,7 @@ pub fn split_frontmatter(content: &str) -> crab_common::Result<(String, String)>
     let after_first = &trimmed[3..].trim_start_matches(['\r', '\n']);
     after_first.find("\n---").map_or_else(
         || {
-            Err(crab_common::Error::Other(
+            Err(crab_core::Error::Other(
                 "skill file missing closing '---' frontmatter delimiter".into(),
             ))
         },
@@ -156,7 +156,7 @@ pub fn parse_simple_yaml(yaml: &str) -> serde_json::Value {
 // ─── Field extraction ──────────────────────────────────────────────────
 
 /// Extract all skill fields from parsed YAML frontmatter.
-fn extract_skill_fields(yaml: &serde_json::Value) -> crab_common::Result<Skill> {
+fn extract_skill_fields(yaml: &serde_json::Value) -> crab_core::Result<Skill> {
     let name = str_field(yaml, "name").unwrap_or_default();
     let description = str_field(yaml, "description").unwrap_or_default();
 

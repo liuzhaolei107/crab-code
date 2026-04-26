@@ -41,7 +41,7 @@ impl MemoryRanker for LlmMemoryRanker {
         query: &str,
         manifest: &str,
         max_count: usize,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<Vec<String>>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<Vec<String>>> + Send + '_>> {
         let query = query.to_string();
         let manifest = manifest.to_string();
         Box::pin(async move {
@@ -63,7 +63,7 @@ impl MemoryRanker for LlmMemoryRanker {
             };
 
             let response = self.backend.send_message(req).await.map_err(|e| {
-                crab_common::Error::Other(format!("memory ranker LLM call failed: {e}"))
+                crab_core::Error::Other(format!("memory ranker LLM call failed: {e}"))
             })?;
 
             let text = response.message.text();
@@ -76,7 +76,7 @@ impl MemoryRanker for LlmMemoryRanker {
 ///
 /// Accepts: `{"selected": ["file1.md", "file2.md"]}` or just the array.
 /// Filters out any filenames not present in the manifest.
-fn parse_ranker_response(response_text: &str, manifest: &str) -> crab_common::Result<Vec<String>> {
+fn parse_ranker_response(response_text: &str, manifest: &str) -> crab_core::Result<Vec<String>> {
     // Try to extract JSON from the response (may be wrapped in markdown code blocks)
     let json_text = extract_json(response_text);
 

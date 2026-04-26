@@ -618,10 +618,10 @@ impl crate::AuthProvider for OAuth2Provider {
     fn get_auth(
         &self,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = crab_common::Result<crate::AuthMethod>> + Send + '_>,
+        Box<dyn std::future::Future<Output = crab_core::Result<crate::AuthMethod>> + Send + '_>,
     > {
         Box::pin(async move {
-            let token = self.get_token().map_err(crab_common::Error::from)?;
+            let token = self.get_token().map_err(crab_core::Error::from)?;
             Ok(crate::AuthMethod::OAuth(crate::OAuthToken {
                 access_token: token.access_token,
             }))
@@ -630,7 +630,7 @@ impl crate::AuthProvider for OAuth2Provider {
 
     fn refresh(
         &self,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = crab_common::Result<()>> + Send + '_>>
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = crab_core::Result<()>> + Send + '_>>
     {
         Box::pin(async move {
             // In a full implementation, this would:
@@ -644,7 +644,7 @@ impl crate::AuthProvider for OAuth2Provider {
                     // Placeholder — real implementation would do HTTP call here
                     Ok(())
                 }
-                _ => Err(crab_common::Error::Auth(format!(
+                _ => Err(crab_core::Error::Auth(format!(
                     "no refresh token available for '{}'",
                     self.config.provider
                 ))),

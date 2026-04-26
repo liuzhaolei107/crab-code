@@ -12,7 +12,7 @@ pub struct FileLockGuard {
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened or locked.
-pub fn lock_exclusive(path: &Path) -> crab_common::Result<FileLockGuard> {
+pub fn lock_exclusive(path: &Path) -> crab_core::Result<FileLockGuard> {
     // Ensure parent directory exists.
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -31,7 +31,7 @@ pub fn lock_exclusive(path: &Path) -> crab_common::Result<FileLockGuard> {
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened.
-pub fn try_lock_exclusive(path: &Path) -> crab_common::Result<Option<FileLockGuard>> {
+pub fn try_lock_exclusive(path: &Path) -> crab_core::Result<Option<FileLockGuard>> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }

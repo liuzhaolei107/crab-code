@@ -42,7 +42,7 @@ pub struct MemoryIndex {
 ///
 /// Returns an empty index if the file does not exist. Content is truncated
 /// to [`MAX_INDEX_LINES`] / [`MAX_INDEX_BYTES`] before parsing.
-pub fn load_index(dir: &Path) -> crab_common::Result<MemoryIndex> {
+pub fn load_index(dir: &Path) -> crab_core::Result<MemoryIndex> {
     let path = dir.join("MEMORY.md");
     let content = match fs::read_to_string(&path) {
         Ok(c) => c,
@@ -70,7 +70,7 @@ pub fn load_index(dir: &Path) -> crab_common::Result<MemoryIndex> {
 }
 
 /// Write `entries` to `MEMORY.md` inside `dir`, creating directories as needed.
-pub fn save_index(dir: &Path, entries: &[IndexEntry]) -> crab_common::Result<()> {
+pub fn save_index(dir: &Path, entries: &[IndexEntry]) -> crab_core::Result<()> {
     fs::create_dir_all(dir)?;
     let content = format_index_content(entries);
     fs::write(dir.join("MEMORY.md"), content)?;

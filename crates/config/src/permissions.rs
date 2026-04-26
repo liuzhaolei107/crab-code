@@ -121,7 +121,7 @@ impl PermissionRuleSet {
     /// Default global permissions path: `~/.crab/permissions.json`.
     #[must_use]
     pub fn global_path() -> PathBuf {
-        crab_core::common::utils::path::home_dir()
+        crab_common::utils::path::home_dir()
             .join(".crab")
             .join("permissions.json")
     }

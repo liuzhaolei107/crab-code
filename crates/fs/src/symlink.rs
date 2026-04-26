@@ -18,13 +18,13 @@ use std::path::{Path, PathBuf};
 ///
 /// Returns an error if either path cannot be canonicalized (e.g., does
 /// not exist) or if the resolved target escapes the boundary.
-pub fn check_symlink_safety(target: &Path, boundary: &Path) -> crab_common::Result<PathBuf> {
+pub fn check_symlink_safety(target: &Path, boundary: &Path) -> crab_core::Result<PathBuf> {
     let resolved_target = std::fs::canonicalize(target).map_err(|e| {
-        crab_common::Error::Other(format!("cannot resolve path {}: {e}", target.display()))
+        crab_core::Error::Other(format!("cannot resolve path {}: {e}", target.display()))
     })?;
 
     let resolved_boundary = std::fs::canonicalize(boundary).map_err(|e| {
-        crab_common::Error::Other(format!(
+        crab_core::Error::Other(format!(
             "cannot resolve boundary {}: {e}",
             boundary.display()
         ))
@@ -33,7 +33,7 @@ pub fn check_symlink_safety(target: &Path, boundary: &Path) -> crab_common::Resu
     if resolved_target.starts_with(&resolved_boundary) {
         Ok(resolved_target)
     } else {
-        Err(crab_common::Error::Other(format!(
+        Err(crab_core::Error::Other(format!(
             "symlink escape detected: {} resolves to {} which is outside {}",
             target.display(),
             resolved_target.display(),
@@ -55,9 +55,9 @@ pub fn is_symlink(target: &Path) -> bool {
 /// # Errors
 ///
 /// Returns an error if the path cannot be resolved.
-pub fn resolve(target: &Path) -> crab_common::Result<PathBuf> {
+pub fn resolve(target: &Path) -> crab_core::Result<PathBuf> {
     std::fs::canonicalize(target).map_err(|e| {
-        crab_common::Error::Other(format!("cannot resolve path {}: {e}", target.display()))
+        crab_core::Error::Other(format!("cannot resolve path {}: {e}", target.display()))
     })
 }
 
@@ -69,17 +69,17 @@ pub fn resolve(target: &Path) -> crab_common::Result<PathBuf> {
 /// # Errors
 ///
 /// Returns an error if the parent cannot be resolved or the path escapes.
-pub fn check_parent_safety(target: &Path, boundary: &Path) -> crab_common::Result<PathBuf> {
+pub fn check_parent_safety(target: &Path, boundary: &Path) -> crab_core::Result<PathBuf> {
     let parent = target.parent().ok_or_else(|| {
-        crab_common::Error::Other(format!("path has no parent: {}", target.display()))
+        crab_core::Error::Other(format!("path has no parent: {}", target.display()))
     })?;
 
     let resolved_parent = std::fs::canonicalize(parent).map_err(|e| {
-        crab_common::Error::Other(format!("cannot resolve parent {}: {e}", parent.display()))
+        crab_core::Error::Other(format!("cannot resolve parent {}: {e}", parent.display()))
     })?;
 
     let resolved_boundary = std::fs::canonicalize(boundary).map_err(|e| {
-        crab_common::Error::Other(format!(
+        crab_core::Error::Other(format!(
             "cannot resolve boundary {}: {e}",
             boundary.display()
         ))
@@ -89,10 +89,10 @@ pub fn check_parent_safety(target: &Path, boundary: &Path) -> crab_common::Resul
         // Return the full resolved path (parent + filename)
         let filename = target
             .file_name()
-            .ok_or_else(|| crab_common::Error::Other("path has no filename".into()))?;
+            .ok_or_else(|| crab_core::Error::Other("path has no filename".into()))?;
         Ok(resolved_parent.join(filename))
     } else {
-        Err(crab_common::Error::Other(format!(
+        Err(crab_core::Error::Other(format!(
             "symlink escape detected: parent of {} resolves to {} which is outside {}",
             target.display(),
             resolved_parent.display(),

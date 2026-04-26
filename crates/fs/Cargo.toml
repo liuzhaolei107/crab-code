@@ -9,6 +9,7 @@ description = "File system operations for Crab Code"
 
 [dependencies]
 crab-common.workspace = true
+crab-core.workspace = true
 globset.workspace = true
 ignore.workspace = true
 notify.workspace = true

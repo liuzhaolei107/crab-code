@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 /// # Errors
 ///
 /// Returns an error if the signal handler cannot be registered.
-pub fn register_shutdown_handler() -> crab_common::Result<mpsc::Receiver<()>> {
+pub fn register_shutdown_handler() -> crab_core::Result<mpsc::Receiver<()>> {
     let (tx, rx) = mpsc::channel(1);
 
     tokio::spawn(async move {

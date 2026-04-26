@@ -62,17 +62,17 @@ pub struct GrepOptions {
 ///
 /// - Invalid regex pattern.
 /// - `path` does not exist or is inaccessible.
-pub fn search(opts: &GrepOptions) -> crab_common::Result<Vec<GrepMatch>> {
+pub fn search(opts: &GrepOptions) -> crab_core::Result<Vec<GrepMatch>> {
     let matcher = RegexMatcherBuilder::new()
         .case_insensitive(opts.case_insensitive)
         .build(&opts.pattern)
-        .map_err(|e| crab_common::Error::Other(format!("invalid regex: {e}")))?;
+        .map_err(|e| crab_core::Error::Other(format!("invalid regex: {e}")))?;
 
     let file_glob = if let Some(ref glob_pat) = opts.file_glob {
         Some(
             globset::GlobBuilder::new(glob_pat)
                 .build()
-                .map_err(|e| crab_common::Error::Other(format!("invalid file glob: {e}")))?
+                .map_err(|e| crab_core::Error::Other(format!("invalid file glob: {e}")))?
                 .compile_matcher(),
         )
     } else {
@@ -150,7 +150,7 @@ fn search_file_grep(
     context_lines: usize,
     max_matches: usize,
     results: &mut Vec<GrepMatch>,
-) -> crab_common::Result<()> {
+) -> crab_core::Result<()> {
     // When context is requested, we need a two-pass approach:
     // first collect all matching line numbers, then re-read to extract context.
     // For the no-context case, we stream directly.
@@ -167,7 +167,7 @@ fn search_file_no_context(
     matcher: &grep_regex::RegexMatcher,
     max_matches: usize,
     results: &mut Vec<GrepMatch>,
-) -> crab_common::Result<()> {
+) -> crab_core::Result<()> {
     let mut searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(0))
         .line_number(true)
@@ -209,7 +209,7 @@ fn search_file_with_context(
     context_lines: usize,
     max_matches: usize,
     results: &mut Vec<GrepMatch>,
-) -> crab_common::Result<()> {
+) -> crab_core::Result<()> {
     // Read the file — grep-searcher handles binary detection
     let content = std::fs::read(path)?;
 

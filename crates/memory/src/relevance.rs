@@ -159,7 +159,7 @@ pub trait MemoryRanker: Send + Sync {
         query: &str,
         manifest: &str,
         max_count: usize,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<Vec<String>>> + Send + '_>>;
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<Vec<String>>> + Send + '_>>;
 }
 
 /// Format memory files as a text manifest for LLM-based selection.

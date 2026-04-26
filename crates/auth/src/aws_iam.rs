@@ -179,7 +179,7 @@ impl AssumeRoleProvider {
     }
 
     /// Call STS `AssumeRole` API.
-    async fn assume_role(&self) -> crab_common::Result<StsCredentials> {
+    async fn assume_role(&self) -> crab_core::Result<StsCredentials> {
         let sts_url = format!("https://sts.{}.amazonaws.com/", self.config.region);
 
         let mut params: Vec<(&str, &str)> = vec![
@@ -215,12 +215,12 @@ impl AssumeRoleProvider {
             .body(body)
             .send()
             .await
-            .map_err(|e| crab_common::Error::Auth(format!("STS AssumeRole request failed: {e}")))?;
+            .map_err(|e| crab_core::Error::Auth(format!("STS AssumeRole request failed: {e}")))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let err_body = resp.text().await.unwrap_or_default();
-            return Err(crab_common::Error::Auth(format!(
+            return Err(crab_core::Error::Auth(format!(
                 "STS AssumeRole returned {status}: {err_body}"
             )));
         }
@@ -228,7 +228,7 @@ impl AssumeRoleProvider {
         let resp_body = resp
             .text()
             .await
-            .map_err(|e| crab_common::Error::Auth(format!("reading STS response: {e}")))?;
+            .map_err(|e| crab_core::Error::Auth(format!("reading STS response: {e}")))?;
 
         let parsed = parse_assume_role_response(&resp_body)?;
 
@@ -245,7 +245,7 @@ impl AssumeRoleProvider {
 impl AuthProvider for AssumeRoleProvider {
     fn get_auth(
         &self,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         Box::pin(async move {
             // Check cache
             {
@@ -275,7 +275,7 @@ impl AuthProvider for AssumeRoleProvider {
         })
     }
 
-    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>> {
+    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>> {
         Box::pin(async move {
             let mut guard = self.cached.lock().await;
             *guard = None;
@@ -331,7 +331,7 @@ impl WebIdentityProvider {
     }
 
     /// Read the OIDC token from file or config.
-    fn read_token(&self) -> crab_common::Result<String> {
+    fn read_token(&self) -> crab_core::Result<String> {
         if let Some(ref token) = self.config.token {
             return Ok(token.clone());
         }
@@ -340,17 +340,17 @@ impl WebIdentityProvider {
             return std::fs::read_to_string(path)
                 .map(|t| t.trim().to_string())
                 .map_err(|e| {
-                    crab_common::Error::Auth(format!("reading web identity token file {path}: {e}"))
+                    crab_core::Error::Auth(format!("reading web identity token file {path}: {e}"))
                 });
         }
 
-        Err(crab_common::Error::Auth(
+        Err(crab_core::Error::Auth(
             "no web identity token or token file configured".into(),
         ))
     }
 
     /// Call STS `AssumeRoleWithWebIdentity`.
-    async fn assume_role_with_web_identity(&self) -> crab_common::Result<StsCredentials> {
+    async fn assume_role_with_web_identity(&self) -> crab_core::Result<StsCredentials> {
         let token = self.read_token()?;
         let sts_url = format!("https://sts.{}.amazonaws.com/", self.config.region);
 
@@ -374,7 +374,7 @@ impl WebIdentityProvider {
             .send()
             .await
             .map_err(|e| {
-                crab_common::Error::Auth(format!(
+                crab_core::Error::Auth(format!(
                     "STS AssumeRoleWithWebIdentity request failed: {e}"
                 ))
             })?;
@@ -382,7 +382,7 @@ impl WebIdentityProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let err_body = resp.text().await.unwrap_or_default();
-            return Err(crab_common::Error::Auth(format!(
+            return Err(crab_core::Error::Auth(format!(
                 "STS AssumeRoleWithWebIdentity returned {status}: {err_body}"
             )));
         }
@@ -390,7 +390,7 @@ impl WebIdentityProvider {
         let resp_body = resp
             .text()
             .await
-            .map_err(|e| crab_common::Error::Auth(format!("reading STS response: {e}")))?;
+            .map_err(|e| crab_core::Error::Auth(format!("reading STS response: {e}")))?;
 
         let parsed = parse_assume_role_response(&resp_body)?;
 
@@ -407,7 +407,7 @@ impl WebIdentityProvider {
 impl AuthProvider for WebIdentityProvider {
     fn get_auth(
         &self,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         Box::pin(async move {
             // Check cache
             {
@@ -435,7 +435,7 @@ impl AuthProvider for WebIdentityProvider {
         })
     }
 
-    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>> {
+    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>> {
         Box::pin(async move {
             let mut guard = self.cached.lock().await;
             *guard = None;
@@ -514,14 +514,14 @@ fn days_to_ymd(z: u64) -> (u64, u64, u64) {
 ///
 /// Extracts `AccessKeyId`, `SecretAccessKey`, and `SessionToken` from the
 /// `<Credentials>` element using simple string search (avoids XML parser dep).
-fn parse_assume_role_response(xml: &str) -> crab_common::Result<AssumeRoleResponse> {
+fn parse_assume_role_response(xml: &str) -> crab_core::Result<AssumeRoleResponse> {
     let access_key_id = extract_xml_tag(xml, "AccessKeyId")
-        .ok_or_else(|| crab_common::Error::Auth("missing AccessKeyId in STS response".into()))?;
+        .ok_or_else(|| crab_core::Error::Auth("missing AccessKeyId in STS response".into()))?;
     let secret_access_key = extract_xml_tag(xml, "SecretAccessKey").ok_or_else(|| {
-        crab_common::Error::Auth("missing SecretAccessKey in STS response".into())
+        crab_core::Error::Auth("missing SecretAccessKey in STS response".into())
     })?;
     let session_token = extract_xml_tag(xml, "SessionToken")
-        .ok_or_else(|| crab_common::Error::Auth("missing SessionToken in STS response".into()))?;
+        .ok_or_else(|| crab_core::Error::Auth("missing SessionToken in STS response".into()))?;
 
     Ok(AssumeRoleResponse {
         access_key_id,

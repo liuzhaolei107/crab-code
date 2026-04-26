@@ -95,14 +95,14 @@ impl FileCache {
     ///
     /// Returns `Err` if the file cannot be read (missing, permission
     /// denied, not UTF-8).
-    pub fn read(&mut self, path: &Path) -> crab_common::Result<Arc<String>> {
+    pub fn read(&mut self, path: &Path) -> crab_core::Result<Arc<String>> {
         // Canonicalise so `./foo` and `foo` hit the same cache entry.
         // Fall back to the raw path if canonicalise fails (e.g. path
         // doesn't yet exist — which would also fail fs::read below).
         let key = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
 
         let on_disk_mtime = fs::metadata(&key).and_then(|m| m.modified()).map_err(|e| {
-            crab_common::Error::Other(format!(
+            crab_core::Error::Other(format!(
                 "file_cache: stat failed for {}: {e}",
                 key.display()
             ))
@@ -117,7 +117,7 @@ impl FileCache {
 
         // Miss or drift: read + populate.
         let raw = fs::read_to_string(&key).map_err(|e| {
-            crab_common::Error::Other(format!(
+            crab_core::Error::Other(format!(
                 "file_cache: read failed for {}: {e}",
                 key.display()
             ))

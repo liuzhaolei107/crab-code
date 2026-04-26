@@ -157,7 +157,7 @@ async fn read_stderr_lossy(pipe: Option<tokio::process::ChildStderr>) -> String 
 /// # Errors
 ///
 /// Returns an error if the command cannot be spawned or output cannot be captured.
-pub async fn run(opts: SpawnOptions) -> crab_common::Result<SpawnOutput> {
+pub async fn run(opts: SpawnOptions) -> crab_core::Result<SpawnOutput> {
     let mut cmd = build_command(&opts);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
@@ -229,7 +229,7 @@ pub async fn run_streaming(
     opts: SpawnOptions,
     on_stdout: impl Fn(&str) + Send + 'static,
     on_stderr: impl Fn(&str) + Send + 'static,
-) -> crab_common::Result<i32> {
+) -> crab_core::Result<i32> {
     let mut cmd = build_command(&opts);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());

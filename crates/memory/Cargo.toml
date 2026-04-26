@@ -9,17 +9,17 @@ description = "File-based memory system for Crab Code"
 
 [features]
 default = []
-mem-ranker = ["dep:crab-api", "dep:crab-core", "dep:tokio"]
+mem-ranker = ["dep:crab-api", "dep:tokio"]
 
 [dependencies]
 crab-common.workspace = true
+crab-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml_ng.workspace = true
 dunce.workspace = true
 # optional — only for mem-ranker feature
 crab-api = { workspace = true, optional = true }
-crab-core = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]

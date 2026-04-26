@@ -1,5 +1,8 @@
-pub use crab_common as common;
-pub use crab_common::{Error, Result};
+pub mod error;
+pub mod result;
+
+pub use error::Error;
+pub use result::Result;
 
 pub mod capability;
 pub mod config;

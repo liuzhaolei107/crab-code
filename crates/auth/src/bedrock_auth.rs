@@ -107,7 +107,7 @@ impl BedrockAuthProvider {
 impl AuthProvider for BedrockAuthProvider {
     fn get_auth(
         &self,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         let auth_header = self.sign_request();
         // Return as OAuth token so AnthropicClient uses `Authorization: Bearer`
         Box::pin(async move {
@@ -117,7 +117,7 @@ impl AuthProvider for BedrockAuthProvider {
         })
     }
 
-    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>> {
+    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>> {
         // SigV4 signatures are computed per-request; no refresh needed.
         Box::pin(async { Ok(()) })
     }

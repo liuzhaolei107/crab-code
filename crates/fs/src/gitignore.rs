@@ -36,7 +36,7 @@ impl GitIgnoreFilter {
     /// # Errors
     ///
     /// Returns an error if `root` is inaccessible.
-    pub fn new(root: &Path) -> crab_common::Result<Self> {
+    pub fn new(root: &Path) -> crab_core::Result<Self> {
         Self::build(root, None)
     }
 
@@ -46,11 +46,11 @@ impl GitIgnoreFilter {
     /// # Errors
     ///
     /// Returns an error if `root` or `ignore_file` is inaccessible.
-    pub fn with_custom_ignore(root: &Path, ignore_file: &Path) -> crab_common::Result<Self> {
+    pub fn with_custom_ignore(root: &Path, ignore_file: &Path) -> crab_core::Result<Self> {
         Self::build(root, Some(ignore_file))
     }
 
-    fn build(root: &Path, custom_ignore: Option<&Path>) -> crab_common::Result<Self> {
+    fn build(root: &Path, custom_ignore: Option<&Path>) -> crab_core::Result<Self> {
         let root = root.to_path_buf();
         let mut builder = ignore::gitignore::GitignoreBuilder::new(&root);
 
@@ -85,7 +85,7 @@ impl GitIgnoreFilter {
         }
 
         let gitignore = builder.build().map_err(|e| {
-            crab_common::Error::Other(format!("failed to build gitignore filter: {e}"))
+            crab_core::Error::Other(format!("failed to build gitignore filter: {e}"))
         })?;
 
         Ok(Self { root, gitignore })

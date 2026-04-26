@@ -12,6 +12,7 @@ name = "crab"
 path = "src/main.rs"
 
 [dependencies]
+crab-common.workspace = true
 crab-core.workspace = true
 crab-config.workspace = true
 crab-auth.workspace = true

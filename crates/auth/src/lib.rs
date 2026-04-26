@@ -40,10 +40,10 @@ pub trait AuthProvider: Send + Sync {
     /// Resolve the current auth credentials.
     fn get_auth(
         &self,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>>;
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>>;
 
     /// Refresh credentials (no-op for API key providers).
-    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>>;
+    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>>;
 }
 
 /// API key auth provider — resolves key once at construction, returns it on each call.
@@ -61,12 +61,12 @@ impl ApiKeyProvider {
 impl AuthProvider for ApiKeyProvider {
     fn get_auth(
         &self,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         let key = self.key.clone();
         Box::pin(async move { Ok(AuthMethod::ApiKey(key)) })
     }
 
-    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>> {
+    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>> {
         Box::pin(async { Ok(()) })
     }
 }

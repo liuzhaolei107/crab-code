@@ -29,7 +29,7 @@ impl SkillRegistry {
     ///
     /// Directories are scanned in order; later skills with the same name
     /// override earlier ones (project skills override global ones).
-    pub fn discover(paths: &[PathBuf]) -> crab_common::Result<Self> {
+    pub fn discover(paths: &[PathBuf]) -> crab_core::Result<Self> {
         let mut registry = Self::new();
 
         for dir in paths {

@@ -95,7 +95,7 @@ impl VertexAuthProvider {
     }
 
     /// Obtain an access token from the GCP metadata server or ADC.
-    async fn obtain_token(&self) -> crab_common::Result<String> {
+    async fn obtain_token(&self) -> crab_core::Result<String> {
         // Try 1: Service account key (JWT -> access token exchange)
         if let Some(ref _key_json) = self.credentials.service_account_key {
             return self.token_from_service_account().await;
@@ -111,13 +111,13 @@ impl VertexAuthProvider {
             return Ok(token);
         }
 
-        Err(crab_common::Error::Other(
+        Err(crab_core::Error::Other(
             "failed to obtain GCP access token: no valid credential source found".into(),
         ))
     }
 
     /// Exchange service account JWT for access token.
-    async fn token_from_service_account(&self) -> crab_common::Result<String> {
+    async fn token_from_service_account(&self) -> crab_core::Result<String> {
         // In a full implementation, this would:
         // 1. Parse the service account JSON key
         // 2. Create a JWT with the appropriate claims
@@ -125,27 +125,27 @@ impl VertexAuthProvider {
         // 4. Exchange it at https://oauth2.googleapis.com/token
         //
         // For the skeleton, we return an error to fall through to other methods.
-        Err(crab_common::Error::Other(
+        Err(crab_core::Error::Other(
             "service account JWT exchange not yet implemented".into(),
         ))
     }
 
     /// Fetch token from GCE metadata server.
-    async fn token_from_metadata_server(&self) -> crab_common::Result<String> {
+    async fn token_from_metadata_server(&self) -> crab_core::Result<String> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(2))
             .build()
-            .map_err(|e| crab_common::Error::Other(e.to_string()))?;
+            .map_err(|e| crab_core::Error::Other(e.to_string()))?;
 
         let resp = client
             .get("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")
             .header("Metadata-Flavor", "Google")
             .send()
             .await
-            .map_err(|e| crab_common::Error::Other(e.to_string()))?;
+            .map_err(|e| crab_core::Error::Other(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(crab_common::Error::Other(format!(
+            return Err(crab_core::Error::Other(format!(
                 "metadata server returned {}",
                 resp.status()
             )));
@@ -154,16 +154,16 @@ impl VertexAuthProvider {
         let body: serde_json::Value = resp
             .json()
             .await
-            .map_err(|e| crab_common::Error::Other(e.to_string()))?;
+            .map_err(|e| crab_core::Error::Other(e.to_string()))?;
 
         body.get("access_token")
             .and_then(|v| v.as_str())
             .map(String::from)
-            .ok_or_else(|| crab_common::Error::Other("no access_token in metadata response".into()))
+            .ok_or_else(|| crab_core::Error::Other("no access_token in metadata response".into()))
     }
 
     /// Read ADC file from gcloud CLI's default location.
-    async fn token_from_adc_file(&self) -> crab_common::Result<String> {
+    async fn token_from_adc_file(&self) -> crab_core::Result<String> {
         let adc_path = if cfg!(windows) {
             dirs_path("APPDATA", "gcloud/application_default_credentials.json")
         } else {
@@ -174,35 +174,35 @@ impl VertexAuthProvider {
         };
 
         let Some(path) = adc_path else {
-            return Err(crab_common::Error::Other("ADC file path not found".into()));
+            return Err(crab_core::Error::Other("ADC file path not found".into()));
         };
 
         let content = tokio::fs::read_to_string(&path)
             .await
-            .map_err(|e| crab_common::Error::Other(format!("reading ADC file: {e}")))?;
+            .map_err(|e| crab_core::Error::Other(format!("reading ADC file: {e}")))?;
 
         let adc: serde_json::Value = serde_json::from_str(&content)
-            .map_err(|e| crab_common::Error::Other(format!("parsing ADC file: {e}")))?;
+            .map_err(|e| crab_core::Error::Other(format!("parsing ADC file: {e}")))?;
 
         // ADC file may contain a refresh token — exchange it for an access token
         let _client_id = adc
             .get("client_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crab_common::Error::Other("no client_id in ADC".into()))?;
+            .ok_or_else(|| crab_core::Error::Other("no client_id in ADC".into()))?;
 
         let _client_secret = adc
             .get("client_secret")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crab_common::Error::Other("no client_secret in ADC".into()))?;
+            .ok_or_else(|| crab_core::Error::Other("no client_secret in ADC".into()))?;
 
         let _refresh_token = adc
             .get("refresh_token")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| crab_common::Error::Other("no refresh_token in ADC".into()))?;
+            .ok_or_else(|| crab_core::Error::Other("no refresh_token in ADC".into()))?;
 
         // In production, exchange refresh_token for access_token via OAuth2 endpoint.
         // For now, return error to indicate this path isn't fully wired.
-        Err(crab_common::Error::Other(
+        Err(crab_core::Error::Other(
             "ADC refresh token exchange not yet implemented".into(),
         ))
     }
@@ -219,7 +219,7 @@ fn dirs_path(env_var: &str, suffix: &str) -> Option<std::path::PathBuf> {
 impl AuthProvider for VertexAuthProvider {
     fn get_auth(
         &self,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         Box::pin(async move {
             // Check cached token
             {
@@ -251,7 +251,7 @@ impl AuthProvider for VertexAuthProvider {
         })
     }
 
-    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>> {
+    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>> {
         Box::pin(async move {
             // Invalidate cached token to force re-fetch on next get_auth()
             let mut guard = self.cached_token.lock().await;

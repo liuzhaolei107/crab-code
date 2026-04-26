@@ -79,7 +79,7 @@ impl CaBundle {
 ///
 /// Returns `Err` only on invalid PEM data in a file that was otherwise
 /// readable. Missing files / missing env vars are not errors.
-pub fn load_ca_bundle(extra_paths: &[PathBuf]) -> crate::Result<CaBundle> {
+pub fn load_ca_bundle(extra_paths: &[PathBuf]) -> std::io::Result<CaBundle> {
     let env = EnvSources {
         crab_bundle: std::env::var(CRAB_CA_BUNDLE_ENV).ok(),
         ssl_cert_file: std::env::var(SSL_CERT_FILE_ENV).ok(),
@@ -100,7 +100,7 @@ struct EnvSources {
     ssl_cert_dir: Option<String>,
 }
 
-fn load_ca_bundle_with_env(env: &EnvSources, extra_paths: &[PathBuf]) -> crate::Result<CaBundle> {
+fn load_ca_bundle_with_env(env: &EnvSources, extra_paths: &[PathBuf]) -> std::io::Result<CaBundle> {
     let mut bundle = CaBundle::default();
 
     // 1. CRAB_CA_BUNDLE (single file, takes priority)

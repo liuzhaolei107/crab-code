@@ -10,14 +10,14 @@ use sysinfo::{Pid, System};
 /// # Errors
 ///
 /// Returns an error if the target process does not exist.
-pub fn kill_tree(pid: u32) -> crab_common::Result<()> {
+pub fn kill_tree(pid: u32) -> crab_core::Result<()> {
     let mut sys = System::new();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let target = Pid::from_u32(pid);
 
     if sys.process(target).is_none() {
-        return Err(crab_common::Error::Other(format!(
+        return Err(crab_core::Error::Other(format!(
             "process {pid} not found"
         )));
     }

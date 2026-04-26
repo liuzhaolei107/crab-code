@@ -43,7 +43,7 @@ impl MemoryStore {
 
     /// Persist `content` to `<dir>/<filename>`, creating the directory tree
     /// if it does not exist.
-    pub fn save(&self, filename: &str, content: &str) -> crab_common::Result<()> {
+    pub fn save(&self, filename: &str, content: &str) -> crab_core::Result<()> {
         fs::create_dir_all(&self.dir)?;
         let path = self.dir.join(filename);
         fs::write(path, content)?;
@@ -53,7 +53,7 @@ impl MemoryStore {
     /// Read the raw content of `<dir>/<filename>`.
     ///
     /// Returns `Ok(None)` when the file does not exist.
-    pub fn load(&self, filename: &str) -> crab_common::Result<Option<String>> {
+    pub fn load(&self, filename: &str) -> crab_core::Result<Option<String>> {
         let path = self.dir.join(filename);
         match fs::read_to_string(&path) {
             Ok(content) => Ok(Some(content)),
@@ -65,7 +65,7 @@ impl MemoryStore {
     /// Delete `<dir>/<filename>`.
     ///
     /// Does **not** return an error when the file is already absent.
-    pub fn delete(&self, filename: &str) -> crab_common::Result<()> {
+    pub fn delete(&self, filename: &str) -> crab_core::Result<()> {
         let path = self.dir.join(filename);
         match fs::remove_file(&path) {
             Ok(()) => Ok(()),
@@ -77,7 +77,7 @@ impl MemoryStore {
     /// Scan the store directory for `.md` files (excluding `MEMORY.md`),
     /// parse their frontmatter, and return them sorted by modification time
     /// (newest first), capped at [`MAX_SCAN_RESULTS`].
-    pub fn scan(&self) -> crab_common::Result<Vec<MemoryFile>> {
+    pub fn scan(&self) -> crab_core::Result<Vec<MemoryFile>> {
         let entries = match fs::read_dir(&self.dir) {
             Ok(rd) => rd,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),

@@ -139,13 +139,13 @@ impl WorkloadIdentityProvider {
     }
 
     /// Read the external credential token.
-    async fn read_subject_token(&self) -> crab_common::Result<String> {
+    async fn read_subject_token(&self) -> crab_core::Result<String> {
         match &self.config.credential_source {
             CredentialSource::Inline(token) => Ok(token.clone()),
 
             CredentialSource::File { path, format } => {
                 let content = tokio::fs::read_to_string(path).await.map_err(|e| {
-                    crab_common::Error::Auth(format!("reading credential file {path}: {e}"))
+                    crab_core::Error::Auth(format!("reading credential file {path}: {e}"))
                 })?;
                 extract_token(&content, format)
             }
@@ -158,7 +158,7 @@ impl WorkloadIdentityProvider {
                 let client = reqwest::Client::builder()
                     .timeout(Duration::from_secs(5))
                     .build()
-                    .map_err(|e| crab_common::Error::Auth(e.to_string()))?;
+                    .map_err(|e| crab_core::Error::Auth(e.to_string()))?;
 
                 let mut req = client.get(url);
                 for (k, v) in headers {
@@ -166,18 +166,18 @@ impl WorkloadIdentityProvider {
                 }
 
                 let resp: reqwest::Response = req.send().await.map_err(|e| {
-                    crab_common::Error::Auth(format!("fetching credential from {url}: {e}"))
+                    crab_core::Error::Auth(format!("fetching credential from {url}: {e}"))
                 })?;
 
                 if !resp.status().is_success() {
-                    return Err(crab_common::Error::Auth(format!(
+                    return Err(crab_core::Error::Auth(format!(
                         "credential URL returned {}",
                         resp.status()
                     )));
                 }
 
                 let body = resp.text().await.map_err(|e| {
-                    crab_common::Error::Auth(format!("reading credential response: {e}"))
+                    crab_core::Error::Auth(format!("reading credential response: {e}"))
                 })?;
 
                 extract_token(&body, format)
@@ -186,7 +186,7 @@ impl WorkloadIdentityProvider {
     }
 
     /// Exchange the subject token at GCP STS for a federated access token.
-    async fn exchange_token(&self, subject_token: &str) -> crab_common::Result<String> {
+    async fn exchange_token(&self, subject_token: &str) -> crab_core::Result<String> {
         let client = reqwest::Client::new();
 
         let scopes = self.config.scopes.join(" ");
@@ -213,12 +213,12 @@ impl WorkloadIdentityProvider {
             .body(form_body)
             .send()
             .await
-            .map_err(|e| crab_common::Error::Auth(format!("STS token exchange failed: {e}")))?;
+            .map_err(|e| crab_core::Error::Auth(format!("STS token exchange failed: {e}")))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let err_body = resp.text().await.unwrap_or_default();
-            return Err(crab_common::Error::Auth(format!(
+            return Err(crab_core::Error::Auth(format!(
                 "GCP STS returned {status}: {err_body}"
             )));
         }
@@ -226,16 +226,16 @@ impl WorkloadIdentityProvider {
         let resp_text = resp
             .text()
             .await
-            .map_err(|e| crab_common::Error::Auth(format!("reading STS response: {e}")))?;
+            .map_err(|e| crab_core::Error::Auth(format!("reading STS response: {e}")))?;
 
         let parsed: serde_json::Value = serde_json::from_str(&resp_text)
-            .map_err(|e| crab_common::Error::Auth(format!("parsing STS response: {e}")))?;
+            .map_err(|e| crab_core::Error::Auth(format!("parsing STS response: {e}")))?;
 
         parsed
             .get("access_token")
             .and_then(|v| v.as_str())
             .map(String::from)
-            .ok_or_else(|| crab_common::Error::Auth("no access_token in STS response".into()))
+            .ok_or_else(|| crab_core::Error::Auth("no access_token in STS response".into()))
     }
 
     /// Impersonate a service account using the federated token.
@@ -243,7 +243,7 @@ impl WorkloadIdentityProvider {
         &self,
         federated_token: &str,
         impersonation_url: &str,
-    ) -> crab_common::Result<String> {
+    ) -> crab_core::Result<String> {
         let client = reqwest::Client::new();
 
         let body = serde_json::json!({
@@ -258,23 +258,23 @@ impl WorkloadIdentityProvider {
             .send()
             .await
             .map_err(|e| {
-                crab_common::Error::Auth(format!("SA impersonation request failed: {e}"))
+                crab_core::Error::Auth(format!("SA impersonation request failed: {e}"))
             })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let err_body = resp.text().await.unwrap_or_default();
-            return Err(crab_common::Error::Auth(format!(
+            return Err(crab_core::Error::Auth(format!(
                 "SA impersonation returned {status}: {err_body}"
             )));
         }
 
         let resp_text = resp.text().await.map_err(|e| {
-            crab_common::Error::Auth(format!("reading impersonation response: {e}"))
+            crab_core::Error::Auth(format!("reading impersonation response: {e}"))
         })?;
 
         let parsed: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
-            crab_common::Error::Auth(format!("parsing impersonation response: {e}"))
+            crab_core::Error::Auth(format!("parsing impersonation response: {e}"))
         })?;
 
         parsed
@@ -282,12 +282,12 @@ impl WorkloadIdentityProvider {
             .and_then(|v| v.as_str())
             .map(String::from)
             .ok_or_else(|| {
-                crab_common::Error::Auth("no accessToken in impersonation response".into())
+                crab_core::Error::Auth("no accessToken in impersonation response".into())
             })
     }
 
     /// Full credential resolution flow.
-    async fn obtain_token(&self) -> crab_common::Result<String> {
+    async fn obtain_token(&self) -> crab_core::Result<String> {
         // Step 1: Read external credential
         let subject_token = self.read_subject_token().await?;
 
@@ -307,7 +307,7 @@ impl WorkloadIdentityProvider {
 impl AuthProvider for WorkloadIdentityProvider {
     fn get_auth(
         &self,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         Box::pin(async move {
             // Check cache
             {
@@ -339,7 +339,7 @@ impl AuthProvider for WorkloadIdentityProvider {
         })
     }
 
-    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>> {
+    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>> {
         Box::pin(async move {
             let mut guard = self.cached.lock().await;
             *guard = None;
@@ -352,18 +352,18 @@ impl AuthProvider for WorkloadIdentityProvider {
 // ── Helpers ────────────────────────────────────────────────────────────
 
 /// Extract a token from content based on format.
-fn extract_token(content: &str, format: &CredentialFormat) -> crab_common::Result<String> {
+fn extract_token(content: &str, format: &CredentialFormat) -> crab_core::Result<String> {
     match format {
         CredentialFormat::Text => Ok(content.trim().to_string()),
         CredentialFormat::Json { field } => {
             let value: serde_json::Value = serde_json::from_str(content)
-                .map_err(|e| crab_common::Error::Auth(format!("parsing credential JSON: {e}")))?;
+                .map_err(|e| crab_core::Error::Auth(format!("parsing credential JSON: {e}")))?;
             value
                 .get(field)
                 .and_then(|v| v.as_str())
                 .map(String::from)
                 .ok_or_else(|| {
-                    crab_common::Error::Auth(format!(
+                    crab_core::Error::Auth(format!(
                         "field '{field}' not found in credential JSON"
                     ))
                 })

@@ -66,20 +66,10 @@ pub fn is_binary_bytes(bytes: &[u8]) -> bool {
 /// # Errors
 ///
 /// Returns `Err` on file-open or read failure.
-pub fn is_binary_path(path: &Path) -> crate::Result<bool> {
-    let mut f = File::open(path).map_err(|e| {
-        crate::Error::Other(format!(
-            "binary_check: open failed for {}: {e}",
-            path.display()
-        ))
-    })?;
+pub fn is_binary_path(path: &Path) -> std::io::Result<bool> {
+    let mut f = File::open(path)?;
     let mut buf = vec![0u8; SNIFF_BYTES];
-    let n = f.read(&mut buf).map_err(|e| {
-        crate::Error::Other(format!(
-            "binary_check: read failed for {}: {e}",
-            path.display()
-        ))
-    })?;
+    let n = f.read(&mut buf)?;
     buf.truncate(n);
     Ok(is_binary_bytes(&buf))
 }

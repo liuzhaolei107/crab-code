@@ -268,7 +268,7 @@ impl FileWatcher {
     /// # Errors
     ///
     /// Returns an error if the path does not exist or cannot be watched.
-    pub fn new(path: &Path) -> crab_common::Result<Self> {
+    pub fn new(path: &Path) -> crab_core::Result<Self> {
         let (tx, rx) = mpsc::channel();
 
         let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
@@ -278,10 +278,10 @@ impl FileWatcher {
                 }
             }
         })
-        .map_err(|e| crab_common::Error::Other(format!("failed to create watcher: {e}")))?;
+        .map_err(|e| crab_core::Error::Other(format!("failed to create watcher: {e}")))?;
 
         watcher.watch(path, RecursiveMode::Recursive).map_err(|e| {
-            crab_common::Error::Other(format!("failed to watch {}: {e}", path.display()))
+            crab_core::Error::Other(format!("failed to watch {}: {e}", path.display()))
         })?;
 
         Ok(Self {

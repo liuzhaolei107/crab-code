@@ -8,8 +8,8 @@ repository.workspace = true
 description = "Domain models and trait definitions for Crab Code"
 
 [dependencies]
-crab-common.workspace = true
 regex.workspace = true
+thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio-util.workspace = true

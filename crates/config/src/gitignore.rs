@@ -111,14 +111,14 @@ fn global_gitignore_path() -> Option<PathBuf> {
             return Some(expand_user(&s));
         }
     }
-    let home = crab_core::common::utils::path::home_dir();
+    let home = crab_common::utils::path::home_dir();
     Some(home.join(".config").join("git").join("ignore"))
 }
 
 /// Expand a leading `~/` to the user's home directory.
 fn expand_user(p: &str) -> PathBuf {
     if let Some(rest) = p.strip_prefix("~/") {
-        crab_core::common::utils::path::home_dir().join(rest)
+        crab_common::utils::path::home_dir().join(rest)
     } else {
         PathBuf::from(p)
     }

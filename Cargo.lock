@@ -778,6 +778,7 @@ name = "crab-agent"
 version = "0.1.0"
 dependencies = [
  "crab-api",
+ "crab-common",
  "crab-config",
  "crab-core",
  "crab-engine",
@@ -825,6 +826,7 @@ dependencies = [
  "base64",
  "crab-common",
  "crab-config",
+ "crab-core",
  "keyring",
  "oauth2",
  "rand 0.10.1",
@@ -847,6 +849,7 @@ dependencies = [
  "crab-agent",
  "crab-api",
  "crab-auth",
+ "crab-common",
  "crab-config",
  "crab-core",
  "crab-fs",
@@ -880,7 +883,6 @@ dependencies = [
  "infer",
  "strip-ansi-escapes",
  "tempfile",
- "thiserror 2.0.18",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -893,6 +895,7 @@ name = "crab-config"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "crab-common",
  "crab-core",
  "directories",
  "jsonschema",
@@ -909,10 +912,10 @@ dependencies = [
 name = "crab-core"
 version = "0.1.0"
 dependencies = [
- "crab-common",
  "regex",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
  "tokio-util",
 ]
 
@@ -923,6 +926,7 @@ dependencies = [
  "anyhow",
  "crab-agent",
  "crab-api",
+ "crab-common",
  "crab-config",
  "crab-core",
  "crab-session",
@@ -962,6 +966,7 @@ name = "crab-fs"
 version = "0.1.0"
 dependencies = [
  "crab-common",
+ "crab-core",
  "fd-lock",
  "globset",
  "grep-matcher",
@@ -1071,6 +1076,7 @@ name = "crab-process"
 version = "0.1.0"
 dependencies = [
  "crab-common",
+ "crab-core",
  "portable-pty",
  "serde",
  "serde_json",
@@ -1135,6 +1141,7 @@ name = "crab-skill"
 version = "0.1.0"
 dependencies = [
  "crab-common",
+ "crab-core",
  "nucleo-matcher",
  "regex",
  "serde",
@@ -1147,6 +1154,7 @@ name = "crab-telemetry"
 version = "0.1.0"
 dependencies = [
  "crab-common",
+ "crab-core",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -1193,6 +1201,7 @@ dependencies = [
  "arboard",
  "chrono",
  "crab-agent",
+ "crab-common",
  "crab-config",
  "crab-core",
  "crab-memory",

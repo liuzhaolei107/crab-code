@@ -49,7 +49,7 @@ impl TeamMemoryStore {
     /// The final content is `format_frontmatter(metadata) + "\n" + body`,
     /// with a trailing newline appended if `body` does not already end in
     /// one.
-    pub fn save(&self, metadata: &MemoryMetadata, body: &str) -> crab_common::Result<()> {
+    pub fn save(&self, metadata: &MemoryMetadata, body: &str) -> crab_core::Result<()> {
         let filename = format!("{}.md", slugify(&metadata.name));
         let mut content = format_frontmatter(metadata);
         content.push('\n');
@@ -61,7 +61,7 @@ impl TeamMemoryStore {
     }
 
     /// Load every team memory via [`MemoryStore::scan`].
-    pub fn load_all(&self) -> crab_common::Result<Vec<MemoryFile>> {
+    pub fn load_all(&self) -> crab_core::Result<Vec<MemoryFile>> {
         self.store.scan()
     }
 
@@ -76,7 +76,7 @@ impl TeamMemoryStore {
     /// team-name heading. Returns an empty string when the team has no
     /// memories yet so callers can splice it into a larger prompt
     /// without an empty section.
-    pub fn render_prompt_block(&self) -> crab_common::Result<String> {
+    pub fn render_prompt_block(&self) -> crab_core::Result<String> {
         let memories = self.load_all()?;
         if memories.is_empty() {
             return Ok(String::new());

@@ -61,16 +61,16 @@ impl<'a> GlobOptions<'a> {
 ///
 /// - Invalid glob pattern.
 /// - `root` does not exist or is inaccessible.
-pub fn find_files(opts: &GlobOptions<'_>) -> crab_common::Result<GlobResult> {
+pub fn find_files(opts: &GlobOptions<'_>) -> crab_core::Result<GlobResult> {
     // 1. Compile the glob pattern
     let glob = globset::GlobBuilder::new(opts.pattern)
         .literal_separator(true)
         .build()
-        .map_err(|e| crab_common::Error::Other(format!("invalid glob pattern: {e}")))?;
+        .map_err(|e| crab_core::Error::Other(format!("invalid glob pattern: {e}")))?;
     let glob_set = globset::GlobSetBuilder::new()
         .add(glob)
         .build()
-        .map_err(|e| crab_common::Error::Other(format!("invalid glob pattern: {e}")))?;
+        .map_err(|e| crab_core::Error::Other(format!("invalid glob pattern: {e}")))?;
 
     // 2. Walk the directory with ignore::WalkBuilder
     let mut walker = ignore::WalkBuilder::new(opts.root);
