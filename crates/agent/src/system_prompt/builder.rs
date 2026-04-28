@@ -9,8 +9,8 @@
 use std::fmt::Write;
 use std::path::Path;
 
-use crab_config::agents_md;
 use crab_memory::MemoryFile;
+use crab_memory::agents_md;
 use crab_tools::registry::ToolRegistry;
 
 use super::git_context::GitContext;
@@ -183,7 +183,15 @@ fn append_memory_context(prompt: &mut String, memories: &[MemoryFile]) {
 
 /// Append AGENTS.md project instructions.
 fn append_agents_md_instructions(prompt: &mut String, project_dir: &Path) {
-    let agents_mds = agents_md::collect_agents_md(project_dir);
+    let global_dir = crab_config::config::global_config_dir();
+    let agents_mds = agents_md::collect_agents_md(project_dir, &global_dir);
+
+    // Best-effort gitignore maintenance for AGENTS.local.md
+    let local_md = project_dir.join("AGENTS.local.md");
+    if local_md.exists() {
+        let _ = crab_config::gitignore::ensure_local_agents_md_ignored(&local_md);
+    }
+
     if agents_mds.is_empty() {
         return;
     }

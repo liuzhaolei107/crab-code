@@ -4,6 +4,7 @@
 //! markdown files with YAML frontmatter in `~/.crab/memory/`.
 
 pub mod age;
+pub mod agents_md;
 pub mod index;
 pub mod paths;
 pub mod prompt;

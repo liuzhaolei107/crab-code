@@ -1,3 +1,9 @@
+//! AGENTS.md project instruction file discovery and parsing.
+//!
+//! Collects `AGENTS.md` and `.crab/rules/*.md` files from global, user,
+//! and project levels. The system prompt builder calls [`collect_agents_md`]
+//! to gather all instruction layers.
+
 use std::path::Path;
 
 /// Parsed content from a AGENTS.md project instruction file.
@@ -24,16 +30,18 @@ pub enum AgentsMdSource {
 /// In addition to the top-level `AGENTS.md` at each level, any `*.md` files
 /// inside the corresponding `.crab/rules/` directory are loaded and appended
 /// (sorted alphabetically by filename) after the AGENTS.md content.
-pub fn collect_agents_md(project_dir: &Path) -> Vec<AgentsMd> {
+///
+/// `global_config_dir` is typically `~/.crab/` — passed explicitly so this
+/// module has no dependency on the config crate.
+pub fn collect_agents_md(project_dir: &Path, global_config_dir: &Path) -> Vec<AgentsMd> {
     let mut results = Vec::new();
 
     // 1. Global: ~/.crab/AGENTS.md + ~/.crab/rules/*.md
-    let global_dir = crate::config::global_config_dir();
-    if let Some(md) = read_agents_md(&global_dir.join("AGENTS.md"), AgentsMdSource::Global) {
+    if let Some(md) = read_agents_md(&global_config_dir.join("AGENTS.md"), AgentsMdSource::Global) {
         results.push(md);
     }
     results.extend(collect_rules_dir(
-        &global_dir.join("rules"),
+        &global_config_dir.join("rules"),
         &AgentsMdSource::Global,
     ));
 
@@ -46,15 +54,12 @@ pub fn collect_agents_md(project_dir: &Path) -> Vec<AgentsMd> {
     }
 
     // 3b. Project-local: <project_dir>/AGENTS.local.md (gitignored, per-checkout
-    //     private memory). When present, append after AGENTS.md and ensure the
-    //     file is covered by .gitignore so users don't accidentally commit it.
+    //     private memory). Callers are responsible for gitignore maintenance.
     let local_md = project_dir.join("AGENTS.local.md");
-    if local_md.exists() {
-        if let Some(md) = read_agents_md(&local_md, AgentsMdSource::Project) {
-            results.push(md);
-        }
-        // Best-effort gitignore maintenance — failures are non-fatal.
-        let _ = crate::gitignore::ensure_local_agents_md_ignored(&local_md);
+    if local_md.exists()
+        && let Some(md) = read_agents_md(&local_md, AgentsMdSource::Project)
+    {
+        results.push(md);
     }
 
     // 4. Also check <project_dir>/.crab/AGENTS.md (nested project config)
@@ -133,13 +138,19 @@ fn read_agents_md(path: &Path, source: AgentsMdSource) -> Option<AgentsMd> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
+
+    fn fake_global_dir() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_path_buf();
+        (dir, path)
+    }
 
     #[test]
     fn collect_empty_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let results = collect_agents_md(dir.path());
-        // No AGENTS.md files — may have global if ~/.crab/AGENTS.md exists,
-        // but no project-level ones
+        let (_gd, global) = fake_global_dir();
+        let results = collect_agents_md(dir.path(), &global);
         for md in &results {
             assert_ne!(md.source, AgentsMdSource::Project);
         }
@@ -148,8 +159,9 @@ mod tests {
     #[test]
     fn collect_project_agents_md() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         fs::write(dir.path().join("AGENTS.md"), "# Project Rules\nBe helpful.").unwrap();
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         let project_mds: Vec<_> = results
             .iter()
             .filter(|md| md.source == AgentsMdSource::Project)
@@ -161,10 +173,11 @@ mod tests {
     #[test]
     fn collect_nested_agents_md() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         let nested_dir = dir.path().join(".crab");
         fs::create_dir_all(&nested_dir).unwrap();
         fs::write(nested_dir.join("AGENTS.md"), "Nested instructions").unwrap();
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         let project_mds: Vec<_> = results
             .iter()
             .filter(|md| md.source == AgentsMdSource::Project)
@@ -176,8 +189,9 @@ mod tests {
     #[test]
     fn empty_file_is_skipped() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         fs::write(dir.path().join("AGENTS.md"), "   ").unwrap();
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         assert!(
             !results
                 .iter()
@@ -193,17 +207,17 @@ mod tests {
     #[test]
     fn collect_both_root_and_nested_agents_md() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         fs::write(dir.path().join("AGENTS.md"), "Root instructions").unwrap();
         let nested = dir.path().join(".crab");
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("AGENTS.md"), "Nested instructions").unwrap();
 
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         let project_mds: Vec<_> = results
             .iter()
             .filter(|md| md.source == AgentsMdSource::Project)
             .collect();
-        // Both root and nested should be collected (different content)
         assert_eq!(project_mds.len(), 2);
         assert!(project_mds[0].content.contains("Root"));
         assert!(project_mds[1].content.contains("Nested"));
@@ -212,18 +226,18 @@ mod tests {
     #[test]
     fn collect_deduplicates_identical_root_and_nested() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         let same_content = "Identical instructions";
         fs::write(dir.path().join("AGENTS.md"), same_content).unwrap();
         let nested = dir.path().join(".crab");
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("AGENTS.md"), same_content).unwrap();
 
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         let project_count = results
             .iter()
             .filter(|md| md.source == AgentsMdSource::Project)
             .count();
-        // Should deduplicate identical content
         assert_eq!(project_count, 1);
     }
 
@@ -245,10 +259,11 @@ mod tests {
     #[test]
     fn nested_empty_is_skipped() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         let nested = dir.path().join(".crab");
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("AGENTS.md"), "   \n  \t  ").unwrap();
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         assert!(
             !results
                 .iter()
@@ -259,13 +274,14 @@ mod tests {
     #[test]
     fn collect_project_rules_dir_sorted() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         let rules = dir.path().join(".crab").join("rules");
         fs::create_dir_all(&rules).unwrap();
         fs::write(rules.join("20-style.md"), "Style rule").unwrap();
         fs::write(rules.join("10-security.md"), "Security rule").unwrap();
         fs::write(rules.join("30-testing.md"), "Testing rule").unwrap();
 
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         let project_mds: Vec<_> = results
             .iter()
             .filter(|md| md.source == AgentsMdSource::Project)
@@ -279,12 +295,13 @@ mod tests {
     #[test]
     fn rules_dir_appended_after_agents_md() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         fs::write(dir.path().join("AGENTS.md"), "Top-level CRAB").unwrap();
         let rules = dir.path().join(".crab").join("rules");
         fs::create_dir_all(&rules).unwrap();
         fs::write(rules.join("a.md"), "A rule").unwrap();
 
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         let project_mds: Vec<_> = results
             .iter()
             .filter(|md| md.source == AgentsMdSource::Project)
@@ -297,6 +314,7 @@ mod tests {
     #[test]
     fn rules_dir_non_md_files_ignored() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         let rules = dir.path().join(".crab").join("rules");
         fs::create_dir_all(&rules).unwrap();
         fs::write(rules.join("keep.md"), "Kept").unwrap();
@@ -304,7 +322,7 @@ mod tests {
         fs::write(rules.join("README"), "Skipped no-ext").unwrap();
         fs::write(rules.join("notes.MD"), "Uppercase ext").unwrap();
 
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         let project_mds: Vec<_> = results
             .iter()
             .filter(|md| md.source == AgentsMdSource::Project)
@@ -318,12 +336,13 @@ mod tests {
     #[test]
     fn rules_dir_empty_files_skipped() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         let rules = dir.path().join(".crab").join("rules");
         fs::create_dir_all(&rules).unwrap();
         fs::write(rules.join("empty.md"), "   \n\t ").unwrap();
         fs::write(rules.join("real.md"), "Real content").unwrap();
 
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         let project_mds: Vec<_> = results
             .iter()
             .filter(|md| md.source == AgentsMdSource::Project)
@@ -335,9 +354,9 @@ mod tests {
     #[test]
     fn rules_dir_missing_ok() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         fs::write(dir.path().join("AGENTS.md"), "Just AGENTS.md").unwrap();
-        // No .crab/rules/ directory at all
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         let project_count = results
             .iter()
             .filter(|md| md.source == AgentsMdSource::Project)
@@ -348,13 +367,14 @@ mod tests {
     #[test]
     fn rules_dir_subdirectories_ignored() {
         let dir = tempfile::tempdir().unwrap();
+        let (_gd, global) = fake_global_dir();
         let rules = dir.path().join(".crab").join("rules");
         let nested = rules.join("nested");
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("inner.md"), "Should not load").unwrap();
         fs::write(rules.join("top.md"), "Top rule").unwrap();
 
-        let results = collect_agents_md(dir.path());
+        let results = collect_agents_md(dir.path(), &global);
         let project_mds: Vec<_> = results
             .iter()
             .filter(|md| md.source == AgentsMdSource::Project)

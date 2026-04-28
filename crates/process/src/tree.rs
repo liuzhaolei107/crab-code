@@ -17,9 +17,7 @@ pub fn kill_tree(pid: u32) -> crab_core::Result<()> {
     let target = Pid::from_u32(pid);
 
     if sys.process(target).is_none() {
-        return Err(crab_core::Error::Other(format!(
-            "process {pid} not found"
-        )));
+        return Err(crab_core::Error::Other(format!("process {pid} not found")));
     }
 
     // Collect all descendants (children, grandchildren, etc.)

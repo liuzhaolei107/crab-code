@@ -1,7 +1,5 @@
-pub mod agents_md;
 pub mod config;
 pub mod gitignore;
-pub mod global_state;
 pub mod hooks;
 pub mod loader;
 pub mod merge;
@@ -12,8 +10,7 @@ pub mod runtime;
 pub mod validation;
 pub mod writer;
 
-pub use config::{Config, ConfigSource, EnabledPluginValue, GitContextConfig, PermissionsConfig};
-pub use global_state::GlobalState;
+pub use config::{Config, ConfigLayer, EnabledPluginValue, GitContextConfig, PermissionsConfig};
 pub use loader::{CliFlags, ResolveContext, overlay_config, resolve};
 pub use merge::{dedup_preserving_order, merge_toml_values};
 pub use migration::migrate_settings;

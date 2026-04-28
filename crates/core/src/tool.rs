@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use tokio_util::sync::CancellationToken;
 
-use crate::permission::{PermissionMode, PermissionPolicy};
 use crate::Result;
+use crate::permission::{PermissionMode, PermissionPolicy};
 
 pub const BASH_TOOL_NAME: &str = "Bash";
 pub const READ_TOOL_NAME: &str = "Read";

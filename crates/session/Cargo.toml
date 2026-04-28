@@ -10,8 +10,6 @@ description = "Session management and context compaction for Crab Code"
 [dependencies]
 crab-core.workspace = true
 crab-memory.workspace = true
-crab-api.workspace = true
-crab-config.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

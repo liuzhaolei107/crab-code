@@ -61,7 +61,7 @@ pub(crate) fn tool_name_matches_pattern(pattern: &str, tool_name: &str) -> bool 
 /// Simple glob matching supporting `*` (any chars), `?` (single char),
 /// and `[abc]` (character class). Avoids pulling in globset for a small
 /// pattern set used only in permission checks.
-pub(crate) fn glob_match(pattern: &str, input: &str) -> bool {
+pub fn glob_match(pattern: &str, input: &str) -> bool {
     let pat_chars: Vec<char> = pattern.chars().collect();
     let input_chars: Vec<char> = input.chars().collect();
     glob_match_inner(&pat_chars, &input_chars)

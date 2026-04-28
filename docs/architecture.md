@@ -1,7 +1,7 @@
 # Crab Code Architecture
 
 
-> Updated: 2026-04-22
+> Updated: 2026-04-27
 > Changelog: Tool trait gains `is_concurrency_safe(input)` for input-dependent parallelism; PermissionMode expanded to 6 variants (+AcceptEdits/DontAsk/Plan); engine query loop adds PTL recovery, max-output-tokens retry, streaming fallback, plan model routing; plugin hooks gain `Stop` trigger and `Retry` action; multi-layer compaction pipeline (microcompact → LLM summary → heuristic fallback → compact boundary).
 
 ---
@@ -14,7 +14,7 @@
 |-------|-------|----------------|
 | **Layer 4** Entry Layer | `cli` `daemon` `acp` | CLI entry point (clap), background daemon, ACP stdio adapter |
 | **Layer 3** Engine Layer | `agent` `engine` `session` `tui` `remote` | Query loop, multi-agent orchestration, session state, terminal UI, remote-control WebSocket server + client |
-| **Layer 2** Service Layer | `api` `tools` `mcp` `fs` `process` `sandbox` `ide` `skill` `plugin` `memory` `telemetry` `job` | Tool system, MCP stack, LLM clients, file/process/sandbox, IDE client, skill system, plugins, persistent memory, telemetry, unified job scheduling |
+| **Layer 2** Service Layer | `api` `tools` `mcp` `fs` `process` `sandbox` `ide` `skill` `plugin` `memory` `swarm` `telemetry` `job` | Tool system, MCP stack, LLM clients, file/process/sandbox, IDE client, skill system, plugins, persistent memory, multi-agent infrastructure, telemetry, unified job scheduling |
 | **Layer 1** Foundation Layer | `core` `common` `config` `auth` | Domain model, layered config, authentication |
 
 > Dependency direction: upper layers depend on lower layers; reverse dependencies are prohibited. `core` defines the `Tool` trait to avoid circular dependencies between `tools` and `agent`. See §5.3 for inner-layer rules (aggregator vs leaf service; Layer 3 Event-only control flow).
@@ -56,7 +56,7 @@
 │  │   core   │  │  common  │  │  config  │  │   auth   │               │
 │  │Domain    │  │Error +   │  │Multi-    │  │OAuth +   │               │
 │  │model +   │  │utility   │  │layer     │  │Keychain  │               │
-│  │Tool trait│  │path/text │  │+ AGENTS.md │  │          │               │
+│  │Tool trait│  │path/text │  │config    │  │          │               │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘               │
 └───────────────────────────────────────────────────────────────────────┘
 ```
@@ -66,7 +66,7 @@
 | Claude Code (TS) | Path | Crab Code (Rust) | Notes |
 |-------------------|------|-------------------|-------|
 | **Entry Layer** entrypoints/ | `cli.tsx` `main.tsx` | `cli` `daemon` | CC uses React/Ink for rendering; Crab uses ratatui |
-| **Command Layer** commands/ | `query.ts` `QueryEngine.ts` `coordinator/` | `engine` + `agent` | CC's `query.ts` ↔ crab `engine`; `QueryEngine.ts` ↔ `agent`; coordinator stays inside `agent/swarm/` |
+| **Command Layer** commands/ | `query.ts` `QueryEngine.ts` `coordinator/` | `engine` + `agent` | CC's `query.ts` ↔ crab `engine`; `QueryEngine.ts` ↔ `agent`; domain-pure swarm infra in `crates/swarm/` |
 | **Tool Layer** tools/ | 52 Tool directories | `tools` + `mcp` | CC mixes tools and MCP in `services/`; Crab separates them |
 | **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` `memdir/` | `api` `mcp` `acp` `auth` `skill` `plugin` `memory` `telemetry` `sandbox` `ide` `job` | CC's service layer is flat; Crab splits by responsibility. `memdir/` → `memory`; CC `utils/sandbox/` → `sandbox`; CC IDE MCP client surface → `ide`; ACP server → `acp`; unified scheduling → `job` |
 | **Bridge Layer** bridge/ | `bridgeMain.ts` `replBridge.ts` | `remote` (server + client) | CC's `src/bridge/` (inbound server) + `src/remote/` (outbound client) both land in crates/remote, which owns the full crab-proto stack (server + client + wire types, mirroring crab-mcp) |
@@ -76,7 +76,7 @@
 
 1. **core has zero I/O** -- Pure data structures and trait definitions, reusable by any frontend (CLI/GUI/WASM)
 2. **Message loop driven** -- Everything revolves around the query loop: user input -> API call -> tool execution -> result return
-3. **Workspace isolation** -- 22 library crates with orthogonal responsibilities (plus 2 bin + xtask = 25 total); incremental compilation only triggers on changed parts
+3. **Workspace isolation** -- 23 library crates with orthogonal responsibilities (plus 2 bin + xtask = 26 total); incremental compilation only triggers on changed parts
 4. **Feature flags control dependencies** -- No Bedrock? AWS SDK is not compiled. No WASM? wasmtime is not compiled.
 
 ---
@@ -149,11 +149,11 @@
 | # | Function | TypeScript Original | Rust Alternative | Docs |
 |---|----------|---------------------|------------------|------|
 | 11 | JSON | Built-in JSON | serde + serde_json | [serde.rs](https://serde.rs) |
-| 12 | YAML | yaml | serde_yml | [docs.rs/serde_yml](https://docs.rs/serde_yml) |
+| 12 | YAML | yaml | serde_yaml_ng | [docs.rs/serde_yaml_ng](https://docs.rs/serde_yaml_ng) |
 | 13 | TOML | -- | toml | [docs.rs/toml](https://docs.rs/toml) |
 | 14 | Schema validation | Zod | schemars | [docs.rs/schemars](https://docs.rs/schemars) |
 
-> Note: `serde_yml` is the community successor to the archived `serde_yaml` (dtolnay). It is the correct modern choice.
+> Note: `serde_yaml_ng` is the community successor to the archived `serde_yaml` (dtolnay). It is the correct modern choice.
 
 ### 3.4 File System / Search
 
@@ -206,15 +206,17 @@ crab-code/
 │   ├── common/                        # crab-common: shared foundation
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   │       ├── lib.rs                 # exports error, result, utils
-│   │       ├── error.rs               # thiserror unified error enum
-│   │       ├── result.rs              # type Result<T>
+│   │       ├── lib.rs                 # re-exports utils + constants
+│   │       ├── constants.rs           # shared constants
 │   │       └── utils/                 # utility functions (no business semantics)
 │   │           ├── mod.rs
 │   │           ├── id.rs              # ULID generation
 │   │           ├── path.rs            # cross-platform path normalization
 │   │           ├── text.rs            # Unicode width, ANSI strip
-│   │           └── debug.rs           # debug categories, tracing init
+│   │           ├── debug.rs           # debug categories, tracing init
+│   │           ├── argument_substitution.rs  # CLI argument variable expansion
+│   │           ├── binary_check.rs    # binary file detection
+│   │           └── ca_certs.rs        # CA certificate loading
 │   │
 │   ├── core/                          # crab-core: domain model
 │   │   ├── Cargo.toml
@@ -224,39 +226,45 @@ crab-code/
 │   │       ├── conversation.rs        # Conversation, Turn
 │   │       ├── tool.rs                # trait Tool + ToolContext + ToolOutput
 │   │       ├── model.rs               # ModelId, TokenUsage, CostTracker
-│   │       ├── permission/            # Permission system (module directory)
-│   │       │   ├── mod.rs             # PermissionMode, PermissionPolicy, re-exports
+│   │       ├── permission/            # Permission system (module directory, 11 files)
+│   │       │   ├── mod.rs             # PermissionMode, re-exports
+│   │       │   ├── mode.rs            # PermissionMode enum definition
+│   │       │   ├── policy.rs          # PermissionPolicy
+│   │       │   ├── decision.rs        # PermissionDecision type
 │   │       │   ├── rule_parser.rs     # Rule AST parsing: "Bash(cmd:git*)" format
 │   │       │   ├── path_validator.rs  # File path permission engine, symlink resolution
 │   │       │   ├── denial_tracker.rs  # Consecutive denial counting, pattern detection
 │   │       │   ├── explainer.rs       # Human-readable permission decision explanation
-│   │       │   └── shadowed_rules.rs  # Shadowed rule detection
-│   │       ├── config.rs              # trait ConfigSource
-│   │       ├── event.rs               # Domain event enum (inter-crate decoupled communication)
-│   │       └── capability.rs          # Agent capability declaration
+│   │       │   ├── shadowed_rules.rs  # Shadowed rule detection
+│   │       │   ├── auto_mode.rs       # Auto-mode permission logic
+│   │       │   └── filter.rs          # Permission filter
+│   │       ├── event.rs               # Domain event enum + SessionEvent + EventSink trait
+│   │       ├── error.rs               # Error enum (thiserror)
+│   │       ├── result.rs              # Result<T> type alias
+│   │       ├── query.rs               # QuerySource enum
+│   │       └── ide.rs                 # IDE ambient context types
 │   │
 │   ├── config/                        # crab-config: configuration system
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── settings.rs            # settings.json read/write, layered merging
-│   │       ├── agents_md.rs             # AGENTS.md parsing (project/user/global)
-│   │       ├── hooks.rs               # Hook definition and triggering
-│   │       ├── feature_flag.rs        # Runtime feature flag management (local evaluation)
-│   │       ├── policy.rs              # Permission policy restrictions, MDM/managed-path
-│   │       ├── keybinding.rs          # Keybinding schema/parsing/validation/resolver
-│   │       ├── config_toml.rs         # config.toml multi-provider configuration
-│   │       ├── hot_reload.rs          # settings.json hot reload monitoring
-│   │       ├── permissions.rs         # Unified permission decision entry point
-│   │       ├── validation.rs          # Settings validation engine
-│   │       ├── settings_cache.rs      # Memoized settings cache
-│   │       ├── change_detector.rs     # Per-source change detection
-│   │       └── mdm.rs                 # Enterprise MDM managed settings
+│   │       ├── config.rs              # Config struct + Default
+│   │       ├── loader.rs              # resolve() pipeline
+│   │       ├── merge.rs               # toml::Value merging
+│   │       ├── runtime.rs             # env + CLI flag -> Value
+│   │       ├── validation.rs          # jsonschema thin wrapper
+│   │       ├── writer.rs              # toml_edit write-back
+│   │       ├── gitignore.rs           # config.local.toml auto-ignore
+│   │       ├── hooks.rs               # Hook config schema parser
+│   │       ├── migration.rs           # Schema versioned migration
+│   │       ├── permissions.rs         # StoredPermissionRule + PermissionRuleSet disk schema
+│   │       └── plugin_loader.rs       # Plugin config.json loader
 │   │
 │   ├── auth/                          # crab-auth: authentication
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
+│   │       ├── error.rs               # AuthError
 │   │       ├── oauth.rs               # OAuth2 PKCE flow + tokens.json store
 │   │       ├── keychain.rs            # System Keychain (macOS/Win/Linux)
 │   │       ├── resolver.rs            # env → apiKeyHelper → keychain → tokens.json chain
@@ -275,7 +283,8 @@ crab-code/
 │   │       │   ├── mod.rs
 │   │       │   ├── client.rs          # HTTP + SSE + retry
 │   │       │   ├── types.rs           # Anthropic native API types
-│   │       │   └── convert.rs         # Anthropic <-> internal type conversion
+│   │       │   ├── convert.rs         # Anthropic <-> internal type conversion
+│   │       │   └── files.rs           # Anthropic Files API
 │   │       ├── openai/                # Standalone OpenAI Chat Completions client
 │   │       │   ├── mod.rs
 │   │       │   ├── client.rs          # HTTP + SSE + retry
@@ -303,12 +312,29 @@ crab-code/
 │   │       ├── lib.rs
 │   │       ├── protocol.rs            # JSON-RPC message definitions
 │   │       ├── client.rs              # MCP client
-│   │       ├── server.rs              # MCP server
+│   │       ├── server/                # MCP server (module directory)
+│   │       │   ├── mod.rs
+│   │       │   ├── prompts.rs         # Prompt serving
+│   │       │   ├── resources.rs       # Resource serving
+│   │       │   └── tools.rs           # Tool serving
 │   │       ├── manager.rs             # Lifecycle management, multi-server coordination
 │   │       ├── transport/
 │   │       │   ├── mod.rs
 │   │       │   ├── stdio.rs           # stdin/stdout transport
 │   │       │   └── ws.rs              # WebSocket (feature)
+│   │       ├── auth/                  # MCP OAuth2 / API key authentication (12 files)
+│   │       │   ├── mod.rs
+│   │       │   ├── api_key.rs         # API key auth
+│   │       │   ├── callback.rs        # OAuth callback server
+│   │       │   ├── discovery.rs       # Auth endpoint discovery
+│   │       │   ├── exchange.rs        # Token exchange
+│   │       │   ├── flow.rs            # OAuth flow orchestration
+│   │       │   ├── manager.rs         # Auth lifecycle manager
+│   │       │   ├── pkce.rs            # PKCE challenge/verifier
+│   │       │   ├── quirks.rs          # Provider-specific quirks
+│   │       │   ├── refresh.rs         # Token refresh
+│   │       │   ├── store.rs           # Token persistence
+│   │       │   └── types.rs           # Auth types
 │   │       ├── resource.rs            # Resource caching, templates
 │   │       ├── discovery.rs           # Server auto-discovery
 │   │       ├── sse_server.rs          # SSE server transport (crab as server)
@@ -322,8 +348,7 @@ crab-code/
 │   │       ├── progress.rs            # Progress reporting
 │   │       ├── cancellation.rs        # Request cancellation mechanism
 │   │       ├── health.rs              # Health check + heartbeat
-│   │       ├── auth.rs                # MCP OAuth2/API key authentication
-│   │       ├── channel_permissions.rs # Channel-level tool/resource permissions
+│   │       ├── server_acl.rs          # Server access control list
 │   │       ├── elicitation.rs         # User input request handling
 │   │       ├── env_expansion.rs       # ${VAR} environment variable expansion in config
 │   │       ├── official_registry.rs   # Official MCP server registry
@@ -339,7 +364,8 @@ crab-code/
 │   │       ├── watch.rs               # notify file watching (with debouncing, batching)
 │   │       ├── lock.rs                # File locking (fd-lock)
 │   │       ├── diff.rs                # similar wrapper, patch generation
-│   │       └── symlink.rs             # Symbolic link handling + secure resolution
+│   │       ├── symlink.rs             # Symbolic link handling + secure resolution
+│   │       └── file_cache.rs          # File content cache
 │   │
 │   ├── process/                       # crab-process: subprocess management
 │   │   ├── Cargo.toml
@@ -358,6 +384,7 @@ crab-code/
 │   │       ├── executor.rs            # Unified executor with permission checking
 │   │       ├── builtin/
 │   │       │   ├── mod.rs
+│   │       │   ├── registry.rs        # Builtin tool registry helpers
 │   │       │   ├── bash.rs            # BashTool
 │   │       │   ├── bash_security.rs   # Bash security checks
 │   │       │   ├── bash_classifier.rs # Bash command classification (read-only/write/dangerous)
@@ -399,11 +426,13 @@ crab-code/
 │   │       │   ├── workflow.rs        # WorkflowTool (multi-step workflow)
 │   │       │   ├── send_user_file.rs  # SendUserFileTool
 │   │       │   ├── powershell.rs      # PowerShellTool (Windows, opt-in via CRAB_USE_POWERSHELL_TOOL)
+│   │       │   ├── structured_output.rs # Structured output tool
 │   │       │   ├── cron.rs            # CronCreate/Delete/List
 │   │       │   └── remote_trigger.rs  # RemoteTriggerTool
 │   │       ├── permission.rs          # Tool permission checking logic
 │   │       ├── sandbox.rs             # Tool sandbox policy
 │   │       ├── schema.rs              # Tool schema conversion
+│   │       ├── str_utils.rs           # String utility helpers
 │   │       └── tool_use_summary.rs    # Tool result summary generation
 │   │
 │   ├── session/                       # crab-session: session management
@@ -412,39 +441,43 @@ crab-code/
 │   │       ├── lib.rs
 │   │       ├── conversation.rs        # Conversation state machine, multi-turn management
 │   │       ├── context.rs             # Context window management
-│   │       ├── compaction.rs          # Message compaction strategies (5 levels)
+│   │       ├── compaction.rs          # Message compaction strategies
 │   │       ├── micro_compact.rs       # Micro-compaction: per-message replacement of large tool results
 │   │       ├── auto_compact.rs        # Auto-compaction trigger + cleanup
 │   │       ├── snip_compact.rs        # Snip compaction: "[snipped]" marker
+│   │       ├── input_expand.rs        # Input expansion (variable interpolation)
 │   │       ├── history.rs             # Session persistence, recovery, search, export
 │   │       ├── memory.rs              # Memory system (file persistence)
-│   │       ├── memory_types.rs        # Memory type schema (user/project/feedback)
-│   │       ├── memory_relevance.rs    # Memory relevance matching and scoring
-│   │       ├── memory_extract.rs      # Automatic memory extraction
-│   │       ├── memory_age.rs          # Memory aging and decay
-│   │       ├── team_memory.rs         # Team memory paths and loading
+│   │       ├── memory_extract.rs      # Conversation → memory extraction
 │   │       ├── cost.rs                # Token counting, cost tracking
 │   │       ├── template.rs            # Session template + quick recovery
 │   │       └── migration.rs           # Data migration system
+│   │
+│   ├── swarm/                         # crab-swarm: multi-agent infrastructure (domain-pure)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── bus.rs                 # MessageBus + AgentMessage / Envelope
+│   │       ├── mailbox.rs             # MessageRouter (inter-agent routing)
+│   │       ├── roster.rs              # Team / TeamMember / TeamMode
+│   │       ├── task_list.rs           # Shared TaskList + TaskStatus
+│   │       ├── task_lock.rs           # fd-lock file-locked claim_task
+│   │       ├── retry.rs              # RetryPolicy + RetryTracker + BackoffStrategy
+│   │       └── backend/              # Spawner backends
+│   │           ├── mod.rs
+│   │           ├── spawner.rs         #   SpawnerBackend trait
+│   │           └── teammate.rs        #   TeammateHandle + lifecycle
 │   │
 │   ├── agent/                         # crab-agent: multi-Agent system
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── coordinator.rs         # Agent orchestration, workers pool + work-stealing scheduler
-│   │       ├── query_loop.rs          # Core message loop
-│   │       ├── task.rs                # TaskList, dependency graph
-│   │       ├── teams/                 # Layer 1 multi-agent infrastructure
-│   │       │   ├── mod.rs              #   re-exports
-│   │       │   ├── roster.rs           #   Team / TeamMember / TeamMode
-│   │       │   ├── mailbox.rs          #   Inter-agent message routing (MessageRouter)
-│   │       │   ├── bus.rs              #   MessageBus + AgentMessage / Envelope
-│   │       │   ├── task_list.rs        #   Shared TaskList
-│   │       │   ├── task_lock.rs        #   fd-lock file-locked claim_task
-│   │       │   ├── worker.rs           #   AgentWorker (sub-agent runner)
-│   │       │   ├── worker_pool.rs      #   WorkerPool (spawn / collect / cancel)
-│   │       │   ├── retry.rs            #   RetryPolicy + RetryTracker
-│   │       │   └── backend/            #   Spawner backends (in-process / tmux)
+│   │       ├── runtime.rs             # Top-level agent runtime entry
+│   │       ├── teams/                 # Layer 1 orchestration (re-exports crab_swarm::*)
+│   │       │   ├── mod.rs              #   pub use crab_swarm::*; + local re-exports
+│   │       │   ├── coordinator.rs      #   TeamCoordinator (Layer 2b glue)
+│   │       │   ├── worker.rs           #   AgentWorker (sub-agent runner, depends on engine)
+│   │       │   └── worker_pool.rs      #   WorkerPool (spawn / collect / cancel / retry)
 │   │       ├── coordinator/            # Layer 2b Coordinator Mode (gated)
 │   │       │   ├── mod.rs              #   Coordinator struct composing the 3 pieces
 │   │       │   ├── gating.rs           #   env + config gate
@@ -458,12 +491,12 @@ crab-code/
 │   │       ├── system_prompt/          # System prompt assembly
 │   │       │   ├── mod.rs              #   re-exports
 │   │       │   ├── builder.rs          #   Main assembly logic
-│   │       │   ├── git_context.rs      #   Git status injection 
-│   │       │   ├── pr_context.rs       #   PR context injection 
-│   │       │   └── tips.rs             #   Contextual tips 
-│   │       ├── file_history/           # Per-session edit snapshots (CCB fileHistory)
+│   │       │   ├── git_context.rs      #   Git status injection
+│   │       │   ├── pr_context.rs       #   PR context injection
+│   │       │   └── tips.rs             #   Contextual tips
+│   │       ├── file_history/           # Per-session edit snapshots
 │   │       │   ├── mod.rs
-│   │       │   └── snapshot.rs         #   FileHistory + Snapshot + rewind / rewind_to_latest
+│   │       │   └── snapshot.rs         #   FileHistory + Snapshot + rewind / LRU(100)
 │   │       ├── error_recovery/         # Classification + recovery strategy
 │   │       │   ├── mod.rs
 │   │       │   ├── category.rs         #   ErrorCategory + ErrorClassifier
@@ -475,11 +508,11 @@ crab-code/
 │   │       ├── summarizer.rs           # Conversation compaction (/compact)
 │   │       ├── repl_commands.rs        # ReplCommand enum (parser helpers)
 │   │       ├── auto_dream.rs           # Memory consolidation (cargo feature `auto-dream`)
-│   │       └── proactive/              # CCB feature('PROACTIVE') placeholder (cargo feature `proactive`)
+│   │       └── proactive/              # Mini-agent speculation (cargo feature `proactive`)
 │   │
 │   ├── tui/                           # crab-tui: terminal UI
 │   │   ├── Cargo.toml
-│   │   └── src/                       # Detailed breakdown in §6.12
+│   │   └── src/                       # Detailed breakdown in §6.13
 │   │
 │   ├── skill/                         # crab-skill: skill system
 │   │   ├── Cargo.toml
@@ -488,6 +521,7 @@ crab-code/
 │   │       ├── types.rs               # Skill, SkillTrigger, SkillContext, SkillSource
 │   │       ├── frontmatter.rs         # YAML frontmatter parsing
 │   │       ├── registry.rs            # SkillRegistry (discover, find, match)
+│   │       ├── matcher.rs             # Skill matching logic
 │   │       ├── builder.rs             # SkillBuilder fluent API
 │   │       └── bundled/               # Built-in skills (one file per skill)
 │   │           ├── mod.rs
@@ -526,6 +560,38 @@ crab-code/
 │   │       ├── export.rs              # Local OTLP export (no remote)
 │   │       └── session_recorder.rs    # Session recording (local transcript)
 │   │
+│   ├── memory/                        # crab-memory: persistent memory
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── types.rs               # MemoryType enum, MemoryMetadata, frontmatter
+│   │       ├── store.rs               # MemoryStore — file CRUD + mtime-sorted scan
+│   │       ├── index.rs               # MEMORY.md index read/write
+│   │       ├── relevance.rs           # MemorySelector keyword scoring
+│   │       ├── age.rs                 # Exponential decay scoring
+│   │       ├── paths.rs               # Per-project / global / team memory dirs
+│   │       ├── security.rs            # Path traversal / symlink validation
+│   │       ├── prompt.rs              # MemoryPromptBuilder — system prompt injection
+│   │       ├── team.rs                # TeamMemoryStore
+│   │       ├── agents_md.rs           # AGENTS.md discovery + parsing
+│   │       └── ranker.rs              # LlmMemoryRanker (feature = "mem-ranker")
+│   │
+│   ├── ide/                           # crab-ide: IDE MCP client
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── client.rs              # IdeClient + connection lifecycle
+│   │       ├── detection.rs           # detect running IDE MCP server
+│   │       ├── lockfile.rs            # IDE lockfile discovery
+│   │       ├── notifications.rs       # inbound MCP notification handlers
+│   │       ├── injection.rs           # build system-reminder for agent
+│   │       ├── state.rs               # shared handles
+│   │       └── quirks/                # IDE-specific quirks
+│   │           ├── mod.rs
+│   │           ├── vscode.rs          # VS Code quirks
+│   │           ├── jetbrains.rs       # JetBrains quirks
+│   │           └── wsl.rs             # WSL quirks
+│   │
 │   # NOTE: three separate crates cover the different IDE/editor integration
 │   # directions — crates/ide (outbound MCP client to VS Code / JetBrains
 │   # lockfile plugins), crates/acp (inbound ACP server for Zed / Neovim /
@@ -535,20 +601,30 @@ crab-code/
 │   ├── cli/                           # crab-cli: terminal entry (binary crate)
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   │       ├── main.rs                # #[tokio::main]
-│   │       ├── commands/
-│   │       │   ├── mod.rs
-│   │       │   ├── chat.rs            # Default interactive mode
-│   │       │   ├── run.rs             # Non-interactive single execution
-│   │       │   ├── session.rs         # ps, logs, attach, kill
-│   │       │   ├── config.rs          # Configuration management
-│   │       │   ├── mcp.rs             # MCP server mode
-│   │       │   └── serve.rs           # Serve mode
-│   │       └── setup.rs               # Initialization, signal registration, panic hook
+│   │       ├── main.rs                # #[tokio::main] thin entry point
+│   │       ├── args.rs                # Cli struct + clap definitions + OutputFormat
+│   │       ├── agent.rs               # run() + run_single_shot() + run_line_repl()
+│   │       ├── output.rs              # event_to_json() + Spinner + print_banner()
+│   │       ├── acp_mode.rs            # ACP server mode entry
+│   │       ├── completions.rs         # Shell completion generation
+│   │       ├── deep_link.rs           # Deep link protocol handler
+│   │       ├── installer.rs           # System installer
+│   │       └── commands/
+│   │           ├── mod.rs
+│   │           ├── agents.rs          # AGENTS.md management
+│   │           ├── auth.rs            # Authentication management
+│   │           ├── config.rs          # Configuration management
+│   │           ├── doctor.rs          # Diagnostic checks
+│   │           ├── permissions.rs     # Permission rule management
+│   │           ├── plugin.rs          # Plugin management
+│   │           ├── serve.rs           # Serve mode
+│   │           ├── session.rs         # ps, logs, attach, kill
+│   │           └── update.rs          # Self-update
 │   │
-│   ├── daemon/                        # crab-daemon: daemon process (binary crate)
+│   ├── daemon/                        # crab-daemon: daemon process (lib+bin crate)
 │   │   ├── Cargo.toml
 │   │   └── src/
+│   │       ├── lib.rs
 │   │       ├── main.rs
 │   │       ├── protocol.rs            # IPC message protocol
 │   │       ├── server.rs              # Daemon server
@@ -565,20 +641,21 @@ crab-code/
 │   │       ├── token_budget.rs
 │   │       └── effort.rs
 │   │
-│   ├── remote/                        # crab-remote: crab-proto server + client (merged bridge, 2026-04)
+│   ├── remote/                        # crab-remote: crab-proto server + client
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── protocol/              # wire types + JSON-RPC envelopes (schemars::JsonSchema)
+│   │       ├── protocol/              # wire types + JSON-RPC envelopes
 │   │       │   ├── mod.rs
-│   │       │   ├── inbound.rs
-│   │       │   ├── outbound.rs
-│   │       │   └── types.rs
-│   │       ├── auth/                  # shared auth (JWT + trusted device + work secret)
+│   │       │   ├── envelope.rs        # message envelope framing
+│   │       │   ├── error.rs           # protocol error types
+│   │       │   ├── handshake.rs       # connection handshake
+│   │       │   ├── meta.rs            # metadata types
+│   │       │   ├── method.rs          # RPC method definitions
+│   │       │   └── session.rs         # session protocol messages
+│   │       ├── auth/                  # shared auth (JWT)
 │   │       │   ├── mod.rs
-│   │       │   ├── jwt.rs
-│   │       │   ├── trusted_device.rs
-│   │       │   └── work_secret.rs
+│   │       │   └── jwt.rs
 │   │       ├── client/                # outbound client (crab → another crab-proto server)
 │   │       │   ├── mod.rs
 │   │       │   ├── config.rs
@@ -586,40 +663,30 @@ crab-code/
 │   │       └── server/                # inbound server (web / app / desktop → crab)
 │   │           ├── mod.rs
 │   │           ├── config.rs
-│   │           ├── status.rs
-│   │           ├── session/
-│   │           │   ├── mod.rs
-│   │           │   ├── runner.rs
-│   │           │   ├── forwarder.rs
-│   │           │   └── attachments.rs
-│   │           ├── api/               # feature = "rest-api"
-│   │           │   ├── mod.rs
-│   │           │   ├── rest.rs
-│   │           │   └── peer_sessions.rs
-│   │           ├── permission_relay.rs  # remote permission-dialog relay
-│   │           └── webhook.rs
+│   │           ├── dispatch.rs        # message dispatch
+│   │           ├── handler.rs         # request handlers
+│   │           └── listener.rs        # WebSocket listener
 │   │
-│   ├── acp/                           # crab-acp: Agent Client Protocol server (new)
+│   ├── acp/                           # crab-acp: Agent Client Protocol server
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── protocol/              # ACP wire types
-│   │       │   └── mod.rs
 │   │       └── server.rs              # AcpServer + AgentHandler trait
 │   │
-│   ├── job/                           # crab-job: unified scheduling (new)
+│   ├── job/                           # crab-job: unified scheduling
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── id.rs                  # JobId + JobKind
 │   │       ├── spec.rs                # JobSpec (one-shot / interval / cron)
-│   │       ├── scheduler.rs           # JobScheduler + JobHandler trait
-│   │       └── storage/               # persistence backends
+│   │       ├── scheduler.rs           # JobScheduler
+│   │       └── handler.rs             # JobHandler trait
 │   │
 │   ├── sandbox/                       # crab-sandbox: process sandbox
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
+│   │       ├── traits.rs              # Sandbox trait
 │   │       ├── config.rs
 │   │       ├── policy.rs
 │   │       ├── error.rs
@@ -627,10 +694,11 @@ crab-code/
 │   │       ├── violation.rs
 │   │       └── backend/
 │   │           ├── mod.rs
+│   │           ├── factory.rs         # auto-select backend
 │   │           ├── noop.rs
-│   │           ├── seatbelt.rs        # feature = "seatbelt"
-│   │           ├── landlock.rs        # feature = "landlock"
-│   │           └── wsl.rs             # feature = "wsl"
+│   │           ├── seatbelt.rs        # macOS
+│   │           ├── landlock.rs        # Linux (cfg target_os)
+│   │           └── windows.rs        # Windows
 │
 └── xtask/                             # Build helper scripts
     ├── Cargo.toml
@@ -640,22 +708,18 @@ crab-code/
 
 > **Intra-crate expansions** (not shown above):
 > - `crates/agent/src/proactive/` (4 files) — mini-agent speculation
-> - `crates/tui/src/vim/` (6 files: mode / motion / operator / register / text_object / transition) — sibling of `keybindings`/`overlay`/`theme`/`traits`, NOT under `components/`. Vim is a key-handling state machine, not a visual widget. Matches CCB's `src/vim/` top-level layout.
-> - `crates/tui/src/components/buddy/` (expanded 4 → 7 files)
-> - `crates/tui/src/components/{remote_status,sandbox_*,remote_session}.rs`
-> - `crates/cli/src/deep_link.rs` (single file, 229 LOC) + `crates/cli/src/installer.rs` (single file, 201 LOC) — kept monolithic; sub-dir split deferred until real use exposes natural split points (platform-specific protocol registrars, per-manager adapters).
-> - `crates/tools/src/builtin/computer_use/` (expanded 4 → 10 files + platform subdir)
-> - `crates/core/src/{remote,sandbox,proactive,query}.rs` — shared type modules (core::bridge merged into core::remote 2026-04)
+> - `crates/tools/src/builtin/computer_use/` (5 files + platform/ subdir with 4 platform backends)
 
 ### 4.2 Crate Statistics
 
 | Type | Count | Notes |
 |------|-------|-------|
-| Library crate | 22 | `crates/*` — adds `ide`, `memory`, `engine`, `remote`, `sandbox`, `acp`, `job` |
-| Binary crate | 2 | `crates/cli` `crates/daemon` |
+| Library crate | 23 | `crates/*` — includes `swarm`, `ide`, `memory`, `engine`, `remote`, `sandbox`, `acp`, `job` |
+| Lib+Bin crate | 1 | `crates/daemon` (lib.rs + main.rs) |
+| Binary crate | 1 | `crates/cli` |
 | Helper crate | 1 | `xtask` |
-| **Total** | **23** | -- |
-| Total modules | ~300 | Across 22 library crates |
+| **Total** | **26** | -- |
+| Total modules | ~300 | Across 24 library crates |
 | Total tests | ~2700 | `cargo test --workspace` |
 
 
@@ -720,29 +784,30 @@ Legend: `sb` = sandbox, `rem` = remote, `skil` = skill, `proc` = process.
 | # | Crate | Internal Dependencies | Notes |
 |---|-------|-----------------------|-------|
 | 1 | **common** | — | Zero-dependency foundation |
-| 2 | **core** | common | Pure domain model |
+| 2 | **core** | — | Pure domain model |
 | 3 | **config** | core, common | Layered merge |
-| 4 | **auth** | config, common | Credential chain |
-| 5 | **api** | core, auth, common | LlmBackend + Anthropic/OpenAI clients |
-| 6 | **fs** | common | File system ops |
-| 7 | **process** | common | Subprocess mgmt |
-| 8 | **mcp** | core, common | MCP client/server |
-| 9 | **telemetry** | common | Sidecar, optional |
-| 10 | **sandbox** | core, common | Trait + platform backends (seatbelt/landlock/wsl/noop) |
-| 11 | **remote** | core, common, config, auth, session, agent, engine | crab-proto protocol + WS server + outbound client (inbound hinge for web/app/desktop entry points) |
-| 12 | **acp** | core, common | Agent Client Protocol server (editor → crab, Zed/Neovim/Helix) |
-| 13 | **ide** | core, common, config, mcp | Client to IDE-hosted MCP server (lockfile-based VSCode/JetBrains plugins) |
-| 14 | **job** | core, common | Unified scheduler — one-shot / interval / cron |
-| 15 | **skill** | common | Skill discovery + bundled definitions |
-| 16 | **memory** | core, common, config | Persistent memory store + ranking |
-| 17 | **plugin** | core, common, skill | Hooks + WASM + skill↔mcp bridge |
-| 18 | **tools** | core, fs, process, mcp, config, sandbox, skill, common | Layer 2 aggregator; 40+ built-in tools |
-| 19 | **session** | core, api, config, common | Session + context compaction |
-| 20 | **engine** | core, common, api, session, tools, plugin | Raw query loop (extracted from agent) |
-| 21 | **agent** | core, engine, session, tools, skill, plugin, memory, common | Orchestrator + swarm + proactive |
-| 22 | **tui** | core, session, agent, config, skill, memory, common | Terminal UI; receives tool state via `core::Event` |
-| 23 | **cli** (bin) | All crates | Thin entry point (interactive) |
-| 24 | **daemon** (bin) | engine, session, api, tools, config, core, common, remote, mcp, acp, job | Headless composition root — hosts server-side protocols for web/app/desktop |
+| 4 | **auth** | common, core, config | Credential chain |
+| 5 | **api** | core, config, auth | LlmBackend + Anthropic/OpenAI clients |
+| 6 | **fs** | common, core | File system ops |
+| 7 | **process** | common, core | Subprocess mgmt |
+| 8 | **mcp** | core | MCP client/server |
+| 9 | **telemetry** | common, core | Sidecar, optional |
+| 10 | **sandbox** | core | Trait + platform backends (seatbelt/landlock/windows/noop) |
+| 11 | **remote** | core, config, auth | crab-proto protocol + WS server + outbound client (inbound hinge for web/app/desktop entry points) |
+| 12 | **acp** | core | Agent Client Protocol server (editor → crab, Zed/Neovim/Helix) |
+| 13 | **ide** | core, mcp | Client to IDE-hosted MCP server (lockfile-based VSCode/JetBrains plugins) |
+| 14 | **job** | core | Unified scheduler — one-shot / interval / cron |
+| 15 | **skill** | common, core | Skill discovery + bundled definitions |
+| 16 | **memory** | core, common | Persistent memory store + ranking + AGENTS.md parsing |
+| 17 | **plugin** | core, config, mcp, process, skill | Hooks + WASM + skill↔mcp bridge |
+| 18 | **tools** | core, config, fs, process, sandbox, mcp | Layer 2 aggregator; 40+ built-in tools |
+| 19 | **swarm** | core | Multi-agent infrastructure: message bus, roster, task list, retry, backends |
+| 20 | **session** | core, memory | Session + context compaction |
+| 21 | **engine** | core, api, session, tools, plugin | Raw query loop (extracted from agent) |
+| 22 | **agent** | common, core, config, engine, memory, session, tools, api, mcp, plugin, process, swarm, skill | Orchestrator + coordinator + proactive |
+| 23 | **tui** | common, core, config, agent, memory | Terminal UI; receives tool state via `core::Event` |
+| 24 | **cli** (bin) | All crates | Thin entry point (interactive) |
+| 25 | **daemon** (lib+bin) | common, core | Headless composition root — hosts server-side protocols for web/app/desktop |
 
 ### 5.3 Dependency Direction Principles
 
@@ -752,11 +817,8 @@ Rule 1: Upper layer -> lower layer. Reverse dependencies are prohibited.
 Rule 2: Layer 2 is sub-layered into aggregators and leaves.
   - Aggregators (tools, plugin) may depend on leaf services in the same layer.
   - Leaf services (fs, process, mcp, acp, api, sandbox, ide, job, skill,
-    memory, telemetry) must NOT depend on each other.
+    memory, swarm, remote, telemetry) must NOT depend on each other.
   - Example: tools -> sandbox (OK); fs -> process (NOT OK).
-  - remote is a Layer 3 crate (depends on agent/engine/session) because its
-    server side attaches to running sessions — clients connecting via web /
-    app / desktop need to drive the full agent loop.
 
 Rule 3: core decouples via traits (Tool trait defined in core, implemented in tools).
 
@@ -784,37 +846,25 @@ Rule 6: Layer 3 internal control flow goes via core::Event only.
 
 ```
 src/
-├── lib.rs
-├── error.rs              // thiserror unified error types
-├── result.rs             // type Result<T> = std::result::Result<T, Error>
-├── text.rs               // Unicode width, ANSI strip, Bidi handling
-├── path.rs               // Cross-platform path normalization
-└── id.rs                 // ULID generation
+├── lib.rs                // re-exports utils + constants
+├── constants.rs          // shared constants
+└── utils/                // utility functions (no business semantics)
+    ├── mod.rs
+    ├── id.rs             // ULID generation
+    ├── path.rs           // cross-platform path normalization
+    ├── text.rs           // Unicode width, ANSI strip, Bidi handling
+    ├── debug.rs          // debug categories, tracing init
+    ├── argument_substitution.rs  // CLI argument variable expansion
+    ├── binary_check.rs   // binary file detection
+    └── ca_certs.rs       // CA certificate loading
 ```
 
 **Core Types**
 
+Note: `Error` and `Result<T>` live in `crates/core`, not common. Common is a pure utility layer with no error types.
+
 ```rust
-// error.rs -- common layer base errors (only variants with zero external dependencies)
-// Http/Api/Mcp/Tool/Auth errors stay in their respective crates to avoid common pulling in reqwest etc.
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Config error: {message}")]
-    Config { message: String },
-
-    #[error("{0}")]
-    Other(String),
-}
-
-// result.rs
-pub type Result<T> = std::result::Result<T, Error>;
-
-// text.rs
+// utils/text.rs
 pub fn display_width(s: &str) -> usize {
     unicode_width::UnicodeWidthStr::width(strip_ansi(s).as_str())
 }
@@ -871,7 +921,7 @@ pub enum ApiError {
     Json(#[from] serde_json::Error),
 
     #[error(transparent)]
-    Common(#[from] crab_common::Error),
+    Core(#[from] crab_core::Error),
 }
 
 // crates/mcp/src/error.rs
@@ -884,7 +934,7 @@ pub enum McpError {
     Transport(String),
 
     #[error(transparent)]
-    Common(#[from] crab_common::Error),
+    Core(#[from] crab_core::Error),
 }
 
 // crates/tools/src/error.rs
@@ -894,7 +944,7 @@ pub enum ToolError {
     Execution { name: String, message: String },
 
     #[error(transparent)]
-    Common(#[from] crab_common::Error),
+    Core(#[from] crab_core::Error),
 }
 
 // crates/auth/src/error.rs
@@ -904,14 +954,13 @@ pub enum AuthError {
     Auth { message: String },
 
     #[error(transparent)]
-    Common(#[from] crab_common::Error),
+    Core(#[from] crab_core::Error),
 }
 ```
 
-> Each crate defines its own `Error` + `type Result<T>`, with `#[from] crab_common::Error` enabling upward conversion.
-> Upper-layer crates (such as agent) can use `anyhow::Error` or a custom aggregate enum when unified handling is needed.
+> Each crate defines its own `Error` + `type Result<T>`, with `#[from] crab_core::Error` enabling upward conversion.
 
-**External Dependencies**: `thiserror`, `unicode-width`, `strip-ansi-escapes`, `ulid`, `dunce`, `directories`
+**External Dependencies**: `unicode-width`, `strip-ansi-escapes`, `ulid`, `dunce`, `directories`
 
 ---
 
@@ -926,12 +975,14 @@ src/
 ├── lib.rs
 ├── message.rs        // Message, Role, ContentBlock, ToolUse, ToolResult
 ├── conversation.rs   // Conversation, Turn, context window abstraction
-├── tool.rs           // trait Tool { fn name(); fn execute(); fn schema(); fn is_concurrency_safe(); }
+├── tool.rs           // trait Tool + ToolOutput + name constants (BASH/READ/WRITE/EDIT/GLOB/GREP)
 ├── model.rs          // ModelId, TokenUsage, CostTracker
-├── permission.rs     // PermissionMode, PermissionPolicy
-├── config.rs         // trait ConfigSource, config layered merge logic
-├── event.rs          // Domain event enum (inter-crate decoupling)
-└── capability.rs     // Agent capability declaration
+├── permission/       // PermissionMode, PermissionPolicy (11 files, see §4.1)
+├── event.rs          // Event enum + SessionEvent + EventSink trait + EventStream
+├── query.rs          // QuerySource enum
+├── ide.rs            // IDE ambient context types
+├── error.rs          // Error enum (thiserror)
+└── result.rs         // Result<T> type alias
 ```
 
 **Core Type Definitions**
@@ -1013,7 +1064,7 @@ use std::pin::Pin;
 use tokio_util::sync::CancellationToken;
 
 use crate::permission::PermissionMode;
-use crab_common::Result;
+use crab_core::Result;
 
 /// Tool source classification -- determines the column in the permission matrix
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1178,46 +1229,52 @@ impl CostTracker {
 ```rust
 // event.rs -- Domain events (inter-crate decoupled communication)
 use crate::model::TokenUsage;
-use crate::permission::PermissionMode;
+use crate::tool::ToolOutput;
+use serde_json::Value;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Event {
     // --- Message lifecycle ---
-    /// New conversation turn started
     TurnStart { turn_index: usize },
-    /// API response message started
-    MessageStart,
-    /// Text delta
-    ContentDelta(String),
-    /// Message ended
+    MessageStart { id: String },
+    ContentDelta { index: usize, delta: String },
+    ThinkingDelta { index: usize, delta: String },
+    ContentBlockStop { index: usize },
     MessageEnd { usage: TokenUsage },
 
     // --- Tool execution ---
-    /// Tool call started
-    ToolUseStart { id: String, name: String },
-    /// Tool input delta (streaming)
-    ToolUseInput(String),
-    /// Tool execution result
-    ToolResult { id: String, content: String, is_error: bool },
+    ToolUseStart { id: String, name: String, input: Value },
+    ToolUseInput { id: String, input: Value },
+    ToolOutputDelta { id: String, delta: String },
+    ToolProgress { id: String, progress: crate::tool::ToolProgress },
+    ToolResult { id: String, output: ToolOutput },
 
     // --- Permission interaction ---
-    /// Request user confirmation for tool execution permission
     PermissionRequest { tool_name: String, input_summary: String, request_id: String },
-    /// User permission response
-    PermissionResponse { request_id: String, approved: bool },
+    PermissionResponse { request_id: String, allowed: bool },
 
     // --- Context compaction ---
-    /// Compaction started
     CompactStart { strategy: String, before_tokens: u64 },
-    /// Compaction completed
     CompactEnd { after_tokens: u64, removed_messages: usize },
 
     // --- Token warnings ---
-    /// Token usage exceeded threshold (80%/90%/95%)
-    TokenWarning { usage_percent: u8, used: u64, limit: u64 },
+    TokenWarning { usage_pct: f32, used: u64, limit: u64 },
+    ContextUpgraded { from: String, to: String, old_window: u64, new_window: u64 },
+
+    // --- Memory ---
+    MemoryLoaded { count: usize },
+    MemorySaved { filename: String },
+
+    // --- Session history ---
+    SessionSaved { session_id: String },
+    SessionResumed { session_id: String, message_count: usize },
+
+    // --- Sub-agent workers ---
+    AgentWorkerStarted { worker_id: String, task_prompt: String },
+    AgentWorkerCompleted { worker_id: String, result: Option<String>, success: bool, usage: TokenUsage },
 
     // --- Errors ---
-    Error(String),
+    Error { message: String },
 }
 ```
 
@@ -1227,17 +1284,17 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PermissionMode {
-    /// All tools require confirmation
+    /// All non-read-only tools require user confirmation.
     Default,
-    /// Trust file operations within the project
-    TrustProject,
-    /// Auto-approve everything (dangerous)
-    Dangerously,
-    /// Auto-approve file edits within project, prompt for others
+    /// Auto-approve file edits within the project; other mutations still prompt.
     AcceptEdits,
-    /// Auto-approve all tools without prompting
+    /// Trust in-project file operations; out-of-project and dangerous still prompt.
+    TrustProject,
+    /// Auto-approve everything without prompting the user.
     DontAsk,
-    /// Deny all mutations except ExitPlanMode (plan-only mode)
+    /// Auto-approve everything (except `denied_tools`). Use with caution.
+    Dangerously,
+    /// Planning-only mode: the agent may read but not mutate.
     Plan,
 }
 
@@ -1251,7 +1308,7 @@ pub struct PermissionPolicy {
 }
 ```
 
-**External Dependencies**: `serde`, `serde_json`, `tokio-util` (sync), `crab-common` (note: `std::pin::Pin` / `std::future::Future` are from std, no extra dependencies)
+**External Dependencies**: `serde`, `serde_json`, `tokio-util` (sync), `futures` (note: `std::pin::Pin` / `std::future::Future` are from std, no extra dependencies)
 
 **Feature Flags**: None (pure type definitions)
 
@@ -1266,50 +1323,24 @@ pub struct PermissionPolicy {
 ```
 src/
 ├── lib.rs
-├── settings.rs           // settings.json read/write, layered merging
-├── agents_md.rs            // AGENTS.md parsing (project/user/global)
-├── hooks.rs              // Hook definition and triggering
-├── feature_flag.rs       // Feature flag integration
-├── policy.rs             // Permission policy, restrictions
-├── keybinding.rs         // Keybinding configuration
-├── config_toml.rs        // config.toml multi-provider configuration format
-├── hot_reload.rs         // settings.json hot reload (notify watcher)
-└── permissions.rs        // Unified permission decision entry point
+├── config.rs             // Config struct + Default
+├── loader.rs             // resolve() pipeline (multi-source merge)
+├── merge.rs              // toml::Value merging
+├── runtime.rs            // env + CLI flag -> Value
+├── validation.rs         // jsonschema thin wrapper
+├── writer.rs             // toml_edit write-back
+├── gitignore.rs          // config.local.toml auto-ignore
+├── hooks.rs              // Hook config schema parser
+├── migration.rs          // Schema versioned migration
+├── permissions.rs        // StoredPermissionRule + PermissionRuleSet (disk persistence)
+└── plugin_loader.rs      // Plugin config.json loader
 ```
 
-**Configuration Layers (three-level merge, low priority -> high priority)**
+**Configuration Layers (multi-source merge, low priority -> high priority)**
 
-```
-1. Global defaults   ~/.config/crab-code/settings.json
-2. User overrides    ~/.crab-code/settings.json
-3. Project overrides .crab-code/settings.json
-```
+The `Config` struct covers: `api_provider`, `api_base_url`, `api_key_helper`, `model`, `small_model`, `permission_mode`, `system_prompt`, `mcp_servers`, `hooks`, `theme`, and more. Secrets do **not** live on `Config` — the resolved API key flows through an independent chain in `crab-auth` (see 6.4). The configuration sources (`ConfigLayer` enum) are merged at the `toml::Value` layer by `loader::resolve()` (defaults -> plugin -> user -> project -> local -> --config -> env -> CLI flags), with higher-priority sources overriding lower-priority ones.
 
-**Core Types**
-
-The `Config` struct covers: `api_provider`, `api_base_url`, `api_key_helper`, `model`, `small_model`, `permission_mode`, `system_prompt`, `mcp_servers`, `hooks`, `theme`, and more. Secrets do **not** live on `Config` — the resolved API key flows through an independent chain in `crab-auth` (see 6.4). The configuration sources are merged at the `toml::Value` layer by `loader::resolve()` (defaults -> plugin -> user -> project -> local -> --config -> env -> CLI flags), with higher-priority sources overriding lower-priority ones.
-
-```rust
-// agents_md.rs -- AGENTS.md parsing
-pub struct AgentsMd {
-    pub content: String,
-    pub source: AgentsMdSource,
-}
-
-pub enum AgentsMdSource {
-    Global,   // ~/.crab/AGENTS.md
-    User,     // User directory
-    Project,  // Project root
-}
-
-/// Collect all AGENTS.md content by priority
-pub fn collect_agents_md(project_dir: &std::path::Path) -> Vec<AgentsMd> {
-    // Global -> user -> project, stacking progressively
-    // ...
-}
-```
-
-**External Dependencies**: `serde`, `serde_json`, `jsonc-parser`, `directories`, `crab-core`, `crab-common`
+**External Dependencies**: `crab-common`, `crab-core`, `serde`, `serde_json`, `toml`, `toml_edit`, `jsonschema`, `directories`
 
 **Feature Flags**: None
 
@@ -1324,6 +1355,7 @@ pub fn collect_agents_md(project_dir: &std::path::Path) -> Vec<AgentsMd> {
 ```
 src/
 ├── lib.rs
+├── error.rs              // AuthError
 ├── oauth.rs              // OAuth2 PKCE flow + tokens.json store
 ├── keychain.rs           // System Keychain (macOS/Windows/Linux)
 ├── resolver.rs           // resolve_auth_key: env -> apiKeyHelper -> keychain -> tokens.json
@@ -1351,9 +1383,9 @@ pub enum AuthMethod {
 /// get_auth() takes a read lock on the hot path, refresh() takes a write lock to refresh
 pub trait AuthProvider: Send + Sync {
     /// Get the currently valid authentication info (read lock, typically <1us)
-    fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<AuthMethod>> + Send + '_>>;
+    fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>>;
     /// Refresh authentication (e.g., OAuth token expired) -- may trigger network requests
-    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>>;
+    fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>>;
 }
 
 // resolver.rs -- secrets do not live on Config; the chain is orthogonal to file-layer config.
@@ -1366,7 +1398,7 @@ pub fn resolve_auth_key(cfg: &crab_config::Config) -> Option<String> {
     // ...
 }
 
-// keychain.rs -- Uses the auth crate's local AuthError, not crab_common::Error
+// keychain.rs -- Uses the auth crate's local AuthError, not crab_core::Error
 // (the common layer does not include Auth variants; Auth errors are defined in crates/auth/src/error.rs)
 use crate::error::AuthError;
 
@@ -1387,14 +1419,15 @@ pub fn set(service: &str, key: &str, value: &str) -> Result<(), AuthError> {
 }
 ```
 
-**External Dependencies**: `keyring`, `oauth2`, `reqwest`, `crab-config`, `crab-common`
+**External Dependencies**: `crab-common`, `crab-core`, `crab-config`, `keyring`, `oauth2`, `reqwest`
 
 **Feature Flags**
 
 ```toml
 [features]
 default = []
-bedrock = ["aws-sdk-bedrockruntime", "aws-config"]
+bedrock = []
+vertex  = []
 ```
 
 ---
@@ -1426,7 +1459,8 @@ src/
 │   ├── mod.rs
 │   ├── client.rs         // HTTP + SSE + retry
 │   ├── types.rs          // Anthropic API native request/response types
-│   └── convert.rs        // Anthropic types <-> internal types
+│   ├── convert.rs        // Anthropic types <-> internal types
+│   └── files.rs          // Anthropic Files API
 ├── openai/               // Fully independent OpenAI Chat Completions client
 │   ├── mod.rs
 │   ├── client.rs         // HTTP + SSE + retry
@@ -1442,7 +1476,11 @@ src/
 ├── capabilities.rs       // Model capability negotiation and discovery
 ├── context_optimizer.rs  // Context window optimization + smart truncation strategy
 ├── retry_strategy.rs     // Enhanced retry strategy (backoff + jitter)
-└── error_classifier.rs   // Error classification (retryable/non-retryable/rate-limited)
+├── error_classifier.rs   // Error classification (retryable/non-retryable/rate-limited)
+├── token_estimation.rs   // Approximate token count estimation
+├── ttft_tracker.rs       // Time-to-first-token latency tracking
+├── fast_mode.rs          // Fast mode switching
+└── usage_tracker.rs      // Usage aggregation (per-session/model)
 ```
 
 **Core Interface**
@@ -1498,7 +1536,7 @@ impl LlmBackend {
     pub fn stream_message<'a>(
         &'a self,
         req: types::MessageRequest<'a>,
-    ) -> impl Stream<Item = crab_common::Result<types::StreamEvent>> + Send + 'a {
+    ) -> impl Stream<Item = crab_core::Result<types::StreamEvent>> + Send + 'a {
         match self {
             Self::Anthropic(c) => Either::Left(c.stream(req)),
             Self::OpenAi(c) => Either::Right(c.stream(req)),
@@ -1510,7 +1548,7 @@ impl LlmBackend {
     pub async fn send_message(
         &self,
         req: types::MessageRequest<'_>,
-    ) -> crab_common::Result<(crab_core::message::Message, crab_core::model::TokenUsage)> {
+    ) -> crab_core::Result<(crab_core::message::Message, crab_core::model::TokenUsage)> {
         match self {
             Self::Anthropic(c) => c.send(req).await,
             Self::OpenAi(c) => c.send(req).await,
@@ -1568,7 +1606,7 @@ impl AnthropicClient {
     pub fn stream<'a>(
         &'a self,
         req: crate::types::MessageRequest<'a>,
-    ) -> impl Stream<Item = crab_common::Result<crate::types::StreamEvent>> + Send + 'a {
+    ) -> impl Stream<Item = crab_core::Result<crate::types::StreamEvent>> + Send + 'a {
         // 1. MessageRequest -> Anthropic native request (self::types::AnthropicRequest)
         // 2. POST /v1/messages, set stream: true
         // 3. Parse Anthropic SSE: message_start / content_block_delta / message_stop
@@ -1580,7 +1618,7 @@ impl AnthropicClient {
     pub async fn send(
         &self,
         req: crate::types::MessageRequest<'_>,
-    ) -> crab_common::Result<(crab_core::message::Message, crab_core::model::TokenUsage)> {
+    ) -> crab_core::Result<(crab_core::message::Message, crab_core::model::TokenUsage)> {
         // ...
     }
 }
@@ -1612,7 +1650,7 @@ impl OpenAiClient {
     pub fn stream<'a>(
         &'a self,
         req: crate::types::MessageRequest<'a>,
-    ) -> impl Stream<Item = crab_common::Result<crate::types::StreamEvent>> + Send + 'a {
+    ) -> impl Stream<Item = crab_core::Result<crate::types::StreamEvent>> + Send + 'a {
         // 1. MessageRequest -> OpenAI native request (self::types::ChatCompletionRequest)
         //    - system prompt -> messages[0].role="system"
         //    - ContentBlock::ToolUse -> tool_calls array
@@ -1627,7 +1665,7 @@ impl OpenAiClient {
     pub async fn send(
         &self,
         req: crate::types::MessageRequest<'_>,
-    ) -> crab_common::Result<(crab_core::message::Message, crab_core::model::TokenUsage)> {
+    ) -> crab_core::Result<(crab_core::message::Message, crab_core::model::TokenUsage)> {
         // ...
     }
 }
@@ -1664,16 +1702,16 @@ pub fn backoff_delay(attempt: u32) -> Duration {
 }
 ```
 
-**External Dependencies**: `reqwest`, `tokio`, `serde`, `eventsource-stream`, `futures`, `either`, `crab-core`, `crab-auth`, `crab-common`
+**External Dependencies**: `crab-core`, `crab-config`, `crab-auth`, `reqwest`, `tokio`, `serde`, `eventsource-stream`, `futures`, `either`
 
 **Feature Flags**
 
 ```toml
 [features]
 default = []
-bedrock = ["aws-sdk-bedrockruntime", "aws-config"]
-vertex = ["gcp-auth"]
-proxy = ["reqwest/socks"]
+bedrock = ["crab-auth/bedrock"]
+vertex  = ["crab-auth/vertex"]
+proxy   = ["reqwest/socks"]
 ```
 
 ---
@@ -1692,12 +1730,29 @@ src/
 ├── lib.rs
 ├── protocol.rs             // Crab's own MCP facade types
 ├── client.rs               // MCP client facade (internally may delegate to rmcp)
-├── server.rs               // MCP server facade (exposes own tools to external callers)
+├── server/                 // MCP server (module directory)
+│   ├── mod.rs
+│   ├── prompts.rs          // Prompt serving
+│   ├── resources.rs        // Resource serving
+│   └── tools.rs            // Tool serving
 ├── manager.rs              // Lifecycle management, multi-server coordination
 ├── transport/
 │   ├── mod.rs              // Compatible Transport trait / local transport abstraction
-│   ├── stdio.rs            // Legacy stdin/stdout transport
+│   ├── stdio.rs            // stdin/stdout transport
 │   └── ws.rs               // WebSocket transport (feature = "ws")
+├── auth/                   // MCP OAuth2 / API key authentication (12 files)
+│   ├── mod.rs
+│   ├── api_key.rs          // API key auth
+│   ├── callback.rs         // OAuth callback server
+│   ├── discovery.rs        // Auth endpoint discovery
+│   ├── exchange.rs         // Token exchange
+│   ├── flow.rs             // OAuth flow orchestration
+│   ├── manager.rs          // Auth lifecycle manager
+│   ├── pkce.rs             // PKCE challenge/verifier
+│   ├── quirks.rs           // Provider-specific quirks
+│   ├── refresh.rs          // Token refresh
+│   ├── store.rs            // Token persistence
+│   └── types.rs            // Auth types
 ├── resource.rs             // Resource caching, templates
 ├── discovery.rs            // Server auto-discovery
 ├── sse_server.rs           // SSE server transport (crab as MCP server)
@@ -1710,7 +1765,12 @@ src/
 ├── notification.rs         // Server notification push (tool changes/resource updates)
 ├── progress.rs             // Progress reporting (long-running tool execution)
 ├── cancellation.rs         // Request cancellation mechanism ($/cancelRequest)
-└── health.rs               // Health check + heartbeat (auto-reconnect)
+├── health.rs               // Health check + heartbeat (auto-reconnect)
+├── server_acl.rs           // Server access control list
+├── elicitation.rs          // User input request handling
+├── env_expansion.rs        // ${VAR} environment variable expansion in config
+├── official_registry.rs    // Official MCP server registry
+└── normalization.rs        // Tool/resource name normalization
 ```
 
 **Boundary Principles**
@@ -1781,16 +1841,16 @@ use std::pin::Pin;
 
 pub trait Transport: Send + Sync {
     /// Send a request and wait for a response
-    fn send(&self, req: JsonRpcRequest) -> Pin<Box<dyn Future<Output = crab_common::Result<JsonRpcResponse>> + Send + '_>>;
+    fn send(&self, req: JsonRpcRequest) -> Pin<Box<dyn Future<Output = crab_core::Result<JsonRpcResponse>> + Send + '_>>;
     /// Send a notification (no response expected)
-    fn notify(&self, method: &str, params: serde_json::Value) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>>;
+    fn notify(&self, method: &str, params: serde_json::Value) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>>;
     /// Close the transport
-    fn close(&self) -> Pin<Box<dyn Future<Output = crab_common::Result<()>> + Send + '_>>;
+    fn close(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>>;
 }
 
 // --- Transport implementation example ---
 // impl Transport for StdioTransport {
-//     fn send(&self, req: JsonRpcRequest) -> Pin<Box<dyn Future<Output = crab_common::Result<JsonRpcResponse>> + Send + '_>> {
+//     fn send(&self, req: JsonRpcRequest) -> Pin<Box<dyn Future<Output = crab_core::Result<JsonRpcResponse>> + Send + '_>> {
 //         Box::pin(async move {
 //             self.write_message(&req).await?;
 //             self.read_response().await
@@ -1813,22 +1873,22 @@ pub struct McpClient {
 
 impl McpClient {
     /// Connect to a stdio MCP server via the official SDK
-    pub async fn connect_stdio(...) -> crab_common::Result<Self> { /* ... */ }
+    pub async fn connect_stdio(...) -> crab_core::Result<Self> { /* ... */ }
 
     /// Connect to an HTTP MCP endpoint via the official SDK
-    pub async fn connect_streamable_http(...) -> crab_common::Result<Self> { /* ... */ }
+    pub async fn connect_streamable_http(...) -> crab_core::Result<Self> { /* ... */ }
 
     /// Call an MCP tool
     pub async fn call_tool(
         &self,
         name: &str,
         input: serde_json::Value,
-    ) -> crab_common::Result<serde_json::Value> {
+    ) -> crab_core::Result<serde_json::Value> {
         // ...
     }
 
     /// Read an MCP resource
-    pub async fn read_resource(&self, uri: &str) -> crab_common::Result<String> {
+    pub async fn read_resource(&self, uri: &str) -> crab_core::Result<String> {
         // ...
     }
 
@@ -1838,7 +1898,7 @@ impl McpClient {
 }
 ```
 
-**External Dependencies**: `tokio`, `serde`, `serde_json`, `rmcp`, `crab-core`, `crab-common`
+**External Dependencies**: `crab-core`, `tokio`, `serde`, `serde_json`, `rmcp`
 
 **Feature Flags**
 
@@ -1865,7 +1925,8 @@ src/
 ├── watch.rs              // notify file watching (with debouncing + batch aggregation)
 ├── lock.rs               // File locking (fd-lock)
 ├── diff.rs               // similar wrapper, edit/patch generation
-└── symlink.rs            // Symbolic link handling + secure path resolution (escape prevention)
+├── symlink.rs            // Symbolic link handling + secure path resolution (escape prevention)
+└── file_cache.rs         // File content cache
 ```
 
 **Core Interface**
@@ -1884,7 +1945,7 @@ pub fn find_files(
     root: &Path,
     pattern: &str,
     limit: usize,
-) -> crab_common::Result<GlobResult> {
+) -> crab_core::Result<GlobResult> {
     // Uses ignore crate (automatically respects .gitignore)
     // Sorted by modification time
     // ...
@@ -1907,7 +1968,7 @@ pub struct GrepOptions {
 }
 
 /// Search content in a directory by regex
-pub fn search(opts: &GrepOptions) -> crab_common::Result<Vec<GrepMatch>> {
+pub fn search(opts: &GrepOptions) -> crab_core::Result<Vec<GrepMatch>> {
     // Uses grep-regex + grep-searcher
     // Automatically respects .gitignore
     // ...
@@ -1925,13 +1986,13 @@ pub fn apply_edit(
     file_content: &str,
     old_string: &str,
     new_string: &str,
-) -> crab_common::Result<EditResult> {
+) -> crab_core::Result<EditResult> {
     // Uses similar to generate unified diff
     // ...
 }
 ```
 
-**External Dependencies**: `globset`, `grep-regex`, `grep-searcher`, `ignore`, `notify`, `similar`, `fd-lock`, `crab-common`
+**External Dependencies**: `crab-common`, `crab-core`, `globset`, `grep-matcher`, `grep-regex`, `grep-searcher`, `ignore`, `notify`, `similar`, `fd-lock`
 
 **Feature Flags**: None
 
@@ -1950,7 +2011,6 @@ src/
 ├── pty.rs                // Pseudo-terminal allocation (feature = "pty")
 ├── tree.rs               // Process tree kill (sysinfo)
 └── signal.rs             // Signal handling, graceful shutdown
-// sandbox logic moved to crates/sandbox (2026-04; Phase β)
 ```
 
 **Core Interface**
@@ -1977,7 +2037,7 @@ pub struct SpawnOutput {
 }
 
 /// Execute a command and wait for the result
-pub async fn run(opts: SpawnOptions) -> crab_common::Result<SpawnOutput> {
+pub async fn run(opts: SpawnOptions) -> crab_core::Result<SpawnOutput> {
     use tokio::process::Command;
     // 1. Build Command
     // 2. Set working_dir, env
@@ -1991,13 +2051,13 @@ pub async fn run_streaming(
     opts: SpawnOptions,
     on_stdout: impl Fn(&str) + Send,
     on_stderr: impl Fn(&str) + Send,
-) -> crab_common::Result<i32> {
+) -> crab_core::Result<i32> {
     // ...
 }
 
 // tree.rs -- Process tree management
 /// Kill a process and all its child processes
-pub fn kill_tree(pid: u32) -> crab_common::Result<()> {
+pub fn kill_tree(pid: u32) -> crab_core::Result<()> {
     use sysinfo::{Pid, System};
     let mut sys = System::new();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
@@ -2017,7 +2077,7 @@ pub fn register_shutdown_handler(
 }
 ```
 
-**External Dependencies**: `tokio` (process, signal), `sysinfo`, `crab-common`
+**External Dependencies**: `crab-common`, `crab-core`, `tokio` (process, signal), `sysinfo`
 
 **Feature Flags**
 
@@ -2025,7 +2085,6 @@ pub fn register_shutdown_handler(
 [features]
 default = []
 pty = ["portable-pty"]
-sandbox = []
 ```
 
 ---
@@ -2043,33 +2102,81 @@ src/
 ├── executor.rs       // Unified executor with permission checking
 ├── permission.rs     // Tool permission checking logic
 │
-├── builtin/          // Built-in tools
-│   ├── mod.rs        // register_all_builtins()
-│   ├── bash.rs       // BashTool -- shell command execution
-│   ├── read.rs       // ReadTool -- file reading
-│   ├── edit.rs       // EditTool -- diff-based file editing
-│   ├── write.rs      // WriteTool -- file creation/overwrite
-│   ├── glob.rs       // GlobTool -- file pattern matching
-│   ├── grep.rs       // GrepTool -- content search
-│   ├── web_search.rs // WebSearchTool -- web search
-│   ├── web_fetch.rs  // WebFetchTool -- web page fetching
-│   ├── agent.rs      // AgentTool -- sub-Agent launching
-│   ├── notebook.rs   // NotebookTool -- Jupyter support
-│   ├── task.rs       // TaskCreate/Get/List/Update/Stop/Output
-│   ├── mcp_tool.rs   // MCP tool Tool trait adapter
-│   ├── lsp.rs        // LSP integration tool
-│   ├── worktree.rs   // Git Worktree tool
-│   ├── ask_user.rs   // User interaction tool
-│   ├── image_read.rs // Image reading tool
-│   ├── read_enhanced.rs // Enhanced file reading
-│   ├── bash_security.rs // Bash security checks
-│   ├── plan_mode.rs  // Plan mode tool
-│   ├── plan_file.rs  // Plan file operations
-│   ├── plan_approval.rs // Plan approval tool
-│   ├── web_cache.rs  // Web page cache
-│   └── web_formatter.rs // Web page formatter
+├── builtin/              // Built-in tools (~45 files + computer_use/ subdir)
+│   ├── mod.rs            // register_all_builtins()
+│   ├── registry.rs       // Builtin tool registry helpers
+│   │
+│   │  // ── Core file tools ──
+│   ├── bash.rs           // BashTool -- shell command execution
+│   ├── bash_classifier.rs // Bash command safety classification
+│   ├── bash_security.rs  // Bash security checks
+│   ├── powershell.rs     // PowerShellTool -- Windows PowerShell execution
+│   ├── read.rs           // ReadTool -- file reading
+│   ├── read_enhanced.rs  // Enhanced file reading (PDF, images, notebooks)
+│   ├── edit.rs           // EditTool -- diff-based file editing
+│   ├── write.rs          // WriteTool -- file creation/overwrite
+│   ├── glob.rs           // GlobTool -- file pattern matching
+│   ├── grep.rs           // GrepTool -- content search
+│   ├── image_read.rs     // Image reading tool
+│   ├── notebook.rs       // NotebookTool -- Jupyter support
+│   ├── snip.rs           // Snip tool -- content truncation
+│   │
+│   │  // ── Web tools ──
+│   ├── web_search.rs     // WebSearchTool -- web search
+│   ├── web_fetch.rs      // WebFetchTool -- web page fetching
+│   ├── web_cache.rs      // Web page cache
+│   ├── web_formatter.rs  // Web content formatter
+│   ├── web_browser.rs    // Browser automation tool
+│   │
+│   │  // ── Agent / task tools ──
+│   ├── agent.rs          // AgentTool -- sub-Agent launching
+│   ├── task.rs           // TaskCreate/Get/List/Update/Stop/Output
+│   ├── todo_write.rs     // TodoWrite tool
+│   ├── team.rs           // TeamCreate/Delete tool
+│   ├── send_message.rs   // SendMessage tool (inter-agent messaging)
+│   ├── send_user_file.rs // Send file to user
+│   ├── monitor.rs        // Monitor tool (background process watching)
+│   ├── sleep.rs          // Sleep tool
+│   ├── cron.rs           // CronCreate/Delete/List tools
+│   ├── workflow.rs       // Workflow execution tool
+│   │
+│   │  // ── Plan mode tools ──
+│   ├── plan_mode.rs      // EnterPlanMode tool
+│   ├── plan_file.rs      // Plan file operations
+│   ├── plan_approval.rs  // ExitPlanMode / plan approval tool
+│   ├── verify_plan.rs    // Plan verification tool
+│   │
+│   │  // ── Integration tools ──
+│   ├── mcp_tool.rs       // MCP tool Tool trait adapter
+│   ├── mcp_auth.rs       // MCP authentication tool
+│   ├── mcp_resource.rs   // MCP resource access tool
+│   ├── lsp.rs            // LSP integration tool
+│   ├── worktree.rs       // Git Worktree tool
+│   ├── ask_user.rs       // User interaction / question tool
+│   ├── skill.rs          // Skill invocation tool
+│   ├── config_tool.rs    // Configuration tool
+│   ├── remote_trigger.rs // Remote trigger tool
+│   ├── brief.rs          // Brief / notification tool
+│   ├── structured_output.rs // Structured output tool
+│   ├── tool_search.rs    // Tool search / discovery
+│   │
+│   │  // ── Computer use ──
+│   └── computer_use/     // Computer use tools (9 files)
+│       ├── mod.rs
+│       ├── tool.rs       // ComputerUseTool
+│       ├── input.rs      // Input simulation
+│       ├── screenshot.rs // Screenshot capture
+│       ├── window.rs     // Window management
+│       └── platform/     // Platform-specific backends
+│           ├── mod.rs
+│           ├── linux.rs
+│           ├── macos.rs
+│           └── windows.rs
 │
-└── schema.rs         // Tool schema -> API tools parameter conversion
+├── sandbox.rs        // Tool sandbox policy
+├── schema.rs         // Tool schema -> API tools parameter conversion
+├── str_utils.rs      // String utility helpers
+└── tool_use_summary.rs // Tool result summary generation
 ```
 
 **Core Types**
@@ -2157,11 +2264,11 @@ impl ToolExecutor {
         tool_name: &str,
         input: serde_json::Value,
         ctx: &ToolContext,
-    ) -> crab_common::Result<ToolOutput> {
+    ) -> crab_core::Result<ToolOutput> {
         let tool = self
             .registry
             .get(tool_name)
-            .ok_or_else(|| crab_common::Error::Other(
+            .ok_or_else(|| crab_core::Error::Other(
                 format!("tool not found: {tool_name}"),
             ))?;
 
@@ -2432,9 +2539,16 @@ impl ToolExecutor {
 | TaskCreateTool | TaskCreateTool | `task.rs` |
 | MCPTool | McpToolAdapter | `mcp_tool.rs` |
 
-**External Dependencies**: `crab-core`, `crab-fs`, `crab-process`, `crab-mcp`, `crab-config`, `crab-common`
+**External Dependencies**: `crab-core`, `crab-config`, `crab-fs`, `crab-process`, `crab-sandbox`, `crab-mcp`
 
-**Feature Flags**: None
+**Feature Flags**
+
+```toml
+[features]
+default = ["pdf"]
+pdf = ["pdf-extract"]
+pty = ["portable-pty", "strip-ansi-escapes"]
+```
 
 ---
 
@@ -2448,13 +2562,18 @@ impl ToolExecutor {
 src/
 ├── lib.rs
 ├── conversation.rs    // Conversation state machine, multi-turn management
-├── context.rs         // Context window management, auto-compaction trigger
-├── compaction.rs      // Message compaction strategies (5 levels: Snip/Microcompact/Summarize/Hybrid/Truncate)
-├── history.rs         // Session persistence, recovery, search, export, statistics
+├── context.rs         // Context window management
+├── compaction.rs      // Message compaction strategies
+├── micro_compact.rs   // Micro-compaction: per-message replacement of large tool results
+├── auto_compact.rs    // Auto-compaction trigger + cleanup
+├── snip_compact.rs    // Snip compaction: "[snipped]" marker
+├── input_expand.rs    // Input expansion (variable interpolation)
+├── history.rs         // Session persistence, recovery, search, export
 ├── memory.rs          // Re-exports from crab-memory (MemoryStore, MemoryFile, etc.)
-├── memory_extract.rs  // Conversation → memory extraction (heuristic, depends on crab-core::Message)
+├── memory_extract.rs  // Conversation → memory extraction
 ├── cost.rs            // Token counting, cost tracking
-└── template.rs        // Session template + quick recovery
+├── template.rs        // Session template + quick recovery
+└── migration.rs       // Data migration system
 ```
 
 **Core Types**
@@ -2545,7 +2664,7 @@ pub trait CompactionClient: Send + Sync {
         &self,
         messages: &[crab_core::message::Message],
         instruction: &str,
-    ) -> Pin<Box<dyn Future<Output = crab_common::Result<String>> + Send + '_>>;
+    ) -> Pin<Box<dyn Future<Output = crab_core::Result<String>> + Send + '_>>;
 }
 
 // LlmBackend adapts to CompactionClient via enum dispatch (in crab-api)
@@ -2555,7 +2674,7 @@ pub async fn compact(
     conversation: &mut Conversation,
     strategy: CompactionStrategy,
     client: &impl CompactionClient,
-) -> crab_common::Result<()> {
+) -> crab_core::Result<()> {
     // Compact messages according to strategy, using client.summarize() to generate summaries
     // ...
 }
@@ -2567,43 +2686,65 @@ pub struct MemoryStore {
 
 impl MemoryStore {
     /// Save session memory
-    pub fn save(&self, session_id: &str, content: &str) -> crab_common::Result<()> {
+    pub fn save(&self, session_id: &str, content: &str) -> crab_core::Result<()> {
         // ...
     }
 
     /// Load session memory
-    pub fn load(&self, session_id: &str) -> crab_common::Result<Option<String>> {
+    pub fn load(&self, session_id: &str) -> crab_core::Result<Option<String>> {
         // ...
     }
 }
 ```
 
-**External Dependencies**: `crab-core`, `crab-api`, `crab-config`, `tokio`, `serde_json`, `crab-common`
+**External Dependencies**: `crab-core`, `crab-memory`
 
 **Feature Flags**: None
 
 ---
 
-### 6.11 `crates/agent/` -- Orchestrator & Multi-Agent System
+### 6.11 `crates/swarm/` -- Multi-Agent Infrastructure
 
-**Responsibility**: wraps the raw query loop (`crates/engine`) and adds session-aware orchestration — system prompt assembly, context injection (git/PR), error recovery, multi-agent coordination, REPL slash commands, file-history snapshots, conversation compaction. Corresponds to CC `QueryEngine.ts` + `coordinator/` + `tasks/` + `services/compact/` + `utils/fileHistory.ts`. **Does not** contain the low-level message loop (that moved to `crates/engine`, see §6.20).
+**Responsibility**: domain-pure building blocks for all multi-agent execution modes. Extracted from `agent/src/teams/` so that swarm primitives have zero engine/api/session coupling. Only depends on `core`.
+
+**Directory Structure**
+
+```
+src/
+├── lib.rs            // re-exports all public types
+├── bus.rs            // MessageBus + AgentMessage / Envelope / event_channel
+├── mailbox.rs        // MessageRouter (inter-agent message routing)
+├── roster.rs         // Team / TeamMember / Capability / TeamMode
+├── task_list.rs      // TaskList / Task / TaskStatus / SharedTaskList
+├── task_lock.rs      // fd-lock file-locked claim_task / with_locked
+├── retry.rs          // RetryPolicy / RetryTracker / BackoffStrategy
+└── backend/          // Spawner backends
+    ├── mod.rs        //   SwarmBackend trait + InProcessBackend
+    ├── spawner.rs    //   SpawnerBackend trait
+    └── teammate.rs   //   Teammate / TeammateConfig / TeammateState
+```
+
+`agent/src/teams/mod.rs` does `pub use crab_swarm::*;` to preserve the existing facade for higher layers.
+
+**Feature Flags**: None
+
+---
+
+### 6.12 `crates/agent/` -- Orchestrator & Multi-Agent System
+
+**Responsibility**: wraps the raw query loop (`crates/engine`) and adds session-aware orchestration — system prompt assembly, context injection (git/PR), error recovery, multi-agent coordination, REPL slash commands, file-history snapshots, conversation compaction. Corresponds to CC `QueryEngine.ts` + `coordinator/` + `tasks/` + `services/compact/` + `utils/fileHistory.ts`. **Does not** contain the low-level message loop (that moved to `crates/engine`, see §6.21).
 
 **Directory Structure** 
 
 ```
 src/
 ├── lib.rs
-├── teams/                   // Layer 1 infrastructure (unconditional)
-│   ├── mod.rs
-│   ├── roster.rs            //   Team / TeamMember / TeamMode
-│   ├── mailbox.rs           //   MessageRouter (per-agent inbox)
-│   ├── bus.rs               //   MessageBus + AgentMessage + Envelope
-│   ├── task_list.rs         //   Shared TaskList + dependency graph
-│   ├── task_lock.rs         //   fd-lock file-locked claim_task
-│   ├── worker.rs            //   AgentWorker (sub-agent runner)
-│   ├── worker_pool.rs       //   WorkerPool (spawn / collect / cancel)
-│   ├── retry.rs             //   Exponential backoff
-│   └── backend/             //   Spawner backends (in-process / tmux)
+├── runtime.rs               // Top-level agent runtime entry
+├── teams/                   // Layer 1 orchestration (re-exports crab_swarm::*)
+│   ├── mod.rs               //   pub use crab_swarm::*; + local re-exports
+│   ├── coordinator.rs       //   TeamCoordinator (Layer 2b glue)
+│   ├── worker.rs            //   AgentWorker (sub-agent runner, depends on engine)
+│   └── worker_pool.rs       //   WorkerPool (spawn / collect / cancel / retry)
 │
 ├── coordinator/             // Layer 2b Coordinator Mode (gated on CRAB_COORDINATOR_MODE)
 │   ├── mod.rs               //   Coordinator struct: apply(ToolRegistry, &mut prompt)
@@ -2650,7 +2791,7 @@ src/
 
 Cargo features: `auto-dream` (off), `proactive` (off), `mem-ranker` (off, re-exports `crab-memory/mem-ranker`).
 
-The raw message loop, stop hooks, token budget, and effort mapping live in `crates/engine` (§6.20), not here.
+The raw message loop, stop hooks, token budget, and effort mapping live in `crates/engine` (§6.21), not here.
 
 **Message Loop (Core)**
 
@@ -2670,7 +2811,7 @@ pub async fn query_loop(
     api: &LlmBackend,
     tools: &ToolExecutor,
     event_tx: mpsc::Sender<Event>,
-) -> crab_common::Result<()> {
+) -> crab_core::Result<()> {
     loop {
         // 1. Check if context needs compaction
         if conversation.needs_compaction() {
@@ -2851,7 +2992,7 @@ impl AgentCoordinator {
         &mut self,
         config: WorkerConfig,
         task_prompt: String,
-    ) -> crab_common::Result<String>;
+    ) -> crab_core::Result<String>;
 
     /// Wait for a specific worker to complete
     pub async fn wait_for(&mut self, worker_id: &str) -> Option<WorkerResult>;
@@ -2955,7 +3096,7 @@ Subsequent blocks continue streaming <---- parallel with tool execution ------->
 ```rust
 /// Streaming tool executor -- starts tools early during API streaming
 pub struct StreamingToolExecutor {
-    pending: Vec<tokio::task::JoinHandle<(String, crab_common::Result<ToolOutput>)>>,
+    pending: Vec<tokio::task::JoinHandle<(String, crab_core::Result<ToolOutput>)>>,
 }
 
 impl StreamingToolExecutor {
@@ -2969,7 +3110,7 @@ impl StreamingToolExecutor {
     }
 
     /// After message_stop, collect all completed/in-progress tool results
-    pub async fn collect_all(&mut self) -> Vec<(String, crab_common::Result<ToolOutput>)> {
+    pub async fn collect_all(&mut self) -> Vec<(String, crab_core::Result<ToolOutput>)> {
         let mut results = Vec::new();
         for handle in self.pending.drain(..) {
             results.push(handle.await.expect("tool task panicked"));
@@ -2979,38 +3120,41 @@ impl StreamingToolExecutor {
 }
 ```
 
-**External Dependencies**: `crab-core`, `crab-session`, `crab-tools`, `crab-api`, `tokio`, `tokio-util`, `futures`, `crab-common`
+**External Dependencies**: `crab-common`, `crab-core`, `crab-config`, `crab-engine`, `crab-memory`, `crab-session`, `crab-tools`, `crab-api`, `crab-mcp`, `crab-plugin`, `crab-process`, `crab-swarm`, `crab-skill`, `tokio`, `tokio-util`, `futures`
 
-**Feature Flags**: None
+**Feature Flags**
+
+```toml
+[features]
+default    = []
+mem-ranker = ["crab-memory/mem-ranker"]
+auto-dream = []
+proactive  = []
+```
 
 ---
 
-### 6.12 `crates/tui/` -- Terminal UI
+### 6.13 `crates/tui/` -- Terminal UI
 
 **Layer**: Layer 3 Engine.
 
-**Responsibility**: All terminal interface rendering (corresponds to CC `src/components/` + `src/screens/` + `src/ink/` + `src/vim/` + `src/buddy/` + `src/bridge/bridgeUI.ts`).
+**Responsibility**: All terminal interface rendering (corresponds to CC `src/components/` + `src/screens/` + `src/ink/` + `src/vim/` + `src/bridge/bridgeUI.ts`).
 
 CC uses React/Ink to render the terminal UI; Crab uses ratatui + crossterm to achieve equivalent experience. Control flow between tui and other Layer 3 crates (agent / session / remote / engine) follows Rule 6 (§5.3): state is consumed via `core::Event` broadcasts. Read-only access to `session::Conversation` and cost accumulators is allowed.
 
 **Architecture overview**:
 
-The TUI is organized into 11 top-level module directories plus core files. Modules are grouped by concern:
+The TUI is organized into 9 top-level module directories plus core files. Modules are grouped by concern:
 
-- **Core loop**: `app.rs` (state machine + main loop), `runner.rs` (terminal init/restore + panic hook), `event.rs` / `app_event.rs` / `event_broker.rs` (event pipeline), `layout.rs` (responsive panel allocation), `frame_requester.rs` (redraw coalescing)
-- **Component system**: `component.rs` (`Component` trait with `handle_event` / `handle_action` / `keybindings`), `component_id.rs` (`ComponentId` enum), `focus.rs` (focus stack), `traits.rs` (`Renderable` trait -- `render(area, buf)` + `desired_height(width)`)
+- **Core loop**: `app/` (state machine + update + commands, split into `mod.rs` / `state.rs` / `update.rs` / `commands.rs`), `runner/` (terminal init + event loop + slash dispatch, split into `mod.rs` / `init.rs` / `event_loop.rs` / `slash.rs`), `event.rs` / `app_event.rs` / `event_broker.rs` (event pipeline), `layout.rs` (responsive panel allocation), `frame_requester.rs` (redraw coalescing)
 - **Action dispatch**: `action.rs` (single `Action` enum with `serde::Serialize` + `schemars::JsonSchema` derives, used by keybinding resolver and potential multi-frontend JSON-RPC)
 - **Keybinding system** (`keybindings/`): chord-aware resolver with `KeySequenceParser`, 18 `KeyContext` variants, TOML user overrides at `~/.crab/keybindings.toml`
-- **Overlay system** (`overlay/`): `OverlayKind` enum with 21 variants (Transcript, Help, Permission, Diff, ModelPicker, SessionPicker, HistorySearch, GlobalSearch, PermissionRules, ThemePicker, Doctor, Onboarding, OAuthFlow, ApproveApiKey, Export, BackgroundTasks, AgentsPanel, McpPanel, MemoryPanel, CostThreshold, MessageSelector). Each variant owns its state struct and dispatches `handle_key` / `render` / `contexts` / `name`.
-- **Cell types** (`cells/`): `Cell` enum with 10 variants (UserMessage, AssistantMessage, ToolCall, ToolRejected, Thinking, Diff, Progress, Error, PlanApproval, AgentProgress, RateLimit). Each cell implements `Renderable`.
-- **Streaming** (`streaming/`): `LineBuffer` (line-committed streaming text), `AutoScrollPolicy` (smart scroll-lock during streaming)
-- **Services** (`services/`): stateless/stateful services decoupled from components -- `PermissionService` (4-tier state machine), `NotificationService` (TTL-based queue), `ClipboardService` (Arboard/OSC52 backends), `CostTracker` (token accumulation + threshold warnings), `SessionStore` (session metadata), `TerminalCapabilities` (`OnceLock` singleton detecting truecolor/kitty/sixel/osc8/osc52), `OscReporter` (title/progress/hyperlink escape sequences), accessibility (reduce-motion global), `OutputStyle` (structured/compact/verbose/minimal), `MultiAgentBackend` (in-process + tmux pane stubs), `intl` (relative time / number / duration / byte formatting)
+- **Overlay system** (`overlay/`): `OverlayKind` enum dispatching `handle_key` / `render` / `contexts` / `name`
 - **Theme** (`theme/`): ~120 semantic color fields, shimmer derivation, 8-slot agent palette, brand accents, OSC 10/11 background detection, dark/light auto-switching
-- **Animation** (`animation/`): `FrameScheduler`, braille/dots/line `Spinner`, `ShimmerState` (per-column color lookup), all gated on `services::accessibility::reduce_motion()`
-- **Markdown** (`markdown/`): 500-entry LRU cache keyed by (content, theme, width), background `syntect` highlighting thread, GFM table renderer
-- **Vim** (`vim/`): 8-file key-handling state machine (mode / motion / operator / register / text_object / transition / handler), supports Normal/Insert/Visual/Command modes with operator-motion composition
-- **Design system** (`design_system/`): Dialog, Tabs, Pane, Button, ScrollBox, StatusIcon, KeyboardHint, ProgressBar -- reusable primitives composed by higher-level views
-- **Components** (`components/`): ~45 higher-level views including input_area, message_list, header, bottom_bar, virtual_list, call_card, permission, autocomplete, command_palette, toast_queue, notification_banner, token_warning, message_pill, sticky_header, update_banner, context_visualization, prompt_chips, message_actions, at_mention, buddy/ cluster, and more
+- **Animation** (`animation/`): `FrameScheduler`, braille/dots/line `Spinner`, `ShimmerState` (per-column color lookup)
+- **Markdown** (`markdown/`): LRU cache keyed by (content, theme, width), background `syntect` highlighting thread, GFM table renderer
+- **Vim** (`vim/`): 5-file key-handling state machine (mode / motion / operator / handler / mod), supports Normal/Insert/Visual/Command modes with operator-motion composition
+- **Components** (`components/`): ~55 higher-level views including input_area, message_list, header, bottom_bar, virtual_list, call_card, permission, autocomplete, command_palette, toast_queue, notification_banner, token_warning, message_pill, sticky_header, update_banner, context_visualization, prompt_chips, message_actions, at_mention, and more
 
 **Directory Structure**
 
@@ -3018,36 +3162,29 @@ The TUI is organized into 11 top-level module directories plus core files. Modul
 src/
 ├── lib.rs
 ├── action.rs                  // Action enum (Serialize + JsonSchema)
-├── app.rs                     // App state machine, main loop
+├── app/                       // App state machine
+│   ├── mod.rs                 //   App struct, new(), render, re-exports
+│   ├── state.rs               //   AppState, ThinkingState, PromptInputMode, AppAction
+│   ├── update.rs              //   apply_action() + event handlers
+│   └── commands.rs            //   Slash command handling
 ├── app_event.rs               // App-level event enum
-├── component.rs               // Component trait (handle_event/action/keybindings)
-├── component_id.rs            // ComponentId enum
+├── changelog.rs               // Changelog display
+├── clipboard.rs               // Clipboard integration
+├── command_queue.rs            // Queued command execution
 ├── event.rs                   // crossterm Event -> AppEvent mapping
 ├── event_broker.rs            // Internal event bus
-├── focus.rs                   // Focus stack management
 ├── frame_requester.rs         // Redraw coalescing
+├── global_state.rs            // User global preferences (migrated from config)
+├── hyperlink.rs               // OSC 8 hyperlink support
 ├── layout.rs                  // Layout calculation (panel allocation, responsive)
-├── runner.rs                  // TUI runner (init/restore terminal, panic hook)
+├── runner/                    // TUI runner
+│   ├── mod.rs                 //   run() skeleton + ExitInfo + TuiConfig
+│   ├── init.rs                //   Terminal setup + App initialization
+│   ├── event_loop.rs          //   Main event loop + input polling
+│   └── slash.rs               //   Slash command infrastructure
+├── terminal_notify.rs         // Desktop notification bridge
 ├── traits.rs                  // Renderable trait
-│
-├── cells/                     // Message cell types (Cell enum, 10 variants)
-│   ├── mod.rs                 // Cell enum + dispatch
-│   ├── user_message.rs
-│   ├── assistant_message.rs
-│   ├── tool_call.rs
-│   ├── tool_rejected.rs
-│   ├── thinking.rs
-│   ├── diff.rs
-│   ├── progress.rs
-│   ├── error.rs
-│   ├── plan_approval.rs
-│   ├── agent_progress.rs      // Multi-agent progress tree
-│   └── rate_limit.rs          // Rate limit action card
-│
-├── streaming/                 // Streaming text support
-│   ├── mod.rs
-│   ├── line_buffer.rs         // Line-committed streaming buffer
-│   └── auto_scroll.rs         // Smart scroll-lock policy
+├── watcher.rs                 // File watcher (config reload)
 │
 ├── keybindings/               // Chord-aware keybinding system
 │   ├── mod.rs
@@ -3058,7 +3195,7 @@ src/
 │   ├── defaults.rs            // Built-in bindings per context
 │   └── config.rs              // ~/.crab/keybindings.toml user overrides
 │
-├── overlay/                   // Modal overlay system (21 variants)
+├── overlay/                   // Modal overlay system
 │   ├── mod.rs                 // OverlayKind enum + re-exports
 │   └── kind.rs                // State structs, key handlers, render functions
 │
@@ -3081,32 +3218,7 @@ src/
 │   ├── highlight.rs           // Background syntect worker + HighlightJob
 │   └── table.rs               // GFM table with column-aligned cells
 │
-├── services/                  // Decoupled state-machine services
-│   ├── mod.rs
-│   ├── permission.rs          // PermissionService (4-tier: once/session/always/deny)
-│   ├── notification.rs        // NotificationService (TTL-based queue, 50 max)
-│   ├── clipboard.rs           // ClipboardService (Arboard / OSC 52 backends)
-│   ├── cost_tracker.rs        // CostTracker (token accumulation + threshold)
-│   ├── session_store.rs       // SessionStore (metadata, current session)
-│   ├── terminal_caps.rs       // TerminalCapabilities (OnceLock singleton)
-│   ├── osc_reporter.rs        // OscReporter (title/progress/hyperlink)
-│   ├── accessibility.rs       // Reduce-motion global (AtomicBool)
-│   ├── output_style.rs        // OutputStyle enum (structured/compact/verbose/minimal)
-│   ├── multi_agent.rs         // MultiAgentBackend trait + in-process/tmux impls
-│   └── intl.rs                // Formatting: relative time, numbers, duration, bytes
-│
-├── design_system/             // Reusable visual primitives
-│   ├── mod.rs
-│   ├── dialog.rs              // Modal shell with accent, title, action footer
-│   ├── tabs.rs                // Horizontal tab strip
-│   ├── pane.rs                // Titled bordered content block
-│   ├── button.rs              // 3-state button (default/focused/disabled)
-│   ├── scrollbox.rs           // Viewport + thumb-style scroll indicator
-│   ├── status_icon.rs         // StatusIcon (5 variants with colored glyphs)
-│   ├── keyboard_hint.rs       // KeyboardHint ([Ctrl+K] styled display)
-│   └── progress_bar.rs        // Horizontal progress bar with percentage
-│
-├── components/                // Higher-level views (~45 files)
+├── components/                // Higher-level views (~55 files)
 │   ├── mod.rs
 │   ├── ansi.rs                // ANSI escape -> ratatui Span conversion
 │   ├── approval_queue.rs      // Pending permission queue
@@ -3116,19 +3228,21 @@ src/
 │   ├── call_card.rs           // Foldable tool-call card
 │   ├── code_block.rs          // Code block + copy affordance
 │   ├── command_palette.rs     // Command palette (fuzzy)
+│   ├── config_browser.rs      // Config browser panel
 │   ├── context_collapse.rs    // Long-context fold view
 │   ├── context_visualization.rs // Compaction stats display
-│   ├── cost_bar.rs            // Token/cost status line
 │   ├── diff.rs                // Diff visualization
+│   ├── diff_viewer.rs         // Diff viewer panel
 │   ├── fuzzy.rs               // Fuzzy match primitive
 │   ├── global_search.rs       // Global search dialog
 │   ├── header.rs              // Top header bar
 │   ├── history_search.rs      // Ctrl+R history search overlay
 │   ├── input.rs               // Text input (single/multi-line)
 │   ├── input_area.rs          // Input area shell (ghost text, Vim mode)
-│   ├── input_history.rs       // Input history navigation
 │   ├── loading.rs             // Loading placeholder
 │   ├── markdown.rs            // Base pulldown-cmark → ratatui renderer
+│   ├── mcp_browser.rs         // MCP server browser panel
+│   ├── memory_browser.rs      // Memory browser panel
 │   ├── message_actions.rs     // Per-message action buttons
 │   ├── message_list.rs        // Chronological message list
 │   ├── message_pill.rs        // "N new messages" / "Jump to bottom" pill
@@ -3137,8 +3251,11 @@ src/
 │   ├── notification_banner.rs // Persistent sticky banners
 │   ├── output_styles.rs       // Shared styling helpers
 │   ├── permission.rs          // Permission dialog
+│   ├── permissions_browser.rs // Permission rules browser
+│   ├── plan_card.rs           // Plan display card
 │   ├── progress_indicator.rs  // Progress bar
 │   ├── prompt_chips.rs        // Mode / context chips on prompt line
+│   ├── resume_browser.rs      // Resume session browser
 │   ├── search.rs              // In-conversation search
 │   ├── select.rs              // Selection list
 │   ├── session_sidebar.rs     // Session sidebar
@@ -3148,50 +3265,50 @@ src/
 │   ├── status_line.rs         // One-line status slot
 │   ├── sticky_header.rs       // Pinned user prompt on scroll-up
 │   ├── syntax.rs              // syntect-backed code highlight
+│   ├── tab_bar.rs             // Tab strip
 │   ├── task_list.rs           // Task panel
+│   ├── team_browser.rs        // Team browser panel
 │   ├── text_utils.rs          // Text helpers
 │   ├── toast_queue.rs         // Timed notification toasts (3 max visible)
 │   ├── token_warning.rs       // Context budget alerts (80%/90%)
 │   ├── tool_output.rs         // Collapsible tool output
 │   ├── transcript_overlay.rs  // Transcript overlay host
+│   ├── trust_dialog.rs        // Trust / security dialog
 │   ├── update_banner.rs       // Auto-update status display
-│   ├── virtual_list.rs        // Viewport-sliced, width-keyed LRU list
-│   └── buddy/                 // Companion / mini-agent cluster
-│       ├── mod.rs
-│       ├── buddy.rs
-│       ├── companion.rs
-│       ├── notification.rs
-│       ├── personality.rs
-│       ├── prompt.rs
-│       ├── render.rs
-│       └── sprite.rs
+│   └── virtual_list.rs        // Viewport-sliced, width-keyed LRU list
 │
-├── history/                   // Legacy history cells (retained during migration)
+├── history/                   // Session history display
 │   ├── mod.rs
-│   └── cells/
+│   ├── grouping.rs            // History grouping logic
+│   └── cells/                 // Per-message-type cell renderers
+│       ├── mod.rs
+│       ├── assistant.rs       // Assistant message cell
+│       ├── collapsed_read_search.rs // Collapsed read/search cell
+│       ├── compact_boundary.rs // Compaction boundary marker
+│       ├── plan_step.rs       // Plan step cell
+│       ├── system.rs          // System message cell
+│       ├── thinking.rs        // Thinking block cell
+│       ├── tool_call.rs       // Tool call cell
+│       ├── tool_rejected.rs   // Rejected tool cell
+│       ├── tool_result.rs     // Tool result cell
+│       ├── user.rs            // User message cell
+│       └── welcome.rs         // Welcome screen cell
 │
 └── vim/                       // Vim mode (top-level, sibling of keybindings/theme)
     ├── mod.rs
     ├── handler.rs             // Event handler integration
     ├── mode.rs                // Normal/Insert/Visual/Command
     ├── motion.rs              // hjkl, w/b/e, 0/$, gg/G, f/t
-    ├── operator.rs            // d/c/y + motion composition
-    ├── register.rs            // Unnamed/named/system-clipboard registers
-    ├── text_object.rs         // iw/aw/i"/a(/ip
-    └── transition.rs          // State transition table
+    └── operator.rs            // d/c/y + motion composition
 ```
 
 **Key design decisions**:
 
-- `OverlayKind` is a flat enum (not trait objects) dispatching `handle_key` / `render` / `contexts` / `name`. Shared handler helpers (`handle_scrollable_key`, `handle_list_key`, `handle_confirm_key`, `handle_dismiss_only`) reduce duplication across variants.
-- `Cell` is a flat enum (not trait objects) for message display. Each variant owns its data and implements `Renderable`.
-- `PermissionService` is a state machine with 4 tiers (allow once / session / always / deny), decoupled from overlay rendering.
-- `TerminalCapabilities` uses `OnceLock` for process-lifetime caching. Detection is env-var-based (TERM, TERM_PROGRAM, COLORTERM).
-- All animation code checks `services::accessibility::reduce_motion()` before animating.
+- `OverlayKind` is a flat enum (not trait objects) dispatching `handle_key` / `render` / `contexts` / `name`. Shared handler helpers reduce duplication across variants.
 - The `Action` enum derives `schemars::JsonSchema` to support future multi-frontend (CLI / IDE / web) dispatch via JSON-RPC.
 - Keybinding config uses TOML at `~/.crab/keybindings.toml` with `Action` variant names that round-trip through serde.
 
-**External Dependencies**: `ratatui`, `crossterm`, `syntect`, `pulldown-cmark`, `schemars`, `crab-core`, `crab-session`, `crab-config`, `crab-common`
+**External Dependencies**: `crab-common`, `crab-core`, `crab-config`, `crab-agent`, `crab-memory`, `ratatui`, `crossterm`, `syntect`, `pulldown-cmark`, `schemars`
 
 > tui does not directly depend on tools; it receives tool execution state via the `crab_core::Event` enum, with crates/cli responsible for assembling agent+tui.
 
@@ -3199,7 +3316,7 @@ src/
 
 ---
 
-### 6.13 `crates/skill/` -- Skill System
+### 6.14 `crates/skill/` -- Skill System
 
 **Responsibility**: Skill discovery, loading, registry, and built-in skill definitions (corresponds to CC `src/skills/`)
 
@@ -3211,6 +3328,7 @@ src/
 ├── types.rs          // Skill, SkillTrigger, SkillContext, SkillSource
 ├── frontmatter.rs    // YAML frontmatter parsing from .md files
 ├── registry.rs       // SkillRegistry (discover, register, find, match)
+├── matcher.rs        // Skill matching logic
 ├── builder.rs        // SkillBuilder fluent API
 └── bundled/
     ├── mod.rs         // bundled_skills() + BUNDLED_SKILL_NAMES
@@ -3226,11 +3344,11 @@ src/
     └── update_config.rs // /update-config
 ```
 
-**External Dependencies**: `crab-common`, `serde`, `serde_json`, `regex`, `tracing`
+**External Dependencies**: `crab-common`, `crab-core`, `serde`, `serde_json`, `regex`, `tracing`
 
 ---
 
-### 6.14 `crates/plugin/` -- Plugin System
+### 6.15 `crates/plugin/` -- Plugin System
 
 **Responsibility**: Plugin lifecycle, hooks, WASM sandbox, MCP↔skill bridge (corresponds to CC `src/services/plugins/`)
 
@@ -3256,7 +3374,7 @@ src/
 
 **Action priority**: Deny > Retry > Modify > Allow — when multiple hooks return different actions, the highest-priority action wins.
 
-**External Dependencies**: `crab-common`, `crab-core`, `crab-process`, `crab-skill`, `wasmtime` (optional)
+**External Dependencies**: `crab-core`, `crab-config`, `crab-mcp`, `crab-process`, `crab-skill`, `wasmtime` (optional)
 
 **Feature Flags**
 
@@ -3268,7 +3386,7 @@ wasm = ["wasmtime"]
 
 ---
 
-### 6.15 `crates/memory/` -- Persistent Memory System
+### 6.16 `crates/memory/` -- Persistent Memory System
 
 **Responsibility**: File-based cross-session memory storage — user preferences, feedback, project context, external references (corresponds to CC `src/memdir/`)
 
@@ -3286,24 +3404,25 @@ src/
 ├── security.rs         // Path traversal / symlink / null byte validation
 ├── prompt.rs           // MemoryPromptBuilder — system prompt injection
 ├── team.rs             // TeamMemoryStore — shared team memory with slugified filenames
+├── agents_md.rs        // AGENTS.md discovery + parsing (migrated from config)
 └── ranker.rs           // LlmMemoryRanker — Sonnet sidequery (feature = "mem-ranker")
 ```
 
-**External Dependencies**: `crab-common`, `serde`, `serde_json`, `serde_yml`, `dunce`. Optional: `crab-api`, `crab-core`, `tokio` (with `mem-ranker` feature)
+**External Dependencies**: `crab-common`, `crab-core`, `serde`, `serde_json`, `serde_yaml_ng`, `dunce`. Optional: `crab-api`, `tokio` (with `mem-ranker` feature)
 
 **Feature Flags**
 
 ```toml
 [features]
 default = []
-mem-ranker = ["dep:crab-api", "dep:crab-core", "dep:tokio"]  # LLM-driven memory selection
+mem-ranker = ["dep:crab-api", "dep:tokio"]                   # LLM-driven memory selection
 ```
 
 **Key Types**: `MemoryType` (User/Feedback/Project/Reference), `MemoryMetadata`, `MemoryFile`, `MemoryStore`, `MemorySelector`, `MemoryRanker` (trait), `LlmMemoryRanker` (impl, feature-gated), `MemoryPromptBuilder`, `TeamMemoryStore`
 
 ---
 
-### 6.16 `crates/telemetry/` -- Observability
+### 6.17 `crates/telemetry/` -- Observability
 
 **Responsibility**: Distributed tracing and metrics collection (corresponds to CC `src/services/analytics/` + `src/services/diagnosticTracking.ts`)
 
@@ -3315,7 +3434,8 @@ src/
 ├── tracer.rs         // OpenTelemetry tracer initialization
 ├── metrics.rs        // Custom metrics (API latency, tool execution time, etc.)
 ├── cost.rs           // Cost tracking
-└── export.rs         // OTLP export
+├── export.rs         // OTLP export
+└── session_recorder.rs // Session recording (local transcript)
 ```
 
 **Core Interface**
@@ -3325,7 +3445,7 @@ src/
 use tracing_subscriber::prelude::*;
 
 /// Initialize the tracing system
-pub fn init(service_name: &str, endpoint: Option<&str>) -> crab_common::Result<()> {
+pub fn init(service_name: &str, endpoint: Option<&str>) -> crab_core::Result<()> {
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(false)
         .compact();
@@ -3353,7 +3473,7 @@ pub fn init(service_name: &str, endpoint: Option<&str>) -> crab_common::Result<(
 }
 ```
 
-**External Dependencies**: `tracing`, `tracing-subscriber`, `crab-common`; OTLP-related are optional dependencies
+**External Dependencies**: `crab-common`, `crab-core`, `tracing`, `tracing-subscriber`; OTLP-related are optional dependencies
 
 **Feature Flags**
 
@@ -3364,7 +3484,7 @@ fmt = ["tracing-subscriber/fmt"]                               # Local log forma
 otlp = [                                                       # OpenTelemetry OTLP export
     "opentelemetry",
     "opentelemetry-otlp",
-    "opentelemetry-sdk",
+    "opentelemetry_sdk",
     "tracing-opentelemetry",
 ]
 ```
@@ -3374,7 +3494,7 @@ otlp = [                                                       # OpenTelemetry O
 
 ---
 
-### 6.17 `crates/cli/` -- Terminal Entry Point
+### 6.18 `crates/cli/` -- Terminal Entry Point
 
 **Responsibility**: An extremely thin binary entry point that only does assembly with no business logic (corresponds to CC `src/entrypoints/cli.tsx`)
 
@@ -3382,22 +3502,31 @@ otlp = [                                                       # OpenTelemetry O
 
 ```
 src/
-├── main.rs           // #[tokio::main] entry point
-├── commands/         // clap subcommand definitions
-│   ├── mod.rs
-│   ├── chat.rs       // Default interactive mode (crab chat)
-│   ├── run.rs        // Non-interactive single execution (crab run -p "...")
-│   ├── session.rs    // ps, logs, attach, kill
-│   ├── config.rs     // Configuration management (crab config set/get)
-│   ├── mcp.rs        // MCP server mode (crab mcp serve)
-│   └── serve.rs      // Serve mode
-└── setup.rs          // Initialization, signal registration, version check, panic hook
+├── main.rs           // #[tokio::main] thin entry point
+├── args.rs           // Cli struct + clap definitions + OutputFormat
+├── agent.rs          // run() + run_single_shot() + run_line_repl() + model/tool resolution
+├── output.rs         // event_to_json() + Spinner + print_banner()
+├── acp_mode.rs       // ACP server mode entry
+├── completions.rs    // Shell completion generation
+├── deep_link.rs      // Deep link protocol handler
+├── installer.rs      // System installer
+└── commands/         // clap subcommand definitions
+    ├── mod.rs
+    ├── agents.rs     // AGENTS.md management
+    ├── auth.rs       // Authentication management
+    ├── config.rs     // Configuration management (crab config set/get)
+    ├── doctor.rs     // Diagnostic checks
+    ├── permissions.rs // Permission rule management
+    ├── plugin.rs     // Plugin management
+    ├── serve.rs      // Serve mode
+    ├── session.rs    // ps, logs, attach, kill
+    └── update.rs     // Self-update
 ```
 
 **Panic Hook Design**
 
 ```rust
-// setup.rs -- Terminal state recovery panic hook
+// main.rs -- Terminal state recovery panic hook
 // Must be registered after terminal.init() and before entering the main loop
 pub fn install_panic_hook() {
     let original_hook = std::panic::take_hook();
@@ -3513,7 +3642,7 @@ full = ["tui", "crab-plugin/wasm", "crab-api/bedrock", "crab-api/vertex"]
 
 ---
 
-### 6.18 `crates/daemon/` -- Headless Composition Root
+### 6.19 `crates/daemon/` -- Headless Composition Root
 
 **Responsibility**: The headless entry point — opposite of `cli`. Where `cli` is the interactive composition root (brings up `engine + agent + tui + ide-client + ...`), `daemon` is the headless one: it hosts the **server-side** protocols (`remote-server`, `mcp-server`, `acp-server`) and the `job` scheduler, without pulling `tui` or any of its deps (ratatui / crossterm / unicode-width). This is what web / app / desktop clients attach to; it is also the natural target for systemd / Docker deployments.
 
@@ -3523,7 +3652,11 @@ full = ["tui", "crab-plugin/wasm", "crab-api/bedrock", "crab-api/vertex"]
 
 ```
 src/
-└── main.rs
+├── lib.rs
+├── main.rs
+├── protocol.rs            // IPC message protocol
+├── server.rs              // Daemon server
+└── session_pool.rs        // Session pool management
 ```
 
 **IPC Communication Design**
@@ -3637,11 +3770,11 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-**External Dependencies**: `crab-core`, `crab-session`, `crab-api`, `crab-tools`, `crab-config`, `crab-agent`, `crab-common`, `tokio`, `fd-lock`, `tracing-appender`
+**External Dependencies**: `crab-common`, `crab-core`
 
 ---
 
-### 6.19 Global State Split: AppConfig / AppRuntime
+### 6.20 Global State Split: AppConfig / AppRuntime
 
 Global state shared by CLI and Daemon is split into **immutable configuration** and **mutable runtime** halves,
 avoiding a single `Arc<RwLock<AppState>>` where read paths get blocked by write locks.
@@ -3653,7 +3786,7 @@ pub struct AppConfig {
     /// Merged settings.json
     pub settings: crab_config::Settings,
     /// AGENTS.md content (global + user + project)
-    pub agents_md: Vec<crab_config::AgentsMd>,
+    pub agents_md: Vec<crab_memory::agents_md::AgentsMd>,
     /// Permission policy
     pub permission_policy: crab_core::permission::PermissionPolicy,
     /// Model configuration
@@ -3686,7 +3819,7 @@ pub struct AppRuntime {
 
 ---
 
-### 6.20 `crates/engine/` -- Raw Query Loop
+### 6.21 `crates/engine/` -- Raw Query Loop
 
 **Responsibility**: the pure "conversation + backend + tool executor → streaming events" loop. Corresponds to CC `src/query.ts` + `src/query/{stopHooks,tokenBudget,transitions,config,deps}.ts`. Contains no session persistence, no REPL state, no swarm, no system-prompt assembly.
 
@@ -3740,13 +3873,13 @@ pub enum StopReason { NoToolCalls, ExplicitStop, MaxTurns(u32), TokenBudgetExcee
 - Bash errors cancel remaining sibling writes in the batch (child `CancellationToken`)
 - Cancellation hierarchy: query token → batch child token → individual tool
 
-**Internal dependencies**: `core, common, api, session, tools, plugin`.
+**Internal dependencies**: `core, api, session, tools, plugin`.
 
 **Consumers**: `daemon` (headless), `agent` (wraps with orchestration), `remote::server` (drives a session's loop from a remote client).
 
 ---
 
-### 6.21 `crates/remote/` -- crab-proto: Remote-Control Protocol (server + client)
+### 6.22 `crates/remote/` -- crab-proto: Remote-Control Protocol (server + client)
 
 **Responsibility**: Layer 3 crate that owns the `crab-proto` open protocol and both of its endpoints — a WebSocket **server** that attaches running sessions to remote clients, and an outbound **client** that connects to another crab-proto server. This is the **hinge for every non-CLI entry point**: web UI, mobile app, desktop app all attach via the server side; the client side powers crab-to-crab dispatch (supervisor crab driving worker crab) and bot integrations.
 
@@ -3754,7 +3887,7 @@ pub enum StopReason { NoToolCalls, ExplicitStop, MaxTurns(u32), TokenBudgetExcee
 
 **Direction contrast**: both roles live here, unified by the protocol. `remote::server` is inbound (remote clients drive crab). `remote::client` is outbound (crab connects to another crab-proto endpoint, or any server speaking the same protocol). Contrast with `crates/ide` (outbound MCP client to IDE plugins) and `crates/acp` (inbound ACP server for editors) — those speak different protocols.
 
-**Why not claude.ai**: the previous scaffold pinned remote to Anthropic's private endpoints. As a third-party open-source tool we can't rely on those, and binding a single vendor contradicts our multi-entry-point goal. The protocol is our own; claude.ai compatibility, if ever needed, would live as an optional adapter under the client side.
+**Why not claude.ai**: binding a single vendor's private endpoints contradicts our multi-entry-point goal. The protocol is our own; claude.ai compatibility, if ever needed, would live as an optional adapter under the client side.
 
 **Directory Structure**
 
@@ -3763,79 +3896,58 @@ src/
 ├── lib.rs
 │
 ├── protocol/                    // wire types, JSON-RPC envelopes
-│   ├── mod.rs                   // PROTOCOL_VERSION + initialize/auth/session msgs
-│   ├── inbound.rs               // remote → crab (user input / command / attach)
-│   ├── outbound.rs              // crab → remote (stream event / tool result)
-│   └── types.rs                 // MessageId / SessionId / ClientId
-│
-├── auth/                        // shared auth types (server verifies, client sends)
 │   ├── mod.rs
-│   ├── jwt.rs                   // jsonwebtoken sign/verify
-│   ├── trusted_device.rs        // device fingerprint + JSON store
-│   └── work_secret.rs           // per-session shared secret
+│   ├── envelope.rs              // message envelope framing
+│   ├── error.rs                 // protocol error types
+│   ├── handshake.rs             // connection handshake
+│   ├── meta.rs                  // metadata types
+│   ├── method.rs                // RPC method definitions
+│   └── session.rs               // session protocol messages
+│
+├── auth/                        // shared auth (JWT)
+│   ├── mod.rs
+│   └── jwt.rs                   // jsonwebtoken sign/verify
 │
 ├── client/                      // outbound crab-proto client
 │   ├── mod.rs                   // RemoteClient::connect(url, auth)
 │   ├── config.rs                // endpoint / auth_mode / timeout
 │   └── error.rs                 // ClientError
 │
-├── server/                      // inbound crab-proto server
-│   ├── mod.rs                   // RemoteServer + SessionHandler trait
-│   ├── config.rs                // RemoteConfig (bind / env-less fallback)
-│   ├── status.rs                // status publisher → core::Event::RemoteStatusChanged
-│   ├── session/
-│   │   ├── mod.rs
-│   │   ├── runner.rs            // attach crab Session to remote
-│   │   ├── forwarder.rs         // inbound route + outbound Event relay
-│   │   └── attachments.rs       // inbound file upload
-│   ├── api/                     // REST control plane (feature = "rest-api")
-│   │   ├── mod.rs
-│   │   ├── rest.rs              // start/stop/list HTTP endpoints (axum)
-│   │   └── peer_sessions.rs
-│   ├── permission_relay.rs      // remote permission-dialog relay (Telegram / Discord)
-│   └── webhook.rs               // webhook delivery
+└── server/                      // inbound crab-proto server
+    ├── mod.rs                   // RemoteServer + SessionHandler trait
+    ├── config.rs                // RemoteConfig
+    ├── dispatch.rs              // message dispatch
+    ├── handler.rs               // request handlers
+    └── listener.rs              // WebSocket listener
 ```
 
-**Protocol types derive `schemars::JsonSchema`** so TS / Swift / Kotlin client stubs can be generated from the same source file — critical for supporting web / mobile / desktop clients without needing Rust bindings on those clients.
-
-**Feature flags**:
-
-```toml
-default  = []
-rest-api = ["dep:axum"]          # axum HTTP routes for control plane
-```
-
-Server WebSocket listener is NOT feature-gated — per the project rule that protocol server sides ship default-on.
-
-**Internal dependencies**: `core, common, config, auth, session, agent, engine`.
-
-**External dependencies**: `tokio-tungstenite`, `jsonwebtoken`, `reqwest`, `schemars`, `axum` (feature-gated).
-
-**UI split**: the status indicator lives in `crates/tui/components/remote_status.rs`, consuming `core::Event::RemoteStatusChanged`.
+**Internal dependencies**: `core, config, auth`.
 
 ---
 
 ### 6.23 `crates/sandbox/` -- Process Sandbox
 
-**Responsibility**: Layer 2 leaf service. `Sandbox` trait + platform backends (seatbelt / landlock / wsl / noop), consumed by `crates/tools` for Bash/PowerShell execution. Corresponds to CC `src/utils/sandbox/sandbox-adapter.ts` (985 LOC).
+**Responsibility**: Layer 2 leaf service. `Sandbox` trait + platform backends (seatbelt / landlock / windows / noop), consumed by `crates/tools` for Bash/PowerShell execution. Corresponds to CC `src/utils/sandbox/sandbox-adapter.ts` (985 LOC).
 
 **Directory Structure**
 
 ```
 src/
 ├── lib.rs
+├── traits.rs                // Sandbox trait
 ├── config.rs                // SandboxConfig: workdir / env / timeout
 ├── policy.rs                // SandboxPolicy: read/write/exec/net allowlist
-├── error.rs                 // SandboxError + SandboxViolation
+├── error.rs                 // SandboxError
 ├── doctor.rs                // diagnose platform support
-├── violation.rs             // emit core::Event::SandboxViolation
+├── violation.rs             // violation reporting
 │
 └── backend/
-    ├── mod.rs               // auto-select: seatbelt > landlock > wsl > noop
+    ├── mod.rs               // auto-select: seatbelt > landlock > windows > noop
+    ├── factory.rs           // backend auto-selection factory
     ├── noop.rs              // dev / fallback: allow-all
     ├── seatbelt.rs          // macOS: generate .sb profile + sandbox-exec
-    ├── landlock.rs          // Linux 5.13+: landlock crate (feature = "landlock")
-    └── wsl.rs               // Windows: delegate to wsl.exe (feature = "wsl")
+    ├── landlock.rs          // Linux 5.13+: landlock crate (cfg-gated)
+    └── windows.rs           // Windows sandbox
 ```
 
 **Core trait**:
@@ -3849,25 +3961,13 @@ pub trait Sandbox: Send + Sync {
 }
 ```
 
-**Feature flags**:
+**Platform selection**: no feature flags — backends are selected via `cfg(target_os)`. `landlock` dep is `[target.'cfg(target_os = "linux")'.dependencies]` so it only compiles on Linux. On platforms without a native sandbox we fall back to `noop`.
 
-```toml
-default  = ["noop", "auto"]
-auto     = []
-noop     = []
-seatbelt = []                       # macOS: zero external deps
-landlock = ["dep:landlock"]         # Linux 5.13+
-wsl      = []                       # Windows: spawn wsl.exe
-all      = ["seatbelt", "landlock", "wsl", "noop"]
-```
-
-**Decision**: no seccomp backend — on Linux kernel < 5.13 we fall back to `noop` with a `tracing::warn!`.
-
-**UI**: violation events surface in TUI via `core::Event::SandboxViolation`; tabs/settings UI live in `crates/tui/components/sandbox_*.rs`, not this crate.
+**UI**: sandbox violations surface in TUI via `core::Event` broadcasts, not this crate.
 
 ---
 
-### 6.24 `crates/ide/` -- IDE MCP Client (previously absent from §6)
+### 6.24 `crates/ide/` -- IDE MCP Client
 
 **Responsibility**: Layer 2 leaf service. Client that connects to an IDE plugin's MCP server (hosted by VS Code / JetBrains extensions) and receives ambient context (selection, opened file, `@`-mentions). Publishes `IdeSelection` / `IdeAtMention` / `IdeConnection` to shared state consumed by `tui` (for display) and `agent` (for system-prompt injection).
 
@@ -3884,16 +3984,20 @@ src/
 ├── notifications.rs         // inbound MCP notification handlers
 ├── injection.rs             // build system-reminder for agent
 ├── state.rs                 // Arc<RwLock<...>> shared handles
-└── quirks/                  // IDE-specific quirks (VS Code / JetBrains)
+└── quirks/                  // IDE-specific quirks
+    ├── mod.rs
+    ├── vscode.rs            // VS Code quirks
+    ├── jetbrains.rs         // JetBrains quirks
+    └── wsl.rs               // WSL quirks
 ```
 
 **Shared types** (`core::ide`): `IdeSelection`, `IdeAtMention`, `IdeConnection`. These live in `core` so `tui` can read without depending on `ide`.
 
-**Internal dependencies**: `core, common, config, mcp`.
+**Internal dependencies**: `core, mcp`.
 
 ---
 
-### 6.25 `crates/acp/` -- Agent Client Protocol server (new)
+### 6.25 `crates/acp/` -- Agent Client Protocol server
 
 **Responsibility**: Layer 2 crate that implements the server side of the [Agent Client Protocol](https://agentclientprotocol.com), the open JSON-RPC standard introduced by Zed in 2025 that lets editors drive external AI coding agents the way LSP lets them drive language servers. This crate lets crab **be** such an external agent: users in Zed / Neovim / Helix pick crab from their editor's "external agents" menu, the editor spawns crab as a child process, and messages flow over stdio framed as ACP JSON-RPC.
 
@@ -3915,23 +4019,21 @@ Editor (ACP client)  ◄── ACP over stdio ──►  crab-acp (this crate)
 
 **Why not inside `crates/ide/`**: `ide` is crab-as-MCP-client (outbound); `acp` is crab-as-ACP-server (inbound). Opposite directions, different protocol stacks. Keeping them separate matches the "one crate = one protocol" rule.
 
-**Directory Structure** (scaffold — full surface in Phase δ):
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── protocol/
-│   └── mod.rs                   // PROTOCOL_VERSION + AgentInfo (this commit)
-└── server.rs                    // AcpServer + AgentHandler trait (Phase δ)
+└── server.rs                    // AcpServer + AgentHandler trait
 ```
 
-**Internal dependencies**: `core, common`.
+**Internal dependencies**: `core`.
 
 **External dependencies**: `serde`, `schemars`, `tokio`, `thiserror`, `tracing`.
 
 ---
 
-### 6.26 `crates/job/` -- Unified Scheduling (new)
+### 6.26 `crates/job/` -- Unified Scheduling
 
 **Responsibility**: Layer 2 crate that replaces the hand-rolled `tokio::time::interval` and `sleep_until` calls scattered across `crab-mcp` (heartbeat), `crab-agent` (proactive timers), `crab-remote` (server-scheduled triggers), and provides user-facing cron jobs. One API, one view — TUI can render "pending jobs", web UI can show a jobs panel, CLI can offer `crab jobs list / cancel`.
 
@@ -3945,20 +4047,20 @@ src/
 | `Interval` | every N seconds from a reference point | in-memory | MCP server heartbeat |
 | `Cron` | cron-expression schedule | JSON file under `~/.crab/jobs/` | "every day at 09:00, pull the latest report" |
 
-**Directory Structure** (scaffold — full impl in Phase α):
+**Directory Structure**
 
 ```
 src/
 ├── lib.rs
-├── id.rs                        // JobId + JobKind (this commit)
-├── spec.rs                      // JobSpec enum (one-shot | interval | cron) — Phase α
-├── scheduler.rs                 // JobScheduler + JobHandler trait — Phase α
-└── storage/                     // persistence backends (memory / json-file) — Phase α
+├── id.rs                        // JobId + JobKind
+├── spec.rs                      // JobSpec enum (one-shot | interval | cron)
+├── scheduler.rs                 // JobScheduler
+└── handler.rs                   // JobHandler trait
 ```
 
 **Naming**: singular `job` (not `jobs`) per workspace convention — system-concept crates are singular (`skill`, `session`, `memory`, `engine`); only `tools` is plural because it's a collection of implementations. CLI commands stay plural (`crab jobs list`) per Unix convention; crate name and CLI surface don't need to match.
 
-**Internal dependencies**: `core, common`.
+**Internal dependencies**: `core`.
 
 **External dependencies**: `croner` (cron expression parsing, already in workspace), `tokio` (timers), `serde`, `thiserror`, `tracing`.
 
@@ -4000,7 +4102,7 @@ aligned with CCB's design but structured in Rust-idiomatic form.
 - `session/runtime.rs::AgentSession::new` invokes the coordinator if `coordinator_mode` is set; otherwise no-op.
 - `crates/agent/src/coordinator/tool_acl.rs` hosts the `COORDINATOR_TOOLS` / `WORKER_DENIED_TOOLS` constants; `ToolRegistry::retain_names` / `remove_names` in `crates/tools/src/registry.rs` implement the filter.
 - Workers spawned via `Agent` from a Coordinator session now get a fresh registry built by `Coordinator::build_worker_registry` (default registry minus `WORKER_DENIED_TOOLS`) and an overlay-free prompt snapshotted into `CoordinatorContext::worker_base_prompt`. Non-coordinator sessions inherit as before.
-- File-locked `TaskList` (`crates/agent/src/teams/task_lock.rs`) provides `with_locked` and `claim_task` over `fd-lock`, serialising cross-process task claims through an OS exclusive lock on `<path>.lock`. Used when teammates live in separate processes (tmux panes, remote agents); single-process use keeps the existing `Arc<Mutex<TaskList>>`.
+- File-locked `TaskList` (`crates/swarm/src/task_lock.rs`) provides `with_locked` and `claim_task` over `fd-lock`, serialising cross-process task claims through an OS exclusive lock on `<path>.lock`. Used when teammates live in separate processes (tmux panes, remote agents); single-process use keeps the existing `Arc<Mutex<TaskList>>`.
 
 ---
 
@@ -4029,14 +4131,15 @@ aligned with CCB's design but structured in Rust-idiomatic form.
 # --- crates/api/Cargo.toml ---
 [features]
 default = []
-bedrock = ["aws-sdk-bedrockruntime", "aws-config"]  # AWS Bedrock provider
-vertex = ["gcp-auth"]                                 # Google Vertex provider
-proxy = ["reqwest/socks"]                             # SOCKS5 proxy support
+bedrock = ["crab-auth/bedrock"]                       # AWS Bedrock provider
+vertex  = ["crab-auth/vertex"]                        # Google Vertex provider
+proxy   = ["reqwest/socks"]                           # SOCKS5 proxy support
 
 # --- crates/auth/Cargo.toml ---
 [features]
 default = []
-bedrock = ["aws-sdk-bedrockruntime", "aws-config"]   # AWS SigV4 signing
+bedrock = []                                          # AWS Bedrock credential support
+vertex  = []                                          # GCP Vertex credential support
 
 # --- crates/mcp/Cargo.toml ---
 # Note: ws transport is NOT feature-gated as of 2026-04 — MCP server and WS
@@ -4061,35 +4164,31 @@ pty = ["portable-pty"]                                # Pseudo-terminal allocati
 [features]
 default = []
 
-# --- crates/remote/Cargo.toml (revised 2026-04: bridge merged in, claude.ai dropped) ---
-# Server WS listener + WS client both ship default-on (no gates on protocol
-# server side). Only the REST control-plane helpers are feature-gated.
-[features]
-default  = []
-rest-api = ["dep:axum"]                               # REST control plane over axum
-
-# --- crates/acp/Cargo.toml (new) ---
+# --- crates/remote/Cargo.toml ---
+# Server WS listener + WS client both ship default-on (no feature gates).
 [features]
 default = []
 
-# --- crates/job/Cargo.toml (new) ---
+# --- crates/acp/Cargo.toml ---
+[features]
+default = []
+
+# --- crates/job/Cargo.toml ---
 [features]
 default = []
 
 # --- crates/agent/Cargo.toml ---
 [features]
-default = ["single"]
-single  = []                                          # single-agent orchestration
-swarm   = []                                          # multi-agent coordinator
+default    = []
+mem-ranker = ["crab-memory/mem-ranker"]               # LLM-based memory ranking
+auto-dream = []                                       # Background memory consolidation
+proactive  = []                                       # Proactive suggestions (stub)
 
 # --- crates/tools/Cargo.toml ---
 [features]
-default        = []
-computer-use   = ["dep:screenshots", "dep:enigo"]     # Computer Use tool
-macos-ax       = []                                   # macOS AX / CG input path
-win-native     = []                                   # Win32 SendInput + GDI
-x11            = []                                   # Linux X11 backend
-wayland        = []                                   # Linux Wayland backend
+default = ["pdf"]
+pdf     = ["pdf-extract"]                             # PDF reading support
+pty     = ["portable-pty", "strip-ansi-escapes"]      # PTY-based bash
 
 # --- crates/telemetry/Cargo.toml ---
 [features]
@@ -4097,7 +4196,7 @@ default = ["fmt"]
 fmt = ["tracing-subscriber/fmt"]                             # Local logging (default)
 otlp = [                                                     # OTLP export
     "opentelemetry", "opentelemetry-otlp",
-    "opentelemetry-sdk", "tracing-opentelemetry",
+    "opentelemetry_sdk", "tracing-opentelemetry",
 ]
 
 # --- crates/cli/Cargo.toml ---
@@ -4111,8 +4210,8 @@ full = [                                              # Full-feature build
     "crab-api/vertex",
     "crab-process/pty",
     "crab-telemetry/otlp",
+    "crab-agent/mem-ranker",
 ]
-minimal = []                                          # Minimal build (no TUI)
 ```
 
 ### 8.2 Build Combinations
@@ -4120,7 +4219,7 @@ minimal = []                                          # Minimal build (no TUI)
 | Scenario | Command | What Gets Compiled |
 |----------|---------|-------------------|
 | Daily development | `cargo build` | cli + tui (default) |
-| Minimal build | `cargo build --no-default-features -F minimal` | cli only, no tui |
+| Minimal build | `cargo build --no-default-features` | cli only, no tui |
 | Full feature | `cargo build -F full` | All providers + WASM + PTY |
 | Library only | `cargo build -p crab-core` | Single crate compilation |
 | WASM target | `cargo build -p crab-core --target wasm32-unknown-unknown` | core layer WASM |
@@ -4130,7 +4229,7 @@ minimal = []                                          # Minimal build (no TUI)
 CC source code manages about 31 runtime flags through `featureFlags.ts`; Crab Code splits them into:
 
 - **Compile-time features**: Provider selection, WASM plugins, PTY, etc. (Cargo features)
-- **Runtime flags**: Managed via `config/feature_flag.rs`, with support for remote delivery
+- **Runtime flags**: Managed via `config.toml` settings and environment variables at startup
 
 ---
 
@@ -4146,10 +4245,10 @@ members = ["crates/*", "xtask"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
-license = "MIT"
-repository = "https://github.com/user/crab-code"
-description = "AI coding assistant in Rust"
+rust-version = "1.95"
+license = "Apache-2.0"
+repository = "https://github.com/lingcoder/crab-code"
+description = "Rust-native agentic coding CLI — open-source alternative to Claude Code"
 
 [workspace.dependencies]
 # See root Cargo.toml for complete dependency list
@@ -4179,7 +4278,7 @@ opt-level = 3
 
 ```toml
 [toolchain]
-channel = "1.85.0"    # Minimum version for edition 2024 + async fn in trait
+channel = "1.95"
 components = ["rustfmt", "clippy", "rust-analyzer"]
 ```
 
@@ -4190,6 +4289,7 @@ edition = "2024"
 max_width = 100
 tab_spaces = 4
 use_field_init_shorthand = true
+reorder_imports = true
 ```
 
 ---
@@ -4227,7 +4327,7 @@ User input
 ```
 
 Notes:
-- `engine::run_query` is the pure loop (no session state, no REPL). It emits `Event::QueryPhaseChanged`, `Event::ContentDelta`, `Event::ToolResult`, etc.
+- `engine::run_query` is the pure loop (no session state, no REPL). It emits `Event::ContentDelta`, `Event::ToolResult`, `Event::TurnStart`, etc.
 - The loop has built-in recovery: PTL retry (drop oldest messages), max-output-tokens retry (increase limit), streaming fallback (switch model), and stop hook retry (continue on hook request).
 - `agent` wraps `engine` and adds: system-prompt assembly, git/PR context, error recovery, retry, proactive suggestions, auto-dream.
 - `daemon` calls `engine::run_query` directly, skipping `agent`'s REPL-oriented layer.
@@ -4331,7 +4431,7 @@ Notes:
                                                                └───────────┘
 ```
 
-Auth: JWT (`remote/auth/jwt.rs`) + trusted-device fingerprint (`remote/auth/trusted_device.rs`). Wire types derive `schemars::JsonSchema` so TS / Swift / Kotlin clients are stub-generated from the same Rust source.
+Auth: JWT (`remote/auth/jwt.rs`). Wire types derive `schemars::JsonSchema` so TS / Swift / Kotlin clients are stub-generated from the same Rust source.
 
 ### 10.5 Crab-to-Crab Trigger Flow (crab-proto, outbound side)
 
@@ -4439,7 +4539,7 @@ The in-memory `rollback.rs` UndoStack was replaced with the file-backed
 - `command_palette` -- Ctrl+P command palette, fuzzy search all commands
 - `autocomplete` -- Popup completion suggestions while typing
 - `search` -- Global search (filename + content)
-- `input_history` -- Up/down arrow to browse input history
+- `history_search` -- Ctrl+R history search overlay
 
 **Content Display Components**:
 - `code_block` -- Code block + copy button (syntect highlighting)
@@ -4467,7 +4567,7 @@ GCP Scenario:
 
 ### 11.6 Sandbox Backend Strategy
 
-`crates/sandbox` provides a trait-only core with platform backends behind feature flags. At runtime, `create_sandbox(None)` picks the best available backend using this precedence:
+`crates/sandbox` provides a trait-only core with platform backends selected via `cfg(target_os)`. At runtime, `create_sandbox(None)` picks the best available backend using this precedence:
 
 ```
 seatbelt (macOS)  >  landlock (Linux 5.13+)  >  wsl (Windows)  >  noop
@@ -4496,4 +4596,4 @@ Flow:
 
 Doctor (`sandbox::doctor::diagnose()`) reports each backend's support status, used by `/doctor` and the TUI Sandbox settings tab. Consumers (e.g., `tools/builtin/bash.rs`) may override precedence by passing `Some("seatbelt")` etc. to force a specific backend for testing.
 
-Violation events flow upward as `core::Event::SandboxViolation { backend, info }`, consumed by `tui/components/sandbox_violation.rs` for display and by the denial tracker (`core/permission/denial_tracker.rs`) for repeat-offense patterns.
+Violation events flow upward via `core::Event` broadcasts, consumed by the TUI for display and by the denial tracker (`core/permission/denial_tracker.rs`) for repeat-offense patterns.

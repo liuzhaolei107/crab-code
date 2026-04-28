@@ -9,6 +9,7 @@ pub mod components;
 pub mod event;
 pub mod event_broker;
 pub mod frame_requester;
+pub mod global_state;
 pub mod history;
 pub mod hyperlink;
 pub mod keybindings;

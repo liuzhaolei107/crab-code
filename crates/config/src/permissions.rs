@@ -27,9 +27,12 @@ pub enum RuleVerdict {
     Deny,
 }
 
-/// A single permission rule — records a user's decision about a tool.
+/// A single stored permission rule — records a user's decision about a tool.
+///
+/// Named `StoredPermissionRule` (not `PermissionRule`) to disambiguate from
+/// `crab_core::permission::PermissionRule` which is a runtime rule-matching type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PermissionRule {
+pub struct StoredPermissionRule {
     /// Tool name or glob pattern (e.g. `"bash"`, `"mcp__*"`).
     pub tool_pattern: String,
     /// Whether this tool invocation is allowed or denied.
@@ -76,7 +79,7 @@ pub enum AuditSource {
 pub struct PermissionStore {
     /// Only permanent rules are persisted.
     #[serde(default)]
-    pub rules: Vec<PermissionRule>,
+    pub rules: Vec<StoredPermissionRule>,
     /// Audit log of recent permission decisions.
     #[serde(default)]
     pub audit_log: Vec<AuditEntry>,
@@ -90,7 +93,7 @@ pub struct PermissionStore {
 /// are written to / read from disk.
 pub struct PermissionRuleSet {
     /// All rules (session + permanent).
-    rules: Vec<PermissionRule>,
+    rules: Vec<StoredPermissionRule>,
     /// Audit log entries accumulated during this session.
     audit_log: Vec<AuditEntry>,
     /// Path to the permissions file on disk.
@@ -136,7 +139,7 @@ impl PermissionRuleSet {
 
     /// Add a new permission rule. If a rule with the same `tool_pattern`
     /// and `scope` already exists, it is replaced.
-    pub fn add_rule(&mut self, rule: PermissionRule) {
+    pub fn add_rule(&mut self, rule: StoredPermissionRule) {
         self.rules
             .retain(|r| !(r.tool_pattern == rule.tool_pattern && r.scope == rule.scope));
         self.rules.push(rule);
@@ -161,13 +164,13 @@ impl PermissionRuleSet {
 
     /// List all current rules.
     #[must_use]
-    pub fn list_rules(&self) -> &[PermissionRule] {
+    pub fn list_rules(&self) -> &[StoredPermissionRule] {
         &self.rules
     }
 
     /// List only permanent rules.
     #[must_use]
-    pub fn list_permanent_rules(&self) -> Vec<&PermissionRule> {
+    pub fn list_permanent_rules(&self) -> Vec<&StoredPermissionRule> {
         self.rules
             .iter()
             .filter(|r| r.scope == RuleScope::Permanent)
@@ -176,7 +179,7 @@ impl PermissionRuleSet {
 
     /// List only session rules.
     #[must_use]
-    pub fn list_session_rules(&self) -> Vec<&PermissionRule> {
+    pub fn list_session_rules(&self) -> Vec<&StoredPermissionRule> {
         self.rules
             .iter()
             .filter(|r| r.scope == RuleScope::Session)
@@ -195,15 +198,16 @@ impl PermissionRuleSet {
     /// Checks exact matches first, then glob patterns. Returns `None`
     /// if no rule matches (meaning the caller should prompt the user).
     #[must_use]
-    pub fn check(&self, tool_name: &str) -> Option<&PermissionRule> {
+    pub fn check(&self, tool_name: &str) -> Option<&StoredPermissionRule> {
         // Exact match first (more specific)
         if let Some(rule) = self.rules.iter().find(|r| r.tool_pattern == tool_name) {
             return Some(rule);
         }
         // Glob match
-        self.rules
-            .iter()
-            .find(|r| r.tool_pattern.contains('*') && glob_match(&r.tool_pattern, tool_name))
+        self.rules.iter().find(|r| {
+            r.tool_pattern.contains('*')
+                && crab_core::permission::glob_match(&r.tool_pattern, tool_name)
+        })
     }
 
     // ── Audit log ─────────────────────────────────────────────────────
@@ -245,7 +249,7 @@ impl PermissionRuleSet {
     pub fn load(&mut self) -> crab_core::Result<()> {
         let store = load_permission_store(&self.store_path)?;
         // Merge loaded permanent rules, keeping existing session rules
-        let session_rules: Vec<PermissionRule> = self
+        let session_rules: Vec<StoredPermissionRule> = self
             .rules
             .drain(..)
             .filter(|r| r.scope == RuleScope::Session)
@@ -311,39 +315,6 @@ pub fn save_permission_store(path: &Path, store: &PermissionStore) -> crab_core:
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-/// Simple glob matching (reuse from `policy.rs` logic).
-fn glob_match(pattern: &str, input: &str) -> bool {
-    let pat: Vec<char> = pattern.chars().collect();
-    let inp: Vec<char> = input.chars().collect();
-    glob_match_inner(&pat, &inp)
-}
-
-fn glob_match_inner(pat: &[char], input: &[char]) -> bool {
-    let (mut pi, mut ii) = (0, 0);
-    let (mut star_pat, mut star_input) = (usize::MAX, usize::MAX);
-
-    while ii < input.len() {
-        if pi < pat.len() && (pat[pi] == '?' || pat[pi] == input[ii]) {
-            pi += 1;
-            ii += 1;
-        } else if pi < pat.len() && pat[pi] == '*' {
-            star_pat = pi;
-            star_input = ii;
-            pi += 1;
-        } else if star_pat != usize::MAX {
-            pi = star_pat + 1;
-            star_input += 1;
-            ii = star_input;
-        } else {
-            return false;
-        }
-    }
-    while pi < pat.len() && pat[pi] == '*' {
-        pi += 1;
-    }
-    pi == pat.len()
-}
-
 /// Return current time as ISO 8601 string (UTC).
 fn now_iso8601() -> String {
     // Use std::time for a simple UTC timestamp without pulling in chrono.
@@ -407,8 +378,8 @@ mod tests {
         (dir, path)
     }
 
-    fn make_rule(pattern: &str, verdict: RuleVerdict, scope: RuleScope) -> PermissionRule {
-        PermissionRule {
+    fn make_rule(pattern: &str, verdict: RuleVerdict, scope: RuleScope) -> StoredPermissionRule {
+        StoredPermissionRule {
             tool_pattern: pattern.to_string(),
             verdict,
             scope,
@@ -450,11 +421,11 @@ mod tests {
         }
     }
 
-    // ── PermissionRule serde ──────────────────────────────────────────
+    // ── StoredPermissionRule serde ──────────────────────────────────────────
 
     #[test]
     fn permission_rule_serde_roundtrip() {
-        let rule = PermissionRule {
+        let rule = StoredPermissionRule {
             tool_pattern: "bash".to_string(),
             verdict: RuleVerdict::Allow,
             scope: RuleScope::Permanent,
@@ -462,7 +433,7 @@ mod tests {
             context: Some("rm -rf /tmp/test".to_string()),
         };
         let json = serde_json::to_string_pretty(&rule).unwrap();
-        let parsed: PermissionRule = serde_json::from_str(&json).unwrap();
+        let parsed: StoredPermissionRule = serde_json::from_str(&json).unwrap();
         assert_eq!(rule, parsed);
     }
 
@@ -471,7 +442,7 @@ mod tests {
         let rule = make_rule("read", RuleVerdict::Allow, RuleScope::Session);
         let json = serde_json::to_string(&rule).unwrap();
         assert!(!json.contains("context"));
-        let parsed: PermissionRule = serde_json::from_str(&json).unwrap();
+        let parsed: StoredPermissionRule = serde_json::from_str(&json).unwrap();
         assert!(parsed.context.is_none());
     }
 
@@ -780,27 +751,6 @@ mod tests {
         assert!(ts.contains('T'));
         assert!(ts.ends_with('Z'));
         assert!(ts.starts_with("20")); // Year 20xx
-    }
-
-    // ── Glob matching ─────────────────────────────────────────────────
-
-    #[test]
-    fn glob_exact() {
-        assert!(glob_match("bash", "bash"));
-        assert!(!glob_match("bash", "read"));
-    }
-
-    #[test]
-    fn glob_star() {
-        assert!(glob_match("mcp__*", "mcp__playwright_click"));
-        assert!(glob_match("*tool", "my_tool"));
-        assert!(!glob_match("mcp__*", "bash"));
-    }
-
-    #[test]
-    fn glob_question() {
-        assert!(glob_match("tool_?", "tool_a"));
-        assert!(!glob_match("tool_?", "tool_ab"));
     }
 
     // ── Debug impl ────────────────────────────────────────────────────

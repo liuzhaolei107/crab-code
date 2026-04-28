@@ -243,9 +243,7 @@ impl AssumeRoleProvider {
 }
 
 impl AuthProvider for AssumeRoleProvider {
-    fn get_auth(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
+    fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         Box::pin(async move {
             // Check cache
             {
@@ -374,9 +372,7 @@ impl WebIdentityProvider {
             .send()
             .await
             .map_err(|e| {
-                crab_core::Error::Auth(format!(
-                    "STS AssumeRoleWithWebIdentity request failed: {e}"
-                ))
+                crab_core::Error::Auth(format!("STS AssumeRoleWithWebIdentity request failed: {e}"))
             })?;
 
         if !resp.status().is_success() {
@@ -405,9 +401,7 @@ impl WebIdentityProvider {
 }
 
 impl AuthProvider for WebIdentityProvider {
-    fn get_auth(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
+    fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         Box::pin(async move {
             // Check cache
             {
@@ -517,9 +511,8 @@ fn days_to_ymd(z: u64) -> (u64, u64, u64) {
 fn parse_assume_role_response(xml: &str) -> crab_core::Result<AssumeRoleResponse> {
     let access_key_id = extract_xml_tag(xml, "AccessKeyId")
         .ok_or_else(|| crab_core::Error::Auth("missing AccessKeyId in STS response".into()))?;
-    let secret_access_key = extract_xml_tag(xml, "SecretAccessKey").ok_or_else(|| {
-        crab_core::Error::Auth("missing SecretAccessKey in STS response".into())
-    })?;
+    let secret_access_key = extract_xml_tag(xml, "SecretAccessKey")
+        .ok_or_else(|| crab_core::Error::Auth("missing SecretAccessKey in STS response".into()))?;
     let session_token = extract_xml_tag(xml, "SessionToken")
         .ok_or_else(|| crab_core::Error::Auth("missing SessionToken in STS response".into()))?;
 

@@ -277,13 +277,13 @@ pub fn load_local(project_dir: &Path) -> crab_core::Result<Config> {
 
 /// Which config sources to include in the merge chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfigSource {
+pub enum ConfigLayer {
     User,
     Project,
     Local,
 }
 
-impl ConfigSource {
+impl ConfigLayer {
     /// Parse a comma-separated string like "user,project,local".
     pub fn parse_list(s: &str) -> Vec<Self> {
         s.split(',')
@@ -507,31 +507,27 @@ model = "deepseek-chat"
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ── ConfigSource tests ──
+    // ── ConfigLayer tests ──
 
     #[test]
     fn config_source_parse_list_all() {
-        let sources = ConfigSource::parse_list("user,project,local");
+        let sources = ConfigLayer::parse_list("user,project,local");
         assert_eq!(
             sources,
-            vec![
-                ConfigSource::User,
-                ConfigSource::Project,
-                ConfigSource::Local
-            ]
+            vec![ConfigLayer::User, ConfigLayer::Project, ConfigLayer::Local]
         );
     }
 
     #[test]
     fn config_source_parse_list_single() {
-        let sources = ConfigSource::parse_list("project");
-        assert_eq!(sources, vec![ConfigSource::Project]);
+        let sources = ConfigLayer::parse_list("project");
+        assert_eq!(sources, vec![ConfigLayer::Project]);
     }
 
     #[test]
     fn config_source_parse_list_unknown_ignored() {
-        let sources = ConfigSource::parse_list("user,unknown,local");
-        assert_eq!(sources, vec![ConfigSource::User, ConfigSource::Local]);
+        let sources = ConfigLayer::parse_list("user,unknown,local");
+        assert_eq!(sources, vec![ConfigLayer::User, ConfigLayer::Local]);
     }
 
     #[test]

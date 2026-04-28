@@ -20,8 +20,7 @@ pub struct GlobalState {
     pub project_trust: HashMap<String, ProjectTrust>,
     /// Version string of the last release whose changelog the user saw. When
     /// this differs from the current binary version, the welcome screen is
-    /// shown and this field is refreshed on dismissal. Mirrors CCB's
-    /// `lastReleaseNotesSeen` in `~/.claude/config.json`.
+    /// shown and this field is refreshed on dismissal.
     pub last_welcome_version: Option<String>,
 }
 
@@ -40,7 +39,7 @@ pub struct ProjectTrust {
 /// Path to `~/.crab/state.json`.
 #[must_use]
 pub fn state_path() -> PathBuf {
-    crate::config::global_config_dir().join(STATE_FILE)
+    crab_config::config::global_config_dir().join(STATE_FILE)
 }
 
 /// Load global state from disk. Returns `Default` if the file is missing
@@ -105,7 +104,9 @@ pub fn compute_project_hash(project_dir: &Path) -> String {
     }
 
     // Hash config.toml content if present
-    if let Ok(content) = std::fs::read_to_string(crab_dir.join(crate::config::config_file_name())) {
+    if let Ok(content) =
+        std::fs::read_to_string(crab_dir.join(crab_config::config::config_file_name()))
+    {
         content.hash(&mut hasher);
     }
 

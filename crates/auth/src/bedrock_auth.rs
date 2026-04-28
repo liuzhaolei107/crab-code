@@ -105,9 +105,7 @@ impl BedrockAuthProvider {
 }
 
 impl AuthProvider for BedrockAuthProvider {
-    fn get_auth(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
+    fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         let auth_header = self.sign_request();
         // Return as OAuth token so AnthropicClient uses `Authorization: Bearer`
         Box::pin(async move {

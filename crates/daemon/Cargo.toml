@@ -14,11 +14,6 @@ path = "src/main.rs"
 [dependencies]
 crab-common.workspace = true
 crab-core.workspace = true
-crab-config.workspace = true
-crab-api.workspace = true
-crab-session.workspace = true
-crab-tools.workspace = true
-crab-agent.workspace = true
 tokio.workspace = true
 fd-lock.workspace = true
 tracing.workspace = true

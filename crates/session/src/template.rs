@@ -8,8 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crab_core::tool::{
-    BASH_TOOL_NAME, EDIT_TOOL_NAME, GLOB_TOOL_NAME, GREP_TOOL_NAME, READ_TOOL_NAME,
-    WRITE_TOOL_NAME,
+    BASH_TOOL_NAME, EDIT_TOOL_NAME, GLOB_TOOL_NAME, GREP_TOOL_NAME, READ_TOOL_NAME, WRITE_TOOL_NAME,
 };
 
 use crate::history::SessionHistory;

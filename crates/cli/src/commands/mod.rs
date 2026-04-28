@@ -1,12 +1,9 @@
 pub mod agents;
 pub mod auth;
-pub mod chat;
 pub mod config;
 pub mod doctor;
-pub mod mcp;
 pub mod permissions;
 pub mod plugin;
-pub mod run;
 pub mod serve;
 pub mod session;
 pub mod update;

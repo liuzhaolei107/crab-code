@@ -29,7 +29,7 @@ pub use auto_mode::{AutoModeClassifier, RiskLevel, auto_mode_decision};
 pub use decision::PermissionDecision;
 pub use denial_tracker::{DenialRecord, DenialTracker};
 pub use explainer::{PermissionExplanation, explain_decision};
-pub use filter::matches_tool_filter;
+pub use filter::{glob_match, matches_tool_filter};
 pub use mode::PermissionMode;
 pub use path_validator::{PathError, PathPermission, PathValidator};
 pub use policy::PermissionPolicy;

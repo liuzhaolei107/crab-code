@@ -103,7 +103,7 @@ fn lock_path_for(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::teams::task_list::TaskStatus;
+    use crate::task_list::TaskStatus;
     use std::sync::Arc;
     use std::sync::Barrier;
     use std::thread;

@@ -64,9 +64,7 @@ impl CredentialChain {
 }
 
 impl AuthProvider for CredentialChain {
-    fn get_auth(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
+    fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         Box::pin(async move {
             // Try cached provider first
             {

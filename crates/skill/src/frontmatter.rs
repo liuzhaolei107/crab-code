@@ -33,10 +33,7 @@ use crate::types::{Skill, SkillContext, SkillSource, SkillTrigger};
 ///
 /// Returns a fully populated [`Skill`] with fields extracted from both
 /// the YAML frontmatter and the markdown body.
-pub fn parse_skill_content(
-    content: &str,
-    source_path: Option<&Path>,
-) -> crab_core::Result<Skill> {
+pub fn parse_skill_content(content: &str, source_path: Option<&Path>) -> crab_core::Result<Skill> {
     let (frontmatter, body) = split_frontmatter(content)?;
     let yaml = parse_simple_yaml(&frontmatter);
 

@@ -217,9 +217,7 @@ fn dirs_path(env_var: &str, suffix: &str) -> Option<std::path::PathBuf> {
 }
 
 impl AuthProvider for VertexAuthProvider {
-    fn get_auth(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
+    fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         Box::pin(async move {
             // Check cached token
             {

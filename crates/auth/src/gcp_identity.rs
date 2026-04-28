@@ -257,9 +257,7 @@ impl WorkloadIdentityProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| {
-                crab_core::Error::Auth(format!("SA impersonation request failed: {e}"))
-            })?;
+            .map_err(|e| crab_core::Error::Auth(format!("SA impersonation request failed: {e}")))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -269,13 +267,13 @@ impl WorkloadIdentityProvider {
             )));
         }
 
-        let resp_text = resp.text().await.map_err(|e| {
-            crab_core::Error::Auth(format!("reading impersonation response: {e}"))
-        })?;
+        let resp_text = resp
+            .text()
+            .await
+            .map_err(|e| crab_core::Error::Auth(format!("reading impersonation response: {e}")))?;
 
-        let parsed: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
-            crab_core::Error::Auth(format!("parsing impersonation response: {e}"))
-        })?;
+        let parsed: serde_json::Value = serde_json::from_str(&resp_text)
+            .map_err(|e| crab_core::Error::Auth(format!("parsing impersonation response: {e}")))?;
 
         parsed
             .get("accessToken")
@@ -305,9 +303,7 @@ impl WorkloadIdentityProvider {
 }
 
 impl AuthProvider for WorkloadIdentityProvider {
-    fn get_auth(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
+    fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         Box::pin(async move {
             // Check cache
             {
@@ -363,9 +359,7 @@ fn extract_token(content: &str, format: &CredentialFormat) -> crab_core::Result<
                 .and_then(|v| v.as_str())
                 .map(String::from)
                 .ok_or_else(|| {
-                    crab_core::Error::Auth(format!(
-                        "field '{field}' not found in credential JSON"
-                    ))
+                    crab_core::Error::Auth(format!("field '{field}' not found in credential JSON"))
                 })
         }
     }

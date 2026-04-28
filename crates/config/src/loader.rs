@@ -18,7 +18,7 @@ use toml::Value;
 use toml::value::Table;
 
 use crate::config::{
-    Config, ConfigSource, config_file_name, global_config_dir, local_config_file_name,
+    Config, ConfigLayer, config_file_name, global_config_dir, local_config_file_name,
     project_config_dir,
 };
 use crate::merge::merge_toml_values;
@@ -68,7 +68,7 @@ pub struct ResolveContext {
     /// the future flag parser, defaulting to an empty table.
     pub flags: CliFlags,
     /// Restrict which file-layer sources participate. `None` means all.
-    pub sources_filter: Option<Vec<ConfigSource>>,
+    pub sources_filter: Option<Vec<ConfigLayer>>,
 }
 
 /// Parsed CLI flag overrides that participate in the runtime layer.
@@ -161,7 +161,7 @@ impl ResolveContext {
     }
 
     #[must_use]
-    pub fn with_sources_filter(mut self, sources: Option<Vec<ConfigSource>>) -> Self {
+    pub fn with_sources_filter(mut self, sources: Option<Vec<ConfigLayer>>) -> Self {
         self.sources_filter = sources;
         self
     }
@@ -244,7 +244,7 @@ pub fn resolve(ctx: &ResolveContext) -> crab_core::Result<Config> {
 /// Compute the file-layer paths that participate in `resolve`, honoring
 /// `sources_filter`. Order is low → high priority.
 fn file_layer_paths(ctx: &ResolveContext) -> Vec<PathBuf> {
-    let include = |source: ConfigSource| {
+    let include = |source: ConfigLayer| {
         ctx.sources_filter
             .as_ref()
             .is_none_or(|list| list.contains(&source))
@@ -252,15 +252,15 @@ fn file_layer_paths(ctx: &ResolveContext) -> Vec<PathBuf> {
 
     let mut paths = Vec::new();
 
-    if include(ConfigSource::User) {
+    if include(ConfigLayer::User) {
         paths.push(ctx.config_dir.join(config_file_name()));
     }
-    if include(ConfigSource::Project)
+    if include(ConfigLayer::Project)
         && let Some(dir) = ctx.project_dir.as_deref()
     {
         paths.push(project_config_dir(dir).join(config_file_name()));
     }
-    if include(ConfigSource::Local)
+    if include(ConfigLayer::Local)
         && let Some(dir) = ctx.project_dir.as_deref()
     {
         paths.push(project_config_dir(dir).join(local_config_file_name()));
@@ -461,7 +461,7 @@ mod tests {
         let ctx = ResolveContext::new()
             .with_config_dir(user_dir)
             .with_project_dir(Some(project_dir))
-            .with_sources_filter(Some(vec![ConfigSource::User]));
+            .with_sources_filter(Some(vec![ConfigLayer::User]));
         let cfg = resolve(&ctx).unwrap();
         assert_eq!(cfg.model.as_deref(), Some("user"));
 

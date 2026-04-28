@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::teams::backend::teammate::{Teammate, TeammateConfig, TeammateState};
+use crate::backend::teammate::{Teammate, TeammateConfig, TeammateState};
 
 /// Trait for swarm execution backends.
 ///

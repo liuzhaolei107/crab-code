@@ -788,6 +788,7 @@ dependencies = [
  "crab-process",
  "crab-session",
  "crab-skill",
+ "crab-swarm",
  "crab-tools",
  "fd-lock",
  "futures",
@@ -894,7 +895,6 @@ dependencies = [
 name = "crab-config"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "crab-common",
  "crab-core",
  "directories",
@@ -911,6 +911,7 @@ dependencies = [
 name = "crab-core"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "regex",
  "serde",
  "serde_json",
@@ -923,13 +924,8 @@ name = "crab-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crab-agent",
- "crab-api",
  "crab-common",
- "crab-config",
  "crab-core",
- "crab-session",
- "crab-tools",
  "directories",
  "fd-lock",
  "serde",
@@ -1077,8 +1073,6 @@ dependencies = [
  "crab-common",
  "crab-core",
  "portable-pty",
- "serde",
- "serde_json",
  "sysinfo",
  "tokio",
 ]
@@ -1123,8 +1117,6 @@ name = "crab-session"
 version = "0.1.0"
 dependencies = [
  "base64",
- "crab-api",
- "crab-config",
  "crab-core",
  "crab-memory",
  "image",
@@ -1144,6 +1136,22 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "crab-swarm"
+version = "0.1.0"
+dependencies = [
+ "crab-core",
+ "fd-lock",
+ "futures",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
  "tracing",
 ]
 

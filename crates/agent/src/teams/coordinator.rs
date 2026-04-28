@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use serde_json::Value;
 
 use crate::coordinator::PermissionSyncManager;
-use crate::teams::backend::{InProcessBackend, SwarmBackend, TeammateConfig};
+use crab_swarm::backend::{InProcessBackend, SwarmBackend, TeammateConfig};
 
 /// The JSON `action` value emitted by `TeamCreateTool` when a team is
 /// created. Kept as a module constant so runtime callers and the tool

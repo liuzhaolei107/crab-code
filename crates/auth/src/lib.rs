@@ -38,9 +38,7 @@ pub struct OAuthToken {
 /// Methods return `Pin<Box<dyn Future>>` for object safety (`Box<dyn AuthProvider>`).
 pub trait AuthProvider: Send + Sync {
     /// Resolve the current auth credentials.
-    fn get_auth(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>>;
+    fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>>;
 
     /// Refresh credentials (no-op for API key providers).
     fn refresh(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<()>> + Send + '_>>;
@@ -59,9 +57,7 @@ impl ApiKeyProvider {
 }
 
 impl AuthProvider for ApiKeyProvider {
-    fn get_auth(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
+    fn get_auth(&self) -> Pin<Box<dyn Future<Output = crab_core::Result<AuthMethod>> + Send + '_>> {
         let key = self.key.clone();
         Box::pin(async move { Ok(AuthMethod::ApiKey(key)) })
     }

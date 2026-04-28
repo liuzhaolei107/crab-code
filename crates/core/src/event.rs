@@ -1,3 +1,6 @@
+use std::future::Future;
+use std::pin::Pin;
+
 use crate::model::TokenUsage;
 use crate::tool::ToolOutput;
 use serde_json::Value;
@@ -147,6 +150,37 @@ pub enum Event {
     /// An error occurred during processing.
     Error { message: String },
 }
+
+// ── Frontend abstraction layer ───────────────────────────────────────
+
+/// Session-level event wrapper — extends [`Event`] with UI-specific
+/// events that don't belong in the core domain enum.
+#[derive(Debug, Clone)]
+pub enum SessionEvent {
+    /// A core domain event.
+    Core(Event),
+}
+
+impl From<Event> for SessionEvent {
+    fn from(e: Event) -> Self {
+        Self::Core(e)
+    }
+}
+
+/// Trait for sending session events to a frontend.
+///
+/// Implementations might write to a `tokio::sync::broadcast` channel,
+/// a WebSocket, or an in-process event bus. The workspace avoids
+/// `async_trait` — implementors return a boxed future directly.
+pub trait EventSink: Send + Sync {
+    fn send(
+        &self,
+        event: SessionEvent,
+    ) -> Pin<Box<dyn Future<Output = crate::Result<()>> + Send + '_>>;
+}
+
+/// A stream of session events consumed by a frontend.
+pub type EventStream = Pin<Box<dyn futures::Stream<Item = SessionEvent> + Send>>;
 
 #[cfg(test)]
 mod tests {
@@ -498,4 +532,37 @@ mod tests {
         assert_eq!(TOOL_ARG_INDEX_BASE, 1000);
     }
 
+    // ── SessionEvent tests ───
+
+    #[test]
+    fn session_event_from_core() {
+        let core = Event::TurnStart { turn_index: 1 };
+        let se: SessionEvent = core.into();
+        assert!(matches!(
+            se,
+            SessionEvent::Core(Event::TurnStart { turn_index: 1 })
+        ));
+    }
+
+    #[test]
+    fn session_event_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<SessionEvent>();
+    }
+
+    #[test]
+    fn session_event_is_clone() {
+        let se = SessionEvent::Core(Event::Error {
+            message: "test".into(),
+        });
+        #[allow(clippy::redundant_clone)]
+        let cloned = se.clone();
+        assert!(matches!(cloned, SessionEvent::Core(Event::Error { .. })));
+    }
+
+    #[test]
+    fn event_sink_is_object_safe() {
+        fn assert_object_safe(_: &dyn EventSink) {}
+        let _ = assert_object_safe;
+    }
 }
