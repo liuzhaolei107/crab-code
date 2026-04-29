@@ -1,45 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// When a hook fires relative to tool or lifecycle events.
-///
-/// This is the canonical definition used by both configuration parsing
-/// (`crab_config`) and runtime execution (`crab_plugin`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HookTrigger {
-    /// Before a tool is invoked.
-    PreToolUse,
-    /// After a tool completes.
-    PostToolUse,
-    /// When user submits a prompt (before it reaches the LLM).
-    #[serde(alias = "prompt_submit")]
-    UserPromptSubmit,
-    /// After the model finishes an assistant message, before it is written
-    /// to the conversation or shown in the UI. The hook may return
-    /// `HookAction::Modify` to rewrite the assistant text.
-    ///
-    /// The hook has no visibility into `tool_use` blocks — those are
-    /// considered part of the tool-boundary contract and belong to
-    /// [`Self::PreToolUse`] / [`Self::PostToolUse`].
-    PostSampling,
-    /// When the query loop is about to exit (model produced no tool calls).
-    /// A hook returning `Retry` continues the loop instead of stopping.
-    Stop,
-    /// When a notification is sent.
-    Notification,
-    /// When a session starts.
-    SessionStart,
-    /// When a session ends.
-    SessionEnd,
-    /// After the user accepts the trust dialog for a project for the
-    /// first time. Fires once per project lifetime; useful for one-shot
-    /// project setup (install hooks, materialize config, ...).
-    Setup,
-    /// When a watched file changes (settings.json, skills dir).
-    FileChanged,
-    /// When conversation compaction completes.
-    Compact,
-}
+pub use crab_core::hook::HookTrigger;
 
 /// A single hook definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]

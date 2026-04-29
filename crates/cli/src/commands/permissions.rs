@@ -3,7 +3,7 @@
 
 use clap::Subcommand;
 
-use crab_config::permissions::{
+use crab_core::permission::stored::{
     AuditEntry, AuditSource, PermissionRuleSet, RuleVerdict, load_permission_store,
 };
 
@@ -32,7 +32,7 @@ fn run_audit(limit: usize, project: bool) -> anyhow::Result<()> {
         let cwd = std::env::current_dir().unwrap_or_default();
         PermissionRuleSet::project_path(&cwd)
     } else {
-        PermissionRuleSet::global_path()
+        PermissionRuleSet::global_path(&crab_common::utils::path::home_dir())
     };
 
     let mut ruleset = PermissionRuleSet::new(path.clone());
@@ -91,7 +91,7 @@ fn run_audit(limit: usize, project: bool) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crab_config::permissions::{AuditEntry, PermissionStore, save_permission_store};
+    use crab_core::permission::stored::{AuditEntry, PermissionStore, save_permission_store};
 
     #[test]
     fn run_audit_with_empty_store_is_ok() {

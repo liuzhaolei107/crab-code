@@ -24,6 +24,7 @@ pub mod path_validator;
 pub mod policy;
 pub mod rule_parser;
 pub mod shadowed_rules;
+pub mod stored;
 
 pub use auto_mode::{AutoModeClassifier, RiskLevel, auto_mode_decision};
 pub use decision::PermissionDecision;
@@ -38,3 +39,7 @@ pub use rule_parser::{
     parse_rule,
 };
 pub use shadowed_rules::{ShadowedRule, detect_shadowed_rules};
+pub use stored::{
+    AuditEntry, AuditSource, PermissionRuleSet, PermissionStore, RuleScope, RuleVerdict,
+    StoredPermissionRule, load_permission_store, save_permission_store,
+};

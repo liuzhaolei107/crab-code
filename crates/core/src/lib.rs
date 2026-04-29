@@ -6,6 +6,7 @@ pub use result::Result;
 
 pub mod conversation;
 pub mod event;
+pub mod hook;
 pub mod ide;
 pub mod message;
 pub mod model;

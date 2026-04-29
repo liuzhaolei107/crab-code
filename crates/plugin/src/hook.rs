@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
-pub use crab_config::hooks::HookTrigger;
+pub use crab_core::hook::HookTrigger;
 
 /// A single hook definition from settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -30,7 +30,7 @@ pub enum RuleVerdict {
 /// A single stored permission rule — records a user's decision about a tool.
 ///
 /// Named `StoredPermissionRule` (not `PermissionRule`) to disambiguate from
-/// `crab_core::permission::PermissionRule` which is a runtime rule-matching type.
+/// `crate::permission::PermissionRule` which is a runtime rule-matching type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredPermissionRule {
     /// Tool name or glob pattern (e.g. `"bash"`, `"mcp__*"`).
@@ -121,12 +121,10 @@ impl PermissionRuleSet {
         }
     }
 
-    /// Default global permissions path: `~/.crab/permissions.json`.
+    /// Default global permissions path: `<home_dir>/.crab/permissions.json`.
     #[must_use]
-    pub fn global_path() -> PathBuf {
-        crab_common::utils::path::home_dir()
-            .join(".crab")
-            .join("permissions.json")
+    pub fn global_path(home_dir: &Path) -> PathBuf {
+        home_dir.join(".crab").join("permissions.json")
     }
 
     /// Project-level permissions path: `<project_dir>/.crab/permissions.json`.
@@ -206,7 +204,7 @@ impl PermissionRuleSet {
         // Glob match
         self.rules.iter().find(|r| {
             r.tool_pattern.contains('*')
-                && crab_core::permission::glob_match(&r.tool_pattern, tool_name)
+                && super::glob_match(&r.tool_pattern, tool_name)
         })
     }
 
@@ -246,7 +244,7 @@ impl PermissionRuleSet {
 
     /// Load permanent rules (and audit log) from disk.
     /// Missing file is treated as empty. Session rules are not affected.
-    pub fn load(&mut self) -> crab_core::Result<()> {
+    pub fn load(&mut self) -> crate::Result<()> {
         let store = load_permission_store(&self.store_path)?;
         // Merge loaded permanent rules, keeping existing session rules
         let session_rules: Vec<StoredPermissionRule> = self
@@ -262,7 +260,7 @@ impl PermissionRuleSet {
 
     /// Save permanent rules and audit log to disk.
     /// Session-scoped rules are excluded from the persisted file.
-    pub fn save(&self) -> crab_core::Result<()> {
+    pub fn save(&self) -> crate::Result<()> {
         let store = PermissionStore {
             rules: self
                 .rules
@@ -287,13 +285,13 @@ impl PermissionRuleSet {
 
 /// Load a `PermissionStore` from a JSON file.
 /// Returns `Ok(default)` if the file does not exist.
-pub fn load_permission_store(path: &Path) -> crab_core::Result<PermissionStore> {
+pub fn load_permission_store(path: &Path) -> crate::Result<PermissionStore> {
     match std::fs::read_to_string(path) {
         Ok(content) => serde_json::from_str(&content).map_err(|e| {
-            crab_core::Error::Config(format!("failed to parse {}: {e}", path.display()))
+            crate::Error::Config(format!("failed to parse {}: {e}", path.display()))
         }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(PermissionStore::default()),
-        Err(e) => Err(crab_core::Error::Config(format!(
+        Err(e) => Err(crate::Error::Config(format!(
             "failed to read {}: {e}",
             path.display()
         ))),
@@ -301,29 +299,26 @@ pub fn load_permission_store(path: &Path) -> crab_core::Result<PermissionStore> 
 }
 
 /// Save a `PermissionStore` to a JSON file, creating parent directories.
-pub fn save_permission_store(path: &Path, store: &PermissionStore) -> crab_core::Result<()> {
+pub fn save_permission_store(path: &Path, store: &PermissionStore) -> crate::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
-            crab_core::Error::Config(format!("failed to create {}: {e}", parent.display()))
+            crate::Error::Config(format!("failed to create {}: {e}", parent.display()))
         })?;
     }
     let json = serde_json::to_string_pretty(store)
-        .map_err(|e| crab_core::Error::Config(format!("failed to serialize permissions: {e}")))?;
+        .map_err(|e| crate::Error::Config(format!("failed to serialize permissions: {e}")))?;
     std::fs::write(path, json)
-        .map_err(|e| crab_core::Error::Config(format!("failed to write {}: {e}", path.display())))
+        .map_err(|e| crate::Error::Config(format!("failed to write {}: {e}", path.display())))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
 /// Return current time as ISO 8601 string (UTC).
 fn now_iso8601() -> String {
-    // Use std::time for a simple UTC timestamp without pulling in chrono.
     let duration = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     let secs = duration.as_secs();
-    // Convert to a basic ISO 8601 representation.
-    // days since epoch → year/month/day, then hours:minutes:seconds
     format_unix_timestamp(secs)
 }
 
@@ -335,7 +330,6 @@ fn format_unix_timestamp(secs: u64) -> String {
     let minutes = (time_of_day % 3600) / 60;
     let seconds = time_of_day % 60;
 
-    // Compute year/month/day from days since 1970-01-01
     let (year, month, day) = days_to_ymd(days);
     format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
 }
@@ -362,13 +356,6 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
 mod tests {
     use super::*;
 
-    /// Create a unique temporary directory + `permissions.json` path under it.
-    ///
-    /// Returns `(TempDir, PathBuf)` — the caller MUST keep `TempDir` alive for
-    /// the duration of the test, otherwise the directory is removed on drop.
-    /// Uses `tempfile` (OS-level uniqueness) to avoid race conditions when
-    /// multiple nextest processes hit the same nanosecond-based path on
-    /// coarse-clock CI runners (observed on macOS).
     fn temp_store() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::Builder::new()
             .prefix("crab-perm-test-")
@@ -387,8 +374,6 @@ mod tests {
             context: None,
         }
     }
-
-    // ── RuleScope / RuleVerdict serde ─────────────────────────────────
 
     #[test]
     fn rule_scope_serde_roundtrip() {
@@ -421,8 +406,6 @@ mod tests {
         }
     }
 
-    // ── StoredPermissionRule serde ──────────────────────────────────────────
-
     #[test]
     fn permission_rule_serde_roundtrip() {
         let rule = StoredPermissionRule {
@@ -445,8 +428,6 @@ mod tests {
         let parsed: StoredPermissionRule = serde_json::from_str(&json).unwrap();
         assert!(parsed.context.is_none());
     }
-
-    // ── PermissionStore serde ─────────────────────────────────────────
 
     #[test]
     fn permission_store_default_is_empty() {
@@ -471,8 +452,6 @@ mod tests {
         let parsed: PermissionStore = serde_json::from_str(&json).unwrap();
         assert_eq!(store, parsed);
     }
-
-    // ── PermissionRuleSet CRUD ────────────────────────────────────────
 
     #[test]
     fn add_rule_and_list() {
@@ -554,8 +533,6 @@ mod tests {
         assert_eq!(set.list_rules()[0].tool_pattern, "read");
     }
 
-    // ── Query (check) ─────────────────────────────────────────────────
-
     #[test]
     fn check_exact_match() {
         let (_tmp, path) = temp_store();
@@ -603,8 +580,6 @@ mod tests {
         assert!(set.check("write").is_none());
     }
 
-    // ── Audit log ─────────────────────────────────────────────────────
-
     #[test]
     fn record_audit_entries() {
         let (_tmp, path) = temp_store();
@@ -631,19 +606,15 @@ mod tests {
         set.record_audit("bash", RuleVerdict::Allow, AuditSource::Policy, None);
 
         let entry = &set.audit_log()[0];
-        // Should be a valid ISO 8601 timestamp
         assert!(entry.timestamp.contains('T'));
         assert!(entry.timestamp.ends_with('Z'));
     }
-
-    // ── Persistence (save/load) ───────────────────────────────────────
 
     #[test]
     fn save_and_load_roundtrip() {
         let (_tmp, path) = temp_store();
         let mut set = PermissionRuleSet::new(path.clone());
 
-        // Add rules of both scopes
         set.add_rule(make_rule("bash", RuleVerdict::Allow, RuleScope::Permanent));
         set.add_rule(make_rule("read", RuleVerdict::Allow, RuleScope::Session));
         set.add_rule(make_rule("mcp__*", RuleVerdict::Deny, RuleScope::Permanent));
@@ -651,11 +622,9 @@ mod tests {
 
         set.save().unwrap();
 
-        // Load into a fresh rule set
         let mut set2 = PermissionRuleSet::new(path);
         set2.load().unwrap();
 
-        // Only permanent rules should be loaded
         assert_eq!(set2.list_rules().len(), 2);
         assert!(set2.list_session_rules().is_empty());
         assert_eq!(set2.list_permanent_rules().len(), 2);
@@ -666,19 +635,16 @@ mod tests {
     fn load_preserves_session_rules() {
         let (_tmp, path) = temp_store();
 
-        // Save a permanent rule
         let store = PermissionStore {
             rules: vec![make_rule("bash", RuleVerdict::Allow, RuleScope::Permanent)],
             audit_log: Vec::new(),
         };
         save_permission_store(&path, &store).unwrap();
 
-        // Create a rule set with a session rule, then load
         let mut set = PermissionRuleSet::new(path);
         set.add_rule(make_rule("write", RuleVerdict::Deny, RuleScope::Session));
         set.load().unwrap();
 
-        // Both should be present
         assert_eq!(set.list_rules().len(), 2);
         assert!(set.check("bash").is_some());
         assert!(set.check("write").is_some());
@@ -699,8 +665,6 @@ mod tests {
         assert!(path.exists());
     }
 
-    // ── File I/O helpers ──────────────────────────────────────────────
-
     #[test]
     fn load_invalid_json_returns_error() {
         let (_tmp, path) = temp_store();
@@ -713,11 +677,9 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ── Path helpers ──────────────────────────────────────────────────
-
     #[test]
     fn global_path_under_crab() {
-        let path = PermissionRuleSet::global_path();
+        let path = PermissionRuleSet::global_path(Path::new("/home/user"));
         assert!(path.ends_with("permissions.json"));
         let parent = path.parent().unwrap();
         assert!(parent.ends_with(".crab"));
@@ -730,8 +692,6 @@ mod tests {
         assert!(path.to_string_lossy().contains(".crab"));
     }
 
-    // ── Timestamp helpers ─────────────────────────────────────────────
-
     #[test]
     fn format_unix_timestamp_epoch() {
         assert_eq!(format_unix_timestamp(0), "1970-01-01T00:00:00Z");
@@ -739,7 +699,6 @@ mod tests {
 
     #[test]
     fn format_unix_timestamp_known_date() {
-        // 2026-04-05T00:00:00Z = 1775347200
         let ts = format_unix_timestamp(1_775_347_200);
         assert!(ts.starts_with("2026-04-05"));
         assert!(ts.ends_with('Z'));
@@ -750,10 +709,8 @@ mod tests {
         let ts = now_iso8601();
         assert!(ts.contains('T'));
         assert!(ts.ends_with('Z'));
-        assert!(ts.starts_with("20")); // Year 20xx
+        assert!(ts.starts_with("20"));
     }
-
-    // ── Debug impl ────────────────────────────────────────────────────
 
     #[test]
     fn debug_impl() {
