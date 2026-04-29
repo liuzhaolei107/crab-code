@@ -17,7 +17,7 @@ pub use file_history::{FileHistory, Snapshot, SnapshotError};
 pub use repl_commands::{CommandResult, ReplCommand};
 pub use runtime::{
     AgentRuntime, NotificationHookSink, QueryTaskResult, RuntimeInitConfig, RuntimeInitMeta,
-    SlashDispatch, TeamMemberSnapshot, TeamSnapshot,
+    TeamMemberSnapshot, TeamSnapshot,
 };
 pub use session::{AgentSession, SessionConfig};
 pub use slash_commands::{

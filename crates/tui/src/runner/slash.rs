@@ -1,10 +1,12 @@
 //! Slash command infrastructure for the TUI runner.
 //!
-//! Routes user-submitted lines through the agent's slash registry and
-//! translates [`crab_agent::SlashAction`] variants into concrete state
-//! mutations on the [`App`].
+//! Owns the slash dispatch flow: parses user input, consults the
+//! [`SlashCommandRegistry`] (built-in commands), falls through to the
+//! [`SkillRegistry`] (user skills), and translates [`SlashAction`]
+//! variants into concrete state mutations on the [`App`].
 
 use crab_agent::runtime::AgentRuntime;
+use crab_agent::{SlashCommandContext, SlashCommandRegistry, SlashCommandResult};
 
 use crate::app::App;
 use crate::components::autocomplete::CommandInfo;
@@ -109,23 +111,55 @@ pub(super) enum SubmitOutcome {
 pub(super) fn handle_submit(
     rt: &mut AgentRuntime,
     app: &mut App,
+    slash_registry: &SlashCommandRegistry,
     text: &str,
     session_id: &str,
 ) -> SubmitOutcome {
-    use crab_agent::{SlashCommandResult, SlashDispatch};
+    let trimmed = text.trim();
+    if !trimmed.starts_with('/') {
+        return SubmitOutcome::SpawnQuery(text.to_string());
+    }
 
-    match rt.dispatch_slash(text, session_id) {
-        SlashDispatch::Prompt(prompt) | SlashDispatch::Passthrough(prompt) => {
-            SubmitOutcome::SpawnQuery(prompt)
-        }
-        SlashDispatch::Builtin(result) => match result {
+    let without_slash = trimmed.trim_start_matches('/');
+    let command = without_slash.split_whitespace().next().unwrap_or("");
+    let args = without_slash.trim_start_matches(command).trim();
+
+    let ctx = build_slash_ctx(rt, session_id);
+    if let Some(result) = slash_registry.execute(command, args, &ctx) {
+        return match result {
             SlashCommandResult::Message(msg) => {
                 app.push_system_message(msg);
                 SubmitOutcome::Handled
             }
             SlashCommandResult::Silent => SubmitOutcome::Handled,
             SlashCommandResult::Action(action) => apply_slash_action(rt, app, action, session_id),
-        },
+        };
+    }
+
+    if let Some(skill) = rt.skill_registry().find_command(command) {
+        let mut prompt = skill.content.clone();
+        if !args.is_empty() {
+            prompt.push_str("\n\nUser arguments: ");
+            prompt.push_str(args);
+        }
+        return SubmitOutcome::SpawnQuery(prompt);
+    }
+
+    SubmitOutcome::SpawnQuery(text.to_string())
+}
+
+fn build_slash_ctx<'a>(rt: &'a AgentRuntime, session_id: &'a str) -> SlashCommandContext<'a> {
+    let cost_summary = rt.cost().summary();
+    let estimated_tokens = cost_summary.input_tokens + cost_summary.output_tokens;
+    SlashCommandContext {
+        model: &rt.loop_config().model,
+        session_id,
+        working_dir: &rt.tool_ctx().working_dir,
+        permission_mode: rt.tool_ctx().permission_mode,
+        cost: rt.cost(),
+        estimated_tokens,
+        message_count: rt.conversation().len(),
+        memory_dir: rt.memory_dir(),
     }
 }
 

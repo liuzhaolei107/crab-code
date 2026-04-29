@@ -17,6 +17,7 @@ use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
 use crab_agent::LlmBackend;
+use crab_agent::SlashCommandRegistry;
 use crab_agent::runtime::{AgentRuntime, RuntimeInitMeta};
 use crab_core::event::Event;
 
@@ -45,6 +46,7 @@ pub(super) async fn run_loop(
 ) -> anyhow::Result<()> {
     // `state` starts as None (Initializing) and is populated by InitComplete.
     let mut state: Option<AgentRuntime> = None;
+    let slash_registry = SlashCommandRegistry::new();
     let mut init_rx = Some(init_rx);
 
     let mut conv_return: Option<tokio::sync::oneshot::Receiver<crab_agent::QueryTaskResult>> = None;
@@ -153,7 +155,7 @@ pub(super) async fn run_loop(
                     }
 
                     if let Some(queued_text) = app.dequeue_command() {
-                        match handle_submit(rt, app, &queued_text, session_id) {
+                        match handle_submit(rt, app, &slash_registry, &queued_text, session_id) {
                             SubmitOutcome::SpawnQuery(prompt) => {
                                 cancel = tokio_util::sync::CancellationToken::new();
                                 rt.tool_ctx_mut().cancellation_token = cancel.clone();
@@ -278,7 +280,7 @@ pub(super) async fn run_loop(
                     continue;
                 };
 
-                match handle_submit(rt, app, &text, session_id) {
+                match handle_submit(rt, app, &slash_registry, &text, session_id) {
                     SubmitOutcome::SpawnQuery(prompt) => {
                         cancel = tokio_util::sync::CancellationToken::new();
                         rt.tool_ctx_mut().cancellation_token = cancel.clone();
