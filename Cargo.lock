@@ -1198,6 +1198,7 @@ dependencies = [
  "crab-config",
  "crab-core",
  "keyring",
+ "keyring-core",
  "oauth2",
  "rand 0.10.1",
  "reqwest 0.13.3",

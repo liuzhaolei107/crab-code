@@ -175,7 +175,7 @@
 | 21 | Subprocess | execa | tokio::process | [docs.rs/tokio](https://docs.rs/tokio) |
 | 22 | Process tree | tree-kill | sysinfo | [docs.rs/sysinfo](https://docs.rs/sysinfo) |
 | 23 | System directories | -- | directories | [docs.rs/directories](https://docs.rs/directories) |
-| 24 | Keychain | Custom impl | keyring | [docs.rs/keyring](https://docs.rs/keyring) |
+| 24 | Keychain | Custom impl | keyring-core | [docs.rs/keyring-core](https://docs.rs/keyring-core) |
 
 ### 3.6 Observability / Cache
 
@@ -935,7 +935,7 @@ pub fn resolve_auth_key(cfg: &crab_config::Config) -> Option<String> {
 use crate::error::AuthError;
 
 pub fn get(service: &str, key: &str) -> Result<String, AuthError> {
-    let entry = keyring::Entry::new(service, key)
+    let entry = keyring_core::Entry::new(service, key)
         .map_err(|e| AuthError::Auth { message: format!("keychain init failed: {e}") })?;
     entry.get_password().map_err(|e| AuthError::Auth {
         message: format!("keychain read failed: {e}"),
@@ -943,7 +943,7 @@ pub fn get(service: &str, key: &str) -> Result<String, AuthError> {
 }
 
 pub fn set(service: &str, key: &str, value: &str) -> Result<(), AuthError> {
-    let entry = keyring::Entry::new(service, key)
+    let entry = keyring_core::Entry::new(service, key)
         .map_err(|e| AuthError::Auth { message: format!("keychain init failed: {e}") })?;
     entry.set_password(value).map_err(|e| AuthError::Auth {
         message: format!("keychain write failed: {e}"),
@@ -951,7 +951,7 @@ pub fn set(service: &str, key: &str, value: &str) -> Result<(), AuthError> {
 }
 ```
 
-**External Dependencies**: `crab-common`, `crab-core`, `crab-config`, `keyring`, `oauth2`, `reqwest`
+**External Dependencies**: `crab-common`, `crab-core`, `crab-config`, `keyring`, `keyring-core`, `oauth2`, `reqwest`
 
 **Feature Flags**
 

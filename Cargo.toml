@@ -80,6 +80,7 @@ libc = "0.2"
 
 # ─── 认证 ───
 keyring = "4"
+keyring-core = "1"
 oauth2 = "5"
 
 # ─── 可观测性 ───
