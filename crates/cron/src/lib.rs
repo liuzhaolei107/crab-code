@@ -1,16 +1,16 @@
-//! `crab-job` — unified scheduling primitives for the whole workspace.
+//! `crab-cron` — unified scheduling primitives for the whole workspace.
 //!
 //! Replaces hand-rolled `tokio::time::interval` and `sleep_until` scatter
 //! across `crab-mcp` (heartbeat), `crab-agent` (proactive timers),
 //! `crab-remote` (server-scheduled triggers), and user-facing cron jobs.
 //! One API, one view — the TUI can render "pending jobs", the web UI can
-//! show a jobs panel, and the CLI can offer `crab jobs list / cancel`.
+//! show a jobs panel, and the CLI can offer `crab cron list / cancel`.
 //!
 //! ## Quick start
 //!
 //! ```no_run
 //! use std::{sync::Arc, time::Duration};
-//! use crab_job::{FnHandler, JobHandler, JobScheduler, JobSpec};
+//! use crab_cron::{FnHandler, JobHandler, JobScheduler, JobSpec};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let sched = JobScheduler::new();

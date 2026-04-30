@@ -1289,6 +1289,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "crab-cron"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "crab-core",
+ "croner",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "crab-daemon"
 version = "0.1.0"
 dependencies = [
@@ -1358,21 +1373,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "tracing",
-]
-
-[[package]]
-name = "crab-job"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "crab-core",
- "croner",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
  "tracing",
 ]
 

@@ -1,11 +1,11 @@
 [package]
-name = "crab-job"
+name = "crab-cron"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Unified job scheduling — one-shot / interval / cron — for crab subsystems"
+description = "Unified scheduling — one-shot / interval / cron — for crab subsystems"
 
 [dependencies]
 crab-core.workspace = true

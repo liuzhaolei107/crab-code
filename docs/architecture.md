@@ -3567,9 +3567,9 @@ src/
 
 ---
 
-### 6.26 `crates/job/` -- Unified Scheduling
+### 6.26 `crates/cron/` -- Unified Scheduling
 
-**Responsibility**: Layer 2 crate that replaces the hand-rolled `tokio::time::interval` and `sleep_until` calls scattered across `crab-mcp` (heartbeat), `crab-agent` (proactive timers), `crab-remote` (server-scheduled triggers), and provides user-facing cron jobs. One API, one view — TUI can render "pending jobs", web UI can show a jobs panel, CLI can offer `crab jobs list / cancel`.
+**Responsibility**: Layer 2 crate that replaces the hand-rolled `tokio::time::interval` and `sleep_until` calls scattered across `crab-mcp` (heartbeat), `crab-agent` (proactive timers), `crab-remote` (server-scheduled triggers), and provides user-facing cron jobs. One API, one view — TUI can render "pending jobs", web UI can show a jobs panel, CLI can offer `crab cron list / cancel`.
 
 **Why needed under the multi-entry-point architecture**: every entry point (cli / ide / web / app / desktop) needs to **observe** scheduled work. Centralising through a shared crate means the scheduler state is queryable from any composition root (daemon for headless hosts, cli for interactive).
 
@@ -3592,7 +3592,7 @@ src/
 └── handler.rs                   // JobHandler trait
 ```
 
-**Naming**: singular `job` (not `jobs`) per workspace convention — system-concept crates are singular (`skill`, `session`, `memory`, `engine`); only `tools` is plural because it's a collection of implementations. CLI commands stay plural (`crab jobs list`) per Unix convention; crate name and CLI surface don't need to match.
+**Naming**: `cron` reflects that scheduling (cron / interval / one-shot) is the primary concept, matching the user-facing `CronCreate` / `CronDelete` / `CronList` tool names.
 
 **Internal dependencies**: `core`.
 
@@ -3707,7 +3707,7 @@ default = []
 [features]
 default = []
 
-# --- crates/job/Cargo.toml ---
+# --- crates/cron/Cargo.toml ---
 [features]
 default = []
 
@@ -3981,7 +3981,7 @@ Auth: JWT (`remote/auth/jwt.rs`). Wire types derive `schemars::JsonSchema` so TS
                                └────────────────┘
 ```
 
-A supervisor crab uses `remote::client` to dispatch work to a worker crab's `remote::server`. Target need not be another crab — any server speaking crab-proto works (webhook bot, user-built VPS front-end). No local session is touched on the sender; on the receiver the request lands via the same attach flow as §10.4. Scheduling for recurring triggers is delegated to `crates/job` (cron / interval / one-shot) rather than hand-rolled per-subsystem timers.
+A supervisor crab uses `remote::client` to dispatch work to a worker crab's `remote::server`. Target need not be another crab — any server speaking crab-proto works (webhook bot, user-built VPS front-end). No local session is touched on the sender; on the receiver the request lands via the same attach flow as §10.4. Scheduling for recurring triggers is delegated to `crates/cron` (cron / interval / one-shot) rather than hand-rolled per-subsystem timers.
 
 ---
 

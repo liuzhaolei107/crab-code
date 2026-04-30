@@ -173,7 +173,7 @@ crab-telemetry = { path = "crates/telemetry" }
 crab-engine = { path = "crates/engine" }
 crab-remote = { path = "crates/remote" }
 crab-sandbox = { path = "crates/sandbox" }
-crab-job = { path = "crates/job" }
+crab-cron = { path = "crates/cron" }
 crab-swarm = { path = "crates/swarm" }
 
 [workspace.lints.rust]
