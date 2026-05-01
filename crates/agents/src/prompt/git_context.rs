@@ -8,7 +8,7 @@ use std::process::Command;
 use std::time::Duration;
 
 /// Maximum time allowed for each git command.
-const GIT_TIMEOUT: Duration = Duration::from_millis(200);
+const GIT_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// Collected git repository context.
 #[derive(Debug, Clone)]
