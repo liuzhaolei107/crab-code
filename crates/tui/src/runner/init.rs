@@ -28,7 +28,7 @@ use crate::event_broker::EventBroker;
 use crate::frame_requester::FrameRequester;
 
 use super::TuiConfig;
-use super::event_loop::spawn_event_forwarder;
+use super::repl::spawn_event_forwarder;
 use super::slash::builtin_slash_commands;
 
 /// All resources prepared by [`prepare`] and consumed by the event loop.

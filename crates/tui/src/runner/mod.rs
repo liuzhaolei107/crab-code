@@ -1,4 +1,4 @@
-//! TUI REPL runner — wires App, [`AgentSession`], and terminal lifecycle together.
+//! TUI REPL runner — wires App, agent runtime, and terminal lifecycle together.
 //!
 //! Features:
 //! - Full agent query loop with tool execution
@@ -16,7 +16,7 @@ use crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode};
 
 use crab_agent::{LlmBackend, SessionConfig};
 
-mod event_loop;
+mod repl;
 mod init;
 mod slash;
 
@@ -47,7 +47,7 @@ pub struct TuiConfig {
 pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
     let mut prepared = init::prepare(config)?;
 
-    let result = event_loop::run_loop(
+    let result = repl::run_loop(
         &mut prepared.terminal,
         &mut prepared.app,
         &mut prepared.tui_rx,

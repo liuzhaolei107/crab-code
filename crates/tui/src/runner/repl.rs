@@ -1,7 +1,7 @@
-//! Core render + event loop for the TUI runner.
+//! TUI REPL — the read-eval-print loop that drives the interactive session.
 //!
-//! Drives the agent through user input, agent events, init completion,
-//! filesystem watch events, SIGCONT (Unix), and external-editor handoffs.
+//! Handles user input, agent events, init completion, filesystem watch
+//! events, SIGCONT (Unix), and external-editor handoffs.
 
 use std::io;
 use std::path::PathBuf;
