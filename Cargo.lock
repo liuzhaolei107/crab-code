@@ -1220,6 +1220,7 @@ dependencies = [
  "crab-agent",
  "crab-api",
  "crab-auth",
+ "crab-commands",
  "crab-common",
  "crab-config",
  "crab-core",
@@ -1241,6 +1242,13 @@ dependencies = [
  "tokio-util",
  "toml 1.1.2+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "crab-commands"
+version = "0.1.0"
+dependencies = [
+ "crab-core",
 ]
 
 [[package]]
@@ -1566,6 +1574,7 @@ dependencies = [
  "arboard",
  "chrono",
  "crab-agent",
+ "crab-commands",
  "crab-common",
  "crab-config",
  "crab-core",

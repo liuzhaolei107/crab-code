@@ -580,7 +580,7 @@ async fn run_repl(
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
 
-    let slash_registry = crab_agent::SlashCommandRegistry::new();
+    let slash_registry = crab_commands::CommandRegistry::new();
 
     loop {
         // Print prompt
@@ -646,29 +646,32 @@ enum SlashOutcome {
 async fn dispatch_slash_command(
     session: &mut AgentSession,
     skill_registry: &crab_skill::SkillRegistry,
-    slash_registry: &crab_agent::SlashCommandRegistry,
+    command_registry: &crab_commands::CommandRegistry,
     cmd_rest: &str,
 ) -> SlashOutcome {
     let (name, args) = cmd_rest
         .split_once(char::is_whitespace)
         .map_or((cmd_rest, ""), |(n, a)| (n, a.trim()));
 
-    // Built-in shortcut: /exit and /quit terminate the REPL even before the
-    // registry is consulted (cmd_exit returns SlashAction::Exit, same effect,
-    // but this keeps REPL termination independent of registry state).
     if matches!(name, "exit" | "quit") {
         eprintln!("Goodbye!");
         return SlashOutcome::Exit;
     }
 
-    // Snapshot session fields before executing (execute borrows session
-    // through the context, but we also read session state below).
-    let ctx = crab_agent::SlashCommandContext {
+    let summary = session.cost.summary();
+    let ctx = crab_commands::CommandContext {
         model: &session.config.model,
         session_id: &session.conversation.id,
         working_dir: &session.tool_ctx.working_dir,
         permission_mode: session.tool_ctx.permission_mode,
-        cost: &session.cost,
+        cost: crab_commands::CostSnapshot {
+            input_tokens: summary.input_tokens,
+            output_tokens: summary.output_tokens,
+            cache_read_tokens: summary.cache_read_tokens,
+            cache_creation_tokens: summary.cache_creation_tokens,
+            total_cost_usd: summary.total_cost_usd,
+            api_calls: summary.api_calls,
+        },
         estimated_tokens: 0,
         message_count: session.conversation.len(),
         memory_dir: session
@@ -677,20 +680,18 @@ async fn dispatch_slash_command(
             .map(|_| std::path::Path::new(".crab/memory")),
     };
 
-    let result = slash_registry.execute(name, args, &ctx);
+    let result = command_registry.execute(name, args, &ctx);
 
     match result {
-        Some(crab_agent::SlashCommandResult::Message(msg)) => {
+        Some(crab_commands::CommandResult::Message(msg)) => {
             println!("{msg}");
             SlashOutcome::Continue
         }
-        Some(crab_agent::SlashCommandResult::Action(action)) => {
-            handle_slash_action(session, action).await
+        Some(crab_commands::CommandResult::Effect(effect)) => {
+            handle_command_effect(session, effect).await
         }
-        Some(crab_agent::SlashCommandResult::Silent) => SlashOutcome::Continue,
+        Some(crab_commands::CommandResult::Silent) => SlashOutcome::Continue,
         None => {
-            // Unknown to our registry — fall back to skill expansion so
-            // user-defined `/my-skill` style commands still resolve.
             let expanded = resolve_slash_command(&format!("/{cmd_rest}"), skill_registry);
             if expanded == format!("/{cmd_rest}") {
                 eprintln!("Unknown command: /{name}. Try /help.");
@@ -702,25 +703,25 @@ async fn dispatch_slash_command(
     }
 }
 
-/// Apply a [`SlashAction`](crab_agent::SlashAction) to the running session.
+/// Apply a [`CommandEffect`] to the running session.
 #[cfg(not(feature = "tui"))]
-async fn handle_slash_action(
+async fn handle_command_effect(
     session: &mut AgentSession,
-    action: crab_agent::SlashAction,
+    effect: crab_commands::CommandEffect,
 ) -> SlashOutcome {
-    use crab_agent::SlashAction;
+    use crab_commands::CommandEffect;
 
-    match action {
-        SlashAction::Exit => {
+    match effect {
+        CommandEffect::Exit => {
             eprintln!("Goodbye!");
             SlashOutcome::Exit
         }
-        SlashAction::Clear => {
+        CommandEffect::Clear => {
             session.conversation.clear();
             println!("[info] Conversation cleared. System prompt and cost accumulator retained.");
             SlashOutcome::Continue
         }
-        SlashAction::Compact => {
+        CommandEffect::Compact => {
             let before = session.conversation.len();
             let summary = session.compact_conversation().await;
             let after = session.conversation.len();
@@ -730,7 +731,7 @@ async fn handle_slash_action(
             );
             SlashOutcome::Continue
         }
-        SlashAction::Rewind(target) => {
+        CommandEffect::Rewind(target) => {
             let what = target.as_deref().unwrap_or("(most-recent edit)");
             println!(
                 "[info] /rewind {what}: the `file_history` primitive is ready but \
@@ -740,11 +741,7 @@ async fn handle_slash_action(
             SlashOutcome::Continue
         }
         other => {
-            // SwitchModel / Resume / Export / Init / TogglePlanMode / SetEffort /
-            // ToggleFast / AddDir / CopyLast all need plumbing beyond REPL
-            // state; accept the command but inform the user the runtime
-            // effect is pending.
-            println!("[info] Slash action {other:?} is not yet wired in the REPL.");
+            println!("[info] Command effect {other:?} is not yet wired in the REPL.");
             SlashOutcome::Continue
         }
     }

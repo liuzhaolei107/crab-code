@@ -175,6 +175,7 @@ crab-remote = { path = "crates/remote" }
 crab-sandbox = { path = "crates/sandbox" }
 crab-cron = { path = "crates/cron" }
 crab-swarm = { path = "crates/swarm" }
+crab-commands = { path = "crates/commands" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

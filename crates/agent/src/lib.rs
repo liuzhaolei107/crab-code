@@ -6,7 +6,6 @@ pub mod proactive;
 pub mod repl_commands;
 pub mod runtime;
 pub mod session;
-pub mod slash_commands;
 pub mod summarizer;
 pub mod system_prompt;
 pub mod teams;
@@ -20,9 +19,6 @@ pub use runtime::{
     TeamMemberSnapshot, TeamSnapshot,
 };
 pub use session::{AgentSession, SessionConfig};
-pub use slash_commands::{
-    OverlayKind, SlashAction, SlashCommandContext, SlashCommandRegistry, SlashCommandResult,
-};
 pub use summarizer::{
     ConversationSummary, SummarizerConfig, SummaryItem, SummaryItemKind, summarize_conversation,
 };

@@ -17,8 +17,8 @@ use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
 use crab_agent::LlmBackend;
-use crab_agent::SlashCommandRegistry;
 use crab_agent::runtime::{AgentRuntime, RuntimeInitMeta};
+use crab_commands::CommandRegistry;
 use crab_core::event::Event;
 
 use crate::app::{App, AppAction};
@@ -46,7 +46,7 @@ pub(super) async fn run_loop(
 ) -> anyhow::Result<()> {
     // `state` starts as None (Initializing) and is populated by InitComplete.
     let mut state: Option<AgentRuntime> = None;
-    let slash_registry = SlashCommandRegistry::new();
+    let slash_registry = CommandRegistry::new();
     let mut init_rx = Some(init_rx);
 
     let mut conv_return: Option<tokio::sync::oneshot::Receiver<crab_agent::QueryTaskResult>> = None;

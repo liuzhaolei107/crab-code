@@ -1,12 +1,12 @@
 //! Slash command infrastructure for the TUI runner.
 //!
 //! Owns the slash dispatch flow: parses user input, consults the
-//! [`SlashCommandRegistry`] (built-in commands), falls through to the
-//! [`SkillRegistry`] (user skills), and translates [`SlashAction`]
+//! [`CommandRegistry`] (built-in commands), falls through to the
+//! [`SkillRegistry`] (user skills), and translates [`CommandEffect`]
 //! variants into concrete state mutations on the [`App`].
 
 use crab_agent::runtime::AgentRuntime;
-use crab_agent::{SlashCommandContext, SlashCommandRegistry, SlashCommandResult};
+use crab_commands::{CommandContext, CommandEffect, CommandRegistry, CommandResult, CostSnapshot};
 
 use crate::app::App;
 use crate::components::autocomplete::CommandInfo;
@@ -104,14 +104,14 @@ pub(super) enum SubmitOutcome {
     Quit,
 }
 
-/// Route a user-submitted line through the slash registry and apply any
+/// Route a user-submitted line through the command registry and apply any
 /// local-only effects (push system message, open overlay, compact, switch
 /// model, ...). Returns what the caller should do next.
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_submit(
     rt: &mut AgentRuntime,
     app: &mut App,
-    slash_registry: &SlashCommandRegistry,
+    command_registry: &CommandRegistry,
     text: &str,
     session_id: &str,
 ) -> SubmitOutcome {
@@ -124,15 +124,15 @@ pub(super) fn handle_submit(
     let command = without_slash.split_whitespace().next().unwrap_or("");
     let args = without_slash.trim_start_matches(command).trim();
 
-    let ctx = build_slash_ctx(rt, session_id);
-    if let Some(result) = slash_registry.execute(command, args, &ctx) {
+    let ctx = build_command_ctx(rt, session_id);
+    if let Some(result) = command_registry.execute(command, args, &ctx) {
         return match result {
-            SlashCommandResult::Message(msg) => {
+            CommandResult::Message(msg) => {
                 app.push_system_message(msg);
                 SubmitOutcome::Handled
             }
-            SlashCommandResult::Silent => SubmitOutcome::Handled,
-            SlashCommandResult::Action(action) => apply_slash_action(rt, app, action, session_id),
+            CommandResult::Silent => SubmitOutcome::Handled,
+            CommandResult::Effect(effect) => apply_command_effect(rt, app, effect, session_id),
         };
     }
 
@@ -148,35 +148,41 @@ pub(super) fn handle_submit(
     SubmitOutcome::SpawnQuery(text.to_string())
 }
 
-fn build_slash_ctx<'a>(rt: &'a AgentRuntime, session_id: &'a str) -> SlashCommandContext<'a> {
-    let cost_summary = rt.cost().summary();
-    let estimated_tokens = cost_summary.input_tokens + cost_summary.output_tokens;
-    SlashCommandContext {
+fn build_command_ctx<'a>(rt: &'a AgentRuntime, session_id: &'a str) -> CommandContext<'a> {
+    let summary = rt.cost().summary();
+    let estimated_tokens = summary.input_tokens + summary.output_tokens;
+    CommandContext {
         model: &rt.loop_config().model,
         session_id,
         working_dir: &rt.tool_ctx().working_dir,
         permission_mode: rt.tool_ctx().permission_mode,
-        cost: rt.cost(),
+        cost: CostSnapshot {
+            input_tokens: summary.input_tokens,
+            output_tokens: summary.output_tokens,
+            cache_read_tokens: summary.cache_read_tokens,
+            cache_creation_tokens: summary.cache_creation_tokens,
+            total_cost_usd: summary.total_cost_usd,
+            api_calls: summary.api_calls,
+        },
         estimated_tokens,
         message_count: rt.conversation().len(),
         memory_dir: rt.memory_dir(),
     }
 }
 
-/// Translate a [`crab_agent::SlashAction`] into concrete state mutations.
-pub(super) fn apply_slash_action(
+/// Translate a [`CommandEffect`] into concrete state mutations.
+pub(super) fn apply_command_effect(
     rt: &mut AgentRuntime,
     app: &mut App,
-    action: crab_agent::SlashAction,
+    effect: CommandEffect,
     session_id: &str,
 ) -> SubmitOutcome {
-    use crab_agent::SlashAction;
     use crab_core::permission::PermissionMode;
 
-    match action {
-        SlashAction::Exit => SubmitOutcome::Quit,
+    match effect {
+        CommandEffect::Exit => SubmitOutcome::Quit,
 
-        SlashAction::Clear => {
+        CommandEffect::Clear => {
             rt.save_session(session_id);
             rt.new_session(session_id);
             app.reset_for_new_session();
@@ -184,7 +190,7 @@ pub(super) fn apply_slash_action(
             SubmitOutcome::Handled
         }
 
-        SlashAction::Compact => {
+        CommandEffect::Compact => {
             let (before, after, removed, _summary) = rt.compact_now();
             app.messages.push(crate::app::ChatMessage::CompactBoundary {
                 strategy: "heuristic-summarizer".into(),
@@ -196,14 +202,14 @@ pub(super) fn apply_slash_action(
             SubmitOutcome::Handled
         }
 
-        SlashAction::SwitchModel(name) => {
+        CommandEffect::SwitchModel(name) => {
             rt.loop_config_mut().model = crab_core::model::ModelId::from(name.as_str());
             app.model_name.clone_from(&name);
             app.push_system_message(format!("Switched model to {name}"));
             SubmitOutcome::Handled
         }
 
-        SlashAction::TogglePlanMode => {
+        CommandEffect::TogglePlanMode => {
             let cur = rt.tool_ctx().permission_mode;
             let next = if cur == PermissionMode::Plan {
                 PermissionMode::Default
@@ -216,15 +222,12 @@ pub(super) fn apply_slash_action(
             SubmitOutcome::Handled
         }
 
-        SlashAction::OpenOverlay(kind) => {
+        CommandEffect::OpenOverlay(kind) => {
             app.open_overlay_by_kind(kind);
             SubmitOutcome::Handled
         }
 
-        SlashAction::Init => {
-            // /init writes a starter AGENTS.md into the working directory.
-            // Keep inline so /init is a no-LLM command — matches the
-            // "no surprises" spirit of slash actions.
+        CommandEffect::Init => {
             let path = rt.tool_ctx().working_dir.join("AGENTS.md");
             if path.exists() {
                 app.push_system_message(format!("AGENTS.md already exists at {}", path.display()));
@@ -245,19 +248,13 @@ pub(super) fn apply_slash_action(
             SubmitOutcome::Handled
         }
 
-        SlashAction::Resume(id) => {
-            // Defer session switching to the App's existing SwitchSession
-            // path by queueing an AppAction on the next tick — simpler than
-            // plumbing a new path through here.
+        CommandEffect::Resume(id) => {
             app.push_system_message(format!("Resuming session {id}\u{2026}"));
             app.apply_event(crate::app_event::AppEvent::SwitchSession(id));
             SubmitOutcome::Handled
         }
 
-        SlashAction::Export(path) => {
-            // Dump the conversation as markdown. Lossy — mostly useful for
-            // saving a transcript to share. Images and tool-use details are
-            // collapsed to placeholders.
+        CommandEffect::Export(path) => {
             use std::fmt::Write as _;
             let mut out = String::new();
             for msg in rt.conversation().messages() {
@@ -270,7 +267,7 @@ pub(super) fn apply_slash_action(
             SubmitOutcome::Handled
         }
 
-        SlashAction::SetEffort(level) => {
+        CommandEffect::SetEffort(level) => {
             if let Ok(effort) = level.parse::<crab_agent::EffortLevel>() {
                 rt.loop_config_mut().effort = Some(effort);
                 app.push_system_message(format!("Effort level set to {level}"));
@@ -282,16 +279,14 @@ pub(super) fn apply_slash_action(
             SubmitOutcome::Handled
         }
 
-        SlashAction::ToggleFast => {
-            // Fast mode is a provider-side feature (Opus 4.6 only); without
-            // live negotiation we can only record the desired flag.
+        CommandEffect::ToggleFast => {
             app.push_system_message(
                 "Fast mode toggle is a no-op in this build — set `fast_mode` in settings.json.",
             );
             SubmitOutcome::Handled
         }
 
-        SlashAction::AddDir(dir) => {
+        CommandEffect::AddDir(dir) => {
             if dir.exists() && dir.is_dir() {
                 app.push_system_message(format!(
                     "Additional working dir registered: {}",
@@ -303,9 +298,7 @@ pub(super) fn apply_slash_action(
             SubmitOutcome::Handled
         }
 
-        SlashAction::CopyLast => {
-            // Find the most recent assistant message and push it via the
-            // notification channel; the clipboard handle lives on App.
+        CommandEffect::CopyLast => {
             let last = app.messages.iter().rev().find_map(|m| match m {
                 crate::app::ChatMessage::Assistant { text } => Some(text.clone()),
                 _ => None,
@@ -322,7 +315,7 @@ pub(super) fn apply_slash_action(
             SubmitOutcome::Handled
         }
 
-        SlashAction::Rewind(target) => {
+        CommandEffect::Rewind(target) => {
             let desc = target.as_deref().unwrap_or("all recent edits");
             app.push_system_message(format!("Rewind requested: {desc}"));
             SubmitOutcome::Handled

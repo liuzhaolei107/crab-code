@@ -28,8 +28,8 @@ impl App {
     /// users must answer the dialog first. Overlays whose data source is not
     /// yet available (no memory dir, no MCP registry, no diff in recent tool
     /// output, …) emit a toast instead of pushing an empty overlay.
-    pub fn open_overlay_by_kind(&mut self, kind: crab_agent::OverlayKind) {
-        use crab_agent::OverlayKind;
+    pub fn open_overlay_by_kind(&mut self, kind: crab_commands::OverlayKind) {
+        use crab_commands::OverlayKind;
         if self.state == AppState::Confirming {
             self.notifications
                 .warn("Resolve the pending permission prompt first");
