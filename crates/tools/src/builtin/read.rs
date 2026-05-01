@@ -256,7 +256,7 @@ async fn read_pdf(path: &Path, pages_spec: Option<&str>) -> Result<ToolOutput> {
         }
     };
 
-    // Extract text using pdf-extract (runs in blocking thread since it's CPU-bound)
+    // Extract text using pdf_oxide (runs in blocking thread since it's CPU-bound)
     #[cfg(feature = "pdf")]
     {
         let pages_owned = pages_spec.map(String::from);
@@ -285,19 +285,12 @@ async fn read_pdf(path: &Path, pages_spec: Option<&str>) -> Result<ToolOutput> {
 #[cfg(feature = "pdf")]
 fn extract_pdf_text(bytes: &[u8], pages_spec: Option<&str>) -> std::result::Result<String, String> {
     use std::fmt::Write;
-    // pdf-extract provides extract_text_from_mem which extracts all pages
-    let full_text = pdf_extract::extract_text_from_mem(bytes)
-        .map_err(|e| format!("Failed to parse PDF: {e}"))?;
 
-    // Split by form-feed (page break) — pdf-extract uses \x0c between pages
-    let raw_pages: Vec<&str> = full_text.split('\x0c').collect();
-    // Filter out trailing empty page that split sometimes creates
-    let all_pages: Vec<&str> = raw_pages
-        .iter()
-        .copied()
-        .filter(|p| !p.trim().is_empty())
-        .collect();
-    let total_pages = all_pages.len();
+    let doc = pdf_oxide::PdfDocument::from_bytes(bytes.to_vec())
+        .map_err(|e| format!("Failed to parse PDF: {e}"))?;
+    let total_pages = doc
+        .page_count()
+        .map_err(|e| format!("Failed to read PDF page count: {e}"))?;
 
     // Determine which pages to return
     let selected_pages: Vec<usize> = if let Some(spec) = pages_spec {
@@ -340,8 +333,8 @@ fn extract_pdf_text(bytes: &[u8], pages_spec: Option<&str>) -> std::result::Resu
     for &page_num in &selected_pages {
         let idx = page_num - 1; // 0-based index
         let _ = writeln!(output, "--- Page {page_num} ---");
-        if idx < all_pages.len() {
-            output.push_str(all_pages[idx].trim());
+        if let Ok(page_text) = doc.extract_text(idx) {
+            output.push_str(page_text.trim());
         }
         output.push_str("\n\n");
     }

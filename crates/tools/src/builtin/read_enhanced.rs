@@ -276,7 +276,7 @@ pub enum PdfReadResult {
 
 /// Attempt to extract text from a PDF file.
 ///
-/// Uses `pdf-extract` when the `pdf` feature is enabled, otherwise
+/// Uses `pdf_oxide` when the `pdf` feature is enabled, otherwise
 /// returns a fallback message suggesting alternatives.
 #[must_use]
 pub fn read_pdf(path: &Path, page_range: Option<(usize, usize)>) -> PdfReadResult {
@@ -302,28 +302,26 @@ pub fn read_pdf(path: &Path, page_range: Option<(usize, usize)>) -> PdfReadResul
     }
 }
 
-/// Real PDF extraction using the `pdf-extract` crate.
+/// Real PDF extraction using `pdf_oxide`.
 #[cfg(feature = "pdf")]
 fn read_pdf_impl(path: &Path, page_range: Option<(usize, usize)>) -> PdfReadResult {
-    let Ok(text) = pdf_extract::extract_text(path) else {
+    let Ok(doc) = pdf_oxide::PdfDocument::open(path) else {
         return PdfReadResult::Unavailable {
             message: format!("Failed to extract text from PDF: {}", path.display()),
         };
     };
 
-    let all_pages: Vec<&str> = text.split('\x0C').collect(); // Form feed separates pages
-    let total = all_pages.len().max(1);
+    let total = doc.page_count().unwrap_or(1).max(1);
 
     let (start, end) = page_range.unwrap_or((1, total));
     let start_idx = start.saturating_sub(1);
     let end_idx = end.min(total);
 
-    let pages: Vec<PdfPage> = all_pages[start_idx..end_idx]
-        .iter()
+    let pages: Vec<PdfPage> = (start_idx..end_idx)
         .enumerate()
-        .map(|(i, text)| PdfPage {
+        .map(|(i, idx)| PdfPage {
             number: start + i,
-            text: (*text).to_string(),
+            text: doc.extract_text(idx).unwrap_or_default(),
         })
         .collect();
 
