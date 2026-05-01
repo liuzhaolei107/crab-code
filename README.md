@@ -123,7 +123,7 @@ Foundation core · utils · config · auth
 
 ```bash
 cargo build --workspace
-cargo test --workspace
+cargo nextest run --workspace          # or: cargo test --workspace
 cargo clippy --workspace -- -D warnings
 ```
 

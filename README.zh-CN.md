@@ -123,7 +123,7 @@ env（runtime 层）永远赢 file。互斥变量按"高优先级先生效"。
 
 ```bash
 cargo build --workspace
-cargo test --workspace
+cargo nextest run --workspace          # 或: cargo test --workspace
 cargo clippy --workspace -- -D warnings
 ```
 
