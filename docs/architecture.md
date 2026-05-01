@@ -2304,7 +2304,7 @@ src/
 │   ├── runtime.rs           //   AgentSession + CoordinatorContext + compact_conversation
 │   └── session_config.rs    //   SessionConfig (flat value struct)
 │
-├── system_prompt/           // Modular prompt assembly
+├── prompt/                  // Modular prompt assembly
 │   ├── mod.rs
 │   ├── builder.rs           //   build_system_prompt_with_memories
 │   ├── git_context.rs       //   Git metadata injection

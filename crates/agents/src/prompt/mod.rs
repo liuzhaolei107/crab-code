@@ -10,10 +10,8 @@
 //! - contextual tips (via [`tips`])
 //! - custom user instructions
 //!
-//! Phase 4.2 consolidated `git_context`, `pr_context`, and `tips` here from
-//! top-level `crates/agents/src/` since they only serve prompt construction.
-//! The former `sections` / `cache` modules (an unused alt-architecture) were
-//! dropped in the same phase.
+//! Consolidates `git_context`, `pr_context`, and `tips` since they only
+//! serve prompt construction.
 
 pub mod builder;
 pub mod git_context;

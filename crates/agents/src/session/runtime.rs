@@ -118,7 +118,7 @@ impl AgentSession {
         if let Some(pr_ref) = &session_config.from_pr
             && !pr_ref.is_empty()
         {
-            match crate::system_prompt::pr_context::load_pr_context(pr_ref) {
+            match crate::prompt::pr_context::load_pr_context(pr_ref) {
                 Ok(ctx) => {
                     conversation
                         .system_prompt

@@ -9,7 +9,7 @@ pub mod repl_commands;
 pub mod runtime;
 pub mod session;
 pub mod summarizer;
-pub mod system_prompt;
+pub mod prompt;
 pub mod teams;
 
 pub use builtin::builtin_agents;
@@ -26,7 +26,7 @@ pub use session::{AgentSession, SessionConfig};
 pub use summarizer::{
     ConversationSummary, SummarizerConfig, SummaryItem, SummaryItemKind, summarize_conversation,
 };
-pub use system_prompt::{build_system_prompt, build_system_prompt_with_memories};
+pub use prompt::{build_system_prompt, build_system_prompt_with_memories};
 pub use teams::{
     AgentHandle, AgentMessage, AgentStatus, AgentWorker, Capability, Envelope, InProcessBackend,
     MessageRouter, RetryDecision, RetryPolicy, RetryTracker, SharedTaskList, SwarmBackend, Task,
