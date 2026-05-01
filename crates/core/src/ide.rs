@@ -6,7 +6,7 @@
 //!   writes into the shared state backed by these types.
 //! - `crab-tui` — reads `IdeSelection` / `IdeConnection` to render the
 //!   "⧉ N lines foo.py" status indicator.
-//! - `crab-agent` — reads `IdeSelection` at prompt submit time to
+//! - `crab-agents` — reads `IdeSelection` at prompt submit time to
 //!   build `<system-reminder>` injection.
 //!
 //! Keeping them in `crab-core` avoids same-layer dependencies between

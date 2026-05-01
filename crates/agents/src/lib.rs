@@ -1,5 +1,7 @@
 pub mod auto_dream;
+pub mod builtin;
 pub mod coordinator;
+pub mod definition;
 pub mod error_recovery;
 pub mod file_history;
 pub mod proactive;
@@ -10,7 +12,9 @@ pub mod summarizer;
 pub mod system_prompt;
 pub mod teams;
 
+pub use builtin::builtin_agents;
 pub use coordinator::{PermissionDecisionEvent, PermissionSyncManager};
+pub use definition::{AgentColor, AgentDefinition, AgentSource, ToolSet};
 pub use error_recovery::{ErrorCategory, ErrorClassifier, RecoveryAction, RecoveryStrategy};
 pub use file_history::{FileHistory, Snapshot, SnapshotError};
 pub use repl_commands::{CommandResult, ReplCommand};
@@ -30,12 +34,12 @@ pub use teams::{
     Worker, WorkerConfig, WorkerPool, WorkerResult, event_channel, shared_task_list,
 };
 
-// Re-exports: allow tui to depend only on crab-agent instead of individual L2 crates.
+// Re-exports: allow tui to depend only on crab-agents instead of individual L2 crates.
 pub use crab_api::LlmBackend;
 pub use crab_api::openai;
 pub use crab_engine::{EffortLevel, QueryConfig};
-pub use crab_mcp::McpManager;
 pub use crab_hooks::{HookExecutor, HookTrigger};
+pub use crab_mcp::McpManager;
 pub use crab_session::{Conversation, CostAccumulator, SessionHistory, SessionMetadata};
 pub use crab_skills::{Skill, SkillRegistry, SkillTrigger};
 pub use crab_tools::executor::{PermissionHandler, ToolExecutor};

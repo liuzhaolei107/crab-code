@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Raw query loop for Crab Code — extracted from crab-agent in v2.3"
+description = "Raw query loop for Crab Code — extracted from crab-agents in v2.3"
 
 [dependencies]
 crab-core.workspace = true

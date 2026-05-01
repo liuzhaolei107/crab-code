@@ -21,7 +21,7 @@ crab-mcp.workspace = true
 crab-process.workspace = true
 crab-tools.workspace = true
 crab-session.workspace = true
-crab-agent.workspace = true
+crab-agents.workspace = true
 crab-commands.workspace = true
 crab-plugin.workspace = true
 crab-skills.workspace = true
@@ -54,7 +54,7 @@ full = [
     "crab-api/vertex",
     "crab-process/pty",
     "crab-telemetry/otlp",
-    "crab-agent/mem-ranker",
+    "crab-agents/mem-ranker",
 ]
 
 [lints]

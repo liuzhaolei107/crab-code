@@ -5,7 +5,7 @@
 //! [`SkillRegistry`] (user skills), and translates [`CommandEffect`]
 //! variants into concrete state mutations on the [`App`].
 
-use crab_agent::runtime::AgentRuntime;
+use crab_agents::runtime::AgentRuntime;
 use crab_commands::{CommandContext, CommandEffect, CommandRegistry, CommandResult, CostSnapshot};
 
 use crate::app::App;
@@ -268,7 +268,7 @@ pub(super) fn apply_command_effect(
         }
 
         CommandEffect::SetEffort(level) => {
-            if let Ok(effort) = level.parse::<crab_agent::EffortLevel>() {
+            if let Ok(effort) = level.parse::<crab_agents::EffortLevel>() {
                 rt.loop_config_mut().effort = Some(effort);
                 app.push_system_message(format!("Effort level set to {level}"));
             } else {

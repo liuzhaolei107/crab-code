@@ -114,7 +114,7 @@ env（runtime 层）永远赢 file。互斥变量按"高优先级先生效"。
 
 ```
 入口    cli · daemon · acp
-编排    agent · engine · session · tui · remote
+编排    agents · engine · session · tui · remote
 服务    api · tools · commands · hooks · mcp · skills · plugin · telemetry · ide · sandbox · swarm · cron · fs · memory · process
 基础    core · common · config · auth
 ```

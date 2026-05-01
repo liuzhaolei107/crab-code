@@ -501,10 +501,7 @@ impl AgentRuntime {
             session_id: session_id.map(String::from),
         };
         tokio::spawn(async move {
-            if let Err(e) = hooks
-                .run(crab_hooks::HookTrigger::FileChanged, &ctx)
-                .await
-            {
+            if let Err(e) = hooks.run(crab_hooks::HookTrigger::FileChanged, &ctx).await {
                 tracing::warn!(error = %e, "file_changed hook failed");
             }
         });
@@ -539,10 +536,7 @@ impl AgentRuntime {
                     tool_exit_code: None,
                     session_id,
                 };
-                if let Err(e) = hooks
-                    .run(crab_hooks::HookTrigger::Notification, &ctx)
-                    .await
-                {
+                if let Err(e) = hooks.run(crab_hooks::HookTrigger::Notification, &ctx).await {
                     tracing::warn!(error = %e, "notification hook failed");
                 }
             });

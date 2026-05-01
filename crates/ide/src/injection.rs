@@ -1,7 +1,7 @@
 //! Prompt injection — turns the current IDE state into
 //! `<system-reminder>` meta-user messages for LLM context.
 //!
-//! Called by `crab-agent` right before sending a user prompt. The
+//! Called by `crab-agents` right before sending a user prompt. The
 //! output string (wrapped by the caller) follows the upstream template
 //! so LLMs trained against that prompt pattern recognize the shape.
 

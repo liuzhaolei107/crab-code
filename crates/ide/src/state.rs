@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 /// Read-side handles for consumers.
 ///
 /// Cloned out of `IdeClient::handles()` and passed to `crab-tui` and
-/// `crab-agent` at startup. When no IDE is connected, the outer
+/// `crab-agents` at startup. When no IDE is connected, the outer
 /// `Option` stays `None` on all clones.
 #[derive(Clone, Default)]
 pub struct IdeHandles {

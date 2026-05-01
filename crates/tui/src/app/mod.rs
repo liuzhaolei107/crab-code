@@ -42,7 +42,7 @@ use crate::vim::VimHandler;
 /// Main TUI application.
 pub struct App {
     /// Tool registry — used to call rendering hooks (`format_use_summary`, `format_result`).
-    pub tool_registry: Option<std::sync::Arc<crab_agent::ToolRegistry>>,
+    pub tool_registry: Option<std::sync::Arc<crab_agents::ToolRegistry>>,
     /// Current application state.
     pub state: AppState,
     /// Text input component.
@@ -97,7 +97,7 @@ pub struct App {
     /// Snapshot of the agent runtime's team coordinator, refreshed by the
     /// runner after every query. `/team` reads this instead of hitting
     /// the runtime synchronously from the render thread.
-    pub team_snapshot: crab_agent::TeamSnapshot,
+    pub team_snapshot: crab_agents::TeamSnapshot,
     /// Current LLM thinking state (extended thinking / chain-of-thought).
     pub thinking: ThinkingState,
     /// Scroll anchor: when the user scrolls up, this holds the line index
@@ -171,7 +171,7 @@ impl App {
             output_styles: OutputStyles::default_styles(),
             working_dir: String::new(),
             memory_dir: None,
-            team_snapshot: crab_agent::TeamSnapshot::default(),
+            team_snapshot: crab_agents::TeamSnapshot::default(),
             thinking: ThinkingState::Idle,
             scroll_anchor: None,
             unseen_message_count: 0,
@@ -233,7 +233,7 @@ impl App {
     }
 
     /// Rebuild the message list from a loaded conversation.
-    pub fn load_session_messages(&mut self, conversation: &crab_agent::Conversation) {
+    pub fn load_session_messages(&mut self, conversation: &crab_agents::Conversation) {
         self.reset_for_new_session();
         self.session_id.clone_from(&conversation.id);
         for msg in conversation.messages() {

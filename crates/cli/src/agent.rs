@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use crab_agent::{AgentSession, SessionConfig, build_system_prompt};
+use crab_agents::{AgentSession, SessionConfig, build_system_prompt};
 use crab_core::event::Event;
 use crab_core::model::ModelId;
 use crab_core::permission::{PermissionMode, PermissionPolicy};

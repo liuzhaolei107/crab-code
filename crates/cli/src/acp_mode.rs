@@ -23,7 +23,7 @@ use acp::schema::{
 };
 use acp::{Client, ConnectionTo, Responder};
 use crab_acp::sdk as acp;
-use crab_agent::{AgentSession, SessionConfig};
+use crab_agents::{AgentSession, SessionConfig};
 use crab_api::LlmBackend;
 use crab_core::event::Event;
 use crab_core::model::ModelId;

@@ -24,7 +24,7 @@ pub struct Tip {
 /// # Example
 ///
 /// ```rust,no_run
-/// use crab_agent::system_prompt::tips::TipRegistry;
+/// use crab_agents::system_prompt::tips::TipRegistry;
 ///
 /// let mut registry = TipRegistry::new();
 /// if let Some(tip) = registry.for_context("bash", None) {

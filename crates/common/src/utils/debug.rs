@@ -5,7 +5,7 @@ use std::path::PathBuf;
 pub enum DebugCategory {
     /// API request/response logging (`crab_api=debug`)
     Api,
-    /// Hook execution logging (`crab_agent::hooks=debug`)
+    /// Hook execution logging (`crab_agents::hooks=debug`)
     Hooks,
     /// Tool input/output logging (`crab_tools=debug`)
     Tools,
@@ -32,7 +32,7 @@ impl DebugCategory {
     pub fn to_filter_directive(self) -> &'static str {
         match self {
             Self::Api => "crab_api=debug",
-            Self::Hooks => "crab_agent=debug",
+            Self::Hooks => "crab_agents=debug",
             Self::Tools => "crab_tools=debug",
             Self::Mcp => "crab_mcp=debug",
         }
@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(DebugCategory::Api.to_filter_directive(), "crab_api=debug");
         assert_eq!(
             DebugCategory::Hooks.to_filter_directive(),
-            "crab_agent=debug"
+            "crab_agents=debug"
         );
         assert_eq!(
             DebugCategory::Tools.to_filter_directive(),

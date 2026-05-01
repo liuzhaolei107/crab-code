@@ -164,7 +164,7 @@ crab-fs = { path = "crates/fs" }
 crab-process = { path = "crates/process" }
 crab-tools = { path = "crates/tools" }
 crab-session = { path = "crates/session" }
-crab-agent = { path = "crates/agent" }
+crab-agents = { path = "crates/agents" }
 crab-tui = { path = "crates/tui" }
 crab-plugin = { path = "crates/plugin" }
 crab-skills = { path = "crates/skills" }

@@ -2,7 +2,7 @@
 //!
 //! Connects to an IDE plugin's MCP server to receive ambient context
 //! (selection, opened file, `@`-mentions) and exposes it via shared state
-//! that `crab-tui` reads for display and `crab-agent` reads for prompt
+//! that `crab-tui` reads for display and `crab-agents` reads for prompt
 //! injection.
 //!
 //! ## Data flow

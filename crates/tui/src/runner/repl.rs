@@ -16,8 +16,8 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
-use crab_agent::LlmBackend;
-use crab_agent::runtime::{AgentRuntime, RuntimeInitMeta};
+use crab_agents::LlmBackend;
+use crab_agents::runtime::{AgentRuntime, RuntimeInitMeta};
 use crab_commands::CommandRegistry;
 use crab_core::event::Event;
 
@@ -49,7 +49,8 @@ pub(super) async fn run_loop(
     let slash_registry = CommandRegistry::new();
     let mut init_rx = Some(init_rx);
 
-    let mut conv_return: Option<tokio::sync::oneshot::Receiver<crab_agent::QueryTaskResult>> = None;
+    let mut conv_return: Option<tokio::sync::oneshot::Receiver<crab_agents::QueryTaskResult>> =
+        None;
     let mut cancel = tokio_util::sync::CancellationToken::new();
 
     let mut frame_rx = frame_requester.subscribe();
@@ -101,7 +102,7 @@ pub(super) async fn run_loop(
                     state = Some(runtime);
                     if let Some(ref rt) = state {
                         rt.fire_lifecycle_hook(
-                            crab_agent::HookTrigger::SessionStart,
+                            crab_agents::HookTrigger::SessionStart,
                             Some(session_id),
                             if working_dir.is_empty() {
                                 None
@@ -181,7 +182,7 @@ pub(super) async fn run_loop(
                                 // SessionEnd, save, break out of run_loop.
                                 cancel.cancel();
                                 rt.fire_lifecycle_hook(
-                                    crab_agent::HookTrigger::SessionEnd,
+                                    crab_agents::HookTrigger::SessionEnd,
                                     Some(session_id),
                                     if app.working_dir.is_empty() {
                                         None
@@ -263,7 +264,7 @@ pub(super) async fn run_loop(
                 if let Some(ref rt) = state {
                     let working_dir = &app.working_dir;
                     rt.fire_lifecycle_hook(
-                        crab_agent::HookTrigger::SessionEnd,
+                        crab_agents::HookTrigger::SessionEnd,
                         Some(session_id),
                         if working_dir.is_empty() {
                             None
@@ -298,7 +299,7 @@ pub(super) async fn run_loop(
                     SubmitOutcome::Quit => {
                         cancel.cancel();
                         rt.fire_lifecycle_hook(
-                            crab_agent::HookTrigger::SessionEnd,
+                            crab_agents::HookTrigger::SessionEnd,
                             Some(session_id),
                             if app.working_dir.is_empty() {
                                 None
@@ -374,7 +375,7 @@ pub(super) async fn run_loop(
             AppAction::FireSetupHook { project_path } => {
                 if let Some(ref rt) = state {
                     rt.fire_lifecycle_hook(
-                        crab_agent::HookTrigger::Setup,
+                        crab_agents::HookTrigger::Setup,
                         Some(session_id),
                         Some(std::path::Path::new(&project_path)),
                     );
@@ -505,7 +506,7 @@ fn reload_settings(app: &mut App, rt: Option<&mut AgentRuntime>) -> Vec<String> 
 
 /// Convert session metadata into sidebar entries for the TUI.
 fn to_sidebar_entries(
-    metas: &[crab_agent::SessionMetadata],
+    metas: &[crab_agents::SessionMetadata],
 ) -> Vec<crate::components::session_sidebar::SessionEntry> {
     metas
         .iter()

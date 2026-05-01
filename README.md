@@ -114,7 +114,7 @@ Env (runtime layer) always wins over file. Mutually-exclusive variants apply hig
 
 ```
 Entry     cli · daemon · acp
-Engine    agent · engine · session · tui · remote
+Engine    agents · engine · session · tui · remote
 Service   api · tools · commands · hooks · mcp · skills · plugin · telemetry · ide · sandbox · swarm · cron · fs · memory · process
 Foundation core · common · config · auth
 ```

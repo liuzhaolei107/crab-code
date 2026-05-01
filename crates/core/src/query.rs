@@ -1,4 +1,4 @@
-//! Query-loop tags shared between `crab-engine`, `crab-agent`, and UI.
+//! Query-loop tags shared between `crab-engine`, `crab-agents`, and UI.
 //!
 //! The actual loop and stop-reason machinery live in `crab-engine`; this
 //! module only carries the labels that need to cross crate boundaries.

@@ -79,7 +79,7 @@ impl App {
                 // Pull the latest snapshot the runner stashed on App
                 // after the last query. Converting the runtime-side
                 // struct to the overlay's view-model keeps the overlay
-                // decoupled from crab_agent types.
+                // decoupled from crab_agents types.
                 let members = self
                     .team_snapshot
                     .members

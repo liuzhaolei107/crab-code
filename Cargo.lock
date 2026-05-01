@@ -1147,7 +1147,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "crab-agent"
+name = "crab-agents"
 version = "0.1.0"
 dependencies = [
  "crab-api",
@@ -1218,7 +1218,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "crab-acp",
- "crab-agent",
+ "crab-agents",
  "crab-api",
  "crab-auth",
  "crab-commands",
@@ -1586,7 +1586,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "chrono",
- "crab-agent",
+ "crab-agents",
  "crab-commands",
  "crab-common",
  "crab-config",

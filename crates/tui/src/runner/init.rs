@@ -18,8 +18,8 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
-use crab_agent::LlmBackend;
-use crab_agent::runtime::{AgentRuntime, RuntimeInitConfig, RuntimeInitMeta};
+use crab_agents::LlmBackend;
+use crab_agents::runtime::{AgentRuntime, RuntimeInitConfig, RuntimeInitMeta};
 use crab_core::event::Event;
 
 use crate::app::App;

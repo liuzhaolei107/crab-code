@@ -312,5 +312,5 @@ mod tests {
     }
 
     // Note: load_pr_context() is not tested here because it requires `gh` CLI.
-    // Integration tests for this would go in crates/agent/tests/.
+    // Integration tests for this would go in crates/agents/tests/.
 }

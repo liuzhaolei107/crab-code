@@ -1,5 +1,5 @@
 [package]
-name = "crab-agent"
+name = "crab-agents"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

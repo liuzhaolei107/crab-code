@@ -13,7 +13,7 @@
 | Layer | Crate | Responsibility |
 |-------|-------|----------------|
 | **Layer 4** Entry Layer | `cli` `daemon` | CLI entry point (clap), background daemon |
-| **Layer 3** Engine Layer | `agent` `engine` `session` `tui` `remote` | Query loop, multi-agent orchestration, session state, terminal UI, remote-control WebSocket server + client |
+| **Layer 3** Engine Layer | `agents` `engine` `session` `tui` `remote` | Query loop, multi-agent orchestration, session state, terminal UI, remote-control WebSocket server + client |
 | **Layer 2** Service Layer | `api` `tools` `commands` `hooks` `mcp` `acp` `fs` `process` `sandbox` `ide` `skills` `plugin` `memory` `swarm` `telemetry` `cron` | Tool system, slash command system, lifecycle hooks, MCP stack, ACP server, LLM clients, file/process/sandbox, IDE client, skill system, plugins, persistent memory, multi-agent infrastructure, telemetry, unified job scheduling |
 | **Layer 1** Foundation Layer | `core` `common` `config` `auth` | Domain model, layered config, authentication |
 
@@ -31,7 +31,7 @@
 ├─────────┼──────────────────────────────────────────────────────┼────────┤
 │         │                 Layer 3: Engine Layer                │        │
 │  ┌──────▼──────┐ ┌──────────┐ ┌──────────┐ ┌────────┐ ┌───────▼─────┐ │
-│  │    agent    │ │  engine  │ │ session  │ │  tui   │ │   remote    │ │
+│  │   agents   │ │  engine  │ │ session  │ │  tui   │ │   remote    │ │
 │  │ orchestra + │ │ raw loop │ │ state +  │ │ ratatui│ │ WS server + │ │
 │  │ swarm +     │ │ stream + │ │ compact  │ │ views  │ │ client +    │ │
 │  │ proactive   │ │ tooluse  │ │ memory   │ │        │ │ crab-proto  │ │
@@ -338,8 +338,8 @@ Legend: `sb` = sandbox, `rem` = remote, `skil` = skill, `proc` = process.
 | 21 | **swarm** | core | Multi-agent infrastructure: message bus, roster, task list, retry, backends |
 | 22 | **session** | core, memory | Session + context compaction |
 | 23 | **engine** | core, api, session, tools, hooks, plugin | Raw query loop (extracted from agent) |
-| 24 | **agent** | common, core, config, engine, memory, session, tools, api, mcp, hooks, plugin, swarm, skills | Orchestrator + coordinator + proactive |
-| 25 | **tui** | common, core, config, agent, commands, memory | Terminal UI; receives tool state via `core::Event` |
+| 24 | **agents** | common, core, config, engine, memory, session, tools, api, mcp, hooks, plugin, swarm, skills | Orchestrator + coordinator + builtin agents + proactive |
+| 25 | **tui** | common, core, config, agents, commands, memory | Terminal UI; receives tool state via `core::Event` |
 | 26 | **cli** (bin) | All crates | Thin entry point (interactive) |
 | 27 | **daemon** (lib+bin) | common, core | Headless composition root — hosts server-side protocols for web/app/desktop |
 
@@ -2269,7 +2269,7 @@ src/
 
 ---
 
-### 6.12 `crates/agent/` -- Orchestrator & Multi-Agent System
+### 6.12 `crates/agents/` -- Orchestrator & Multi-Agent System
 
 **Responsibility**: wraps the raw query loop (`crates/engine`) and adds session-aware orchestration — system prompt assembly, context injection (git/PR), error recovery, multi-agent coordination, file-history snapshots, conversation compaction. Slash commands are in `crates/commands/` (see §6.27). Corresponds to CC `QueryEngine.ts` + `coordinator/` + `tasks/` + `services/compact/` + `utils/fileHistory.ts`. **Does not** contain the low-level message loop (that moved to `crates/engine`, see §6.21).
 
@@ -2278,7 +2278,14 @@ src/
 ```
 src/
 ├── lib.rs
+├── definition.rs            // AgentDefinition, ToolSet, AgentSource, AgentColor
 ├── runtime.rs               // Top-level agent runtime entry
+├── builtin/                 // Built-in agent presets (Explore, Plan, general-purpose)
+│   ├── mod.rs               //   builtin_agents() -> Vec<AgentDefinition>
+│   ├── explore.rs           //   Read-only codebase search agent
+│   ├── plan.rs              //   Read-only architecture planning agent
+│   └── general_purpose.rs   //   General-purpose full-tool agent
+│
 ├── teams/                   // Layer 1 orchestration (re-exports crab_swarm::*)
 │   ├── mod.rs               //   pub use crab_swarm::*; + local re-exports
 │   ├── coordinator.rs       //   TeamCoordinator (Layer 2b glue)
@@ -2842,7 +2849,7 @@ src/
 - The `Action` enum derives `schemars::JsonSchema` to support future multi-frontend (CLI / IDE / web) dispatch via JSON-RPC.
 - Keybinding config uses TOML at `~/.crab/keybindings.toml` with `Action` variant names that round-trip through serde.
 
-**External Dependencies**: `crab-common`, `crab-core`, `crab-config`, `crab-agent`, `crab-commands`, `crab-memory`, `ratatui`, `crossterm`, `syntect`, `pulldown-cmark`, `schemars`
+**External Dependencies**: `crab-common`, `crab-core`, `crab-config`, `crab-agents`, `crab-commands`, `crab-memory`, `ratatui`, `crossterm`, `syntect`, `pulldown-cmark`, `schemars`
 
 > tui does not directly depend on tools; it receives tool execution state via the `crab_core::Event` enum, with crates/cli responsible for assembling agent+tui.
 
@@ -3185,7 +3192,7 @@ async fn main() -> anyhow::Result<()> {
 [features]
 default = ["tui"]
 tui = ["crab-tui"]
-full = ["tui", "crab-plugin/wasm", "crab-api/bedrock", "crab-api/vertex", "crab-process/pty", "crab-telemetry/otlp", "crab-agent/mem-ranker"]
+full = ["tui", "crab-plugin/wasm", "crab-api/bedrock", "crab-api/vertex", "crab-process/pty", "crab-telemetry/otlp", "crab-agents/mem-ranker"]
 ```
 
 ---
@@ -3558,7 +3565,7 @@ Editor (ACP client)  ◄── ACP over stdio ──►  crab-acp (this crate)
                                               AgentHandler trait
                                                     │
                                                     ▼
-                                         crab-engine / crab-agent
+                                         crab-engine / crab-agents
 ```
 
 `AgentHandler` is the crate's external boundary — consumers (cli / daemon) plug in a real implementation wired to `crab-engine`. Mirrors how `crab-mcp::McpServer` takes a `ToolHandler` trait without embedding any specific tool backend.
@@ -3583,7 +3590,7 @@ src/
 
 ### 6.27 `crates/cron/` -- Unified Scheduling
 
-**Responsibility**: Layer 2 crate that replaces the hand-rolled `tokio::time::interval` and `sleep_until` calls scattered across `crab-mcp` (heartbeat), `crab-agent` (proactive timers), `crab-remote` (server-scheduled triggers), and provides user-facing cron jobs. One API, one view — TUI can render "pending jobs", web UI can show a jobs panel, CLI can offer `crab cron list / cancel`.
+**Responsibility**: Layer 2 crate that replaces the hand-rolled `tokio::time::interval` and `sleep_until` calls scattered across `crab-mcp` (heartbeat), `crab-agents` (proactive timers), `crab-remote` (server-scheduled triggers), and provides user-facing cron jobs. One API, one view — TUI can render "pending jobs", web UI can show a jobs panel, CLI can offer `crab cron list / cancel`.
 
 **Why needed under the multi-entry-point architecture**: every entry point (cli / ide / web / app / desktop) needs to **observe** scheduled work. Centralising through a shared crate means the scheduler state is queryable from any composition root (daemon for headless hosts, cli for interactive).
 
@@ -3614,7 +3621,7 @@ src/
 
 ### 6.28 `crates/commands/` -- Slash Command System
 
-**Responsibility**: Layer 2 aggregator. Defines the `SlashCommand` trait, `CommandRegistry`, and 34 built-in slash commands grouped into 7 domain modules. Mirrors the `crates/tools/` pattern (trait + registry + builtin/). Extracted from `crates/agent/src/slash_commands/` so both TUI and CLI can consume commands without depending on the full agent crate.
+**Responsibility**: Layer 2 aggregator. Defines the `SlashCommand` trait, `CommandRegistry`, and 34 built-in slash commands grouped into 7 domain modules. Mirrors the `crates/tools/` pattern (trait + registry + builtin/). Extracted from `crates/agents/src/slash_commands/` so both TUI and CLI can consume commands without depending on the full agent crate.
 
 **Directory Structure**
 
@@ -3655,10 +3662,10 @@ aligned with CCB's design but structured in Rust-idiomatic form.
 
 | Layer | Purpose | CCB equivalent | crab location |
 |-------|---------|----------------|---------------|
-| **L1 — Teams (infrastructure)** | Mailbox, shared task list with `claimTask()`, spawner backends, worker pool, roster (team/member) | `isAgentSwarmsEnabled()` gate + `TeamCreate/Delete/SendMessage` tools + `teammateMailbox` | `crates/agent/src/teams/` ** |
+| **L1 — Teams (infrastructure)** | Mailbox, shared task list with `claimTask()`, spawner backends, worker pool, roster (team/member) | `isAgentSwarmsEnabled()` gate + `TeamCreate/Delete/SendMessage` tools + `teammateMailbox` | `crates/agents/src/teams/` ** |
 | **L2a — Swarm (flat topology)** | Peer-to-peer, competitive task claiming; default usage when Teams is on and Coordinator Mode is off | "opened Teams but didn't enable Coordinator Mode" | `TeamMode::PeerToPeer` enum variant — no separate module |
-| **L2b — Coordinator Mode (star overlay)** | Coordinator agent stripped of hands-on tools, workers run with allow-list, anti-pattern prompt ("understand before delegating") | `feature('COORDINATOR_MODE') && CLAUDE_CODE_COORDINATOR_MODE=1` | `crates/agent/src/coordinator/` ** |
-| **L3 — Session runtime** | `AgentSession` ties conversation + backend + executor + topology choice | — | `crates/agent/src/session/` ** |
+| **L2b — Coordinator Mode (star overlay)** | Coordinator agent stripped of hands-on tools, workers run with allow-list, anti-pattern prompt ("understand before delegating") | `feature('COORDINATOR_MODE') && CLAUDE_CODE_COORDINATOR_MODE=1` | `crates/agents/src/coordinator/` ** |
+| **L3 — Session runtime** | `AgentSession` ties conversation + backend + executor + topology choice | — | `crates/agents/src/session/` ** |
 
 ### Gating
 
@@ -3679,10 +3686,10 @@ aligned with CCB's design but structured in Rust-idiomatic form.
 ### Current state
 
 - `SessionConfig.coordinator_mode: bool` is propagated from env (`CRAB_COORDINATOR_MODE=1`).
-- `crates/agent/src/teams/worker_pool.rs::WorkerPool` is the Layer 1 worker pool.
-- `crates/agent/src/coordinator/` holds the Layer 2b overlay: `Coordinator::from_flag(true).apply(&mut registry, &mut prompt)` retains the registry to `{Agent, SendMessage, TaskStop}` and appends the anti-pattern prompt overlay.
+- `crates/agents/src/teams/worker_pool.rs::WorkerPool` is the Layer 1 worker pool.
+- `crates/agents/src/coordinator/` holds the Layer 2b overlay: `Coordinator::from_flag(true).apply(&mut registry, &mut prompt)` retains the registry to `{Agent, SendMessage, TaskStop}` and appends the anti-pattern prompt overlay.
 - `session/runtime.rs::AgentSession::new` invokes the coordinator if `coordinator_mode` is set; otherwise no-op.
-- `crates/agent/src/coordinator/tool_acl.rs` hosts the `COORDINATOR_TOOLS` / `WORKER_DENIED_TOOLS` constants; `ToolRegistry::retain_names` / `remove_names` in `crates/tools/src/registry.rs` implement the filter.
+- `crates/agents/src/coordinator/tool_acl.rs` hosts the `COORDINATOR_TOOLS` / `WORKER_DENIED_TOOLS` constants; `ToolRegistry::retain_names` / `remove_names` in `crates/tools/src/registry.rs` implement the filter.
 - Workers spawned via `Agent` from a Coordinator session now get a fresh registry built by `Coordinator::build_worker_registry` (default registry minus `WORKER_DENIED_TOOLS`) and an overlay-free prompt snapshotted into `CoordinatorContext::worker_base_prompt`. Non-coordinator sessions inherit as before.
 - File-locked `TaskList` (`crates/swarm/src/task_lock.rs`) provides `with_locked` and `claim_task` over `fd-lock`, serialising cross-process task claims through an OS exclusive lock on `<path>.lock`. Used when teammates live in separate processes (tmux panes, remote agents); single-process use keeps the existing `Arc<Mutex<TaskList>>`.
 
@@ -3759,7 +3766,7 @@ default = []
 [features]
 default = []
 
-# --- crates/agent/Cargo.toml ---
+# --- crates/agents/Cargo.toml ---
 [features]
 default    = []
 mem-ranker = ["crab-memory/mem-ranker"]               # LLM-based memory ranking
@@ -3792,7 +3799,7 @@ full = [                                              # Full-feature build
     "crab-api/vertex",
     "crab-process/pty",
     "crab-telemetry/otlp",
-    "crab-agent/mem-ranker",
+    "crab-agents/mem-ranker",
 ]
 ```
 
@@ -4087,7 +4094,7 @@ MCP protocol extension modules:
 | `health.rs` | Health check + heartbeat |
 
 
-### 11.3 Agent Reliability (crab-agent)
+### 11.3 Agent Reliability (crab-agents)
 
 **Reliability Subsystem** :
 ```

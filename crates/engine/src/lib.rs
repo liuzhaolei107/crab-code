@@ -1,12 +1,12 @@
-//! Raw query loop for Crab Code — extracted from `crab-agent` in v2.3.
+//! Raw query loop for Crab Code — extracted from `crab-agents` in v2.3.
 //!
 //! This crate holds the low-level "messages + backend + tool executor →
 //! streaming events" loop. It is intentionally thin: no system-prompt
-//! assembly, no REPL state, no swarm — those live in `crab-agent` which
+//! assembly, no REPL state, no swarm — those live in `crab-agents` which
 //! wraps the engine.
 //!
 //! The daemon and any SDK consumer should depend on `crab-engine` directly
-//! rather than pulling in the full `crab-agent` surface.
+//! rather than pulling in the full `crab-agents` surface.
 
 use std::sync::Arc;
 
@@ -43,7 +43,7 @@ pub use tool_orchestration::{
 };
 
 /// Unified query configuration — merged from the former `QueryLoopConfig`
-/// and `QueryEngineConfig` in `crab-agent` v2.2.
+/// and `QueryEngineConfig` in `crab-agents` v2.2.
 ///
 /// Owns everything the loop needs to run one or more turns of LLM + tool
 /// execution. Does not include conversation state or an event channel;
@@ -89,7 +89,7 @@ pub struct QueryConfig {
 
 /// Query engine — bundles the immutable handles needed to run the loop.
 ///
-/// Created once per session by `crab-agent` (or a daemon) and reused for
+/// Created once per session by `crab-agents` (or a daemon) and reused for
 /// every query. Holds references to the backend, tool executor, and
 /// configuration; does not own the `Conversation` (passed in per call).
 pub struct QueryEngine {

@@ -1,6 +1,6 @@
 //! Built-in file access tracking hook.
 //!
-//! Monitors PostToolUse events from file-related tools (Read, Edit, Write,
+//! Monitors `PostToolUse` events from file-related tools (Read, Edit, Write,
 //! Grep, Glob) and records which files the agent accessed during a session.
 
 use std::path::PathBuf;
@@ -45,7 +45,7 @@ pub fn classify_tool(tool_name: &str) -> Option<FileAccessType> {
         .map(|(_, kind)| *kind)
 }
 
-/// Extract file path from a PostToolUse event's output JSON.
+/// Extract file path from a `PostToolUse` event's output JSON.
 ///
 /// Looks for common patterns in tool output: `file_path`, `path`, or
 /// `filePath` keys.

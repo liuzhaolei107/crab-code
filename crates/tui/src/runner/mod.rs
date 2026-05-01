@@ -14,10 +14,10 @@ use crossterm::event::DisableBracketedPaste;
 use crossterm::execute;
 use crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode};
 
-use crab_agent::{LlmBackend, SessionConfig};
+use crab_agents::{LlmBackend, SessionConfig};
 
-mod repl;
 mod init;
+mod repl;
 mod slash;
 
 /// Information returned when the TUI exits.
@@ -118,7 +118,7 @@ mod tests {
                 ide_connect: false,
                 coordinator_mode: false,
             },
-            backend: Arc::new(LlmBackend::OpenAi(crab_agent::openai::OpenAiClient::new(
+            backend: Arc::new(LlmBackend::OpenAi(crab_agents::openai::OpenAiClient::new(
                 "http://localhost:0/v1",
                 None,
             ))),

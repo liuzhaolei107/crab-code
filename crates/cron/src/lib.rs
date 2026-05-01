@@ -1,7 +1,7 @@
 //! `crab-cron` — unified scheduling primitives for the whole workspace.
 //!
 //! Replaces hand-rolled `tokio::time::interval` and `sleep_until` scatter
-//! across `crab-mcp` (heartbeat), `crab-agent` (proactive timers),
+//! across `crab-mcp` (heartbeat), `crab-agents` (proactive timers),
 //! `crab-remote` (server-scheduled triggers), and user-facing cron jobs.
 //! One API, one view — the TUI can render "pending jobs", the web UI can
 //! show a jobs panel, and the CLI can offer `crab cron list / cancel`.

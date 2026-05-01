@@ -9,7 +9,7 @@ use crate::str_utils::truncate_chars;
 /// Sub-agent spawning tool.
 ///
 /// This tool does not directly spawn a sub-agent (it lives in `crab-tools`,
-/// which cannot depend on `crab-agent`). Instead, it validates the input
+/// which cannot depend on `crab-agents`). Instead, it validates the input
 /// and returns a structured JSON output with `"action": "spawn_agent"` that
 /// the agent layer's query loop intercepts to spawn an `AgentWorker`.
 pub const AGENT_TOOL_NAME: &str = "Agent";

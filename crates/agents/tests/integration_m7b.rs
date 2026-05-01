@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crab_agent::{
+use crab_agents::{
     AgentSession, SessionConfig, TaskList, TaskStatus, WorkerPool, WorkerResult, shared_task_list,
 };
 use crab_api::LlmBackend;

@@ -95,7 +95,7 @@ impl ToolRegistry {
 
     /// Retain only the tools whose names appear in `allow`, dropping the rest.
     ///
-    /// Used by Coordinator Mode (`crab_agent::coordinator`) to strip a
+    /// Used by Coordinator Mode (`crab_agents::coordinator`) to strip a
     /// coordinator-role registry down to the `{Agent, SendMessage, TaskStop}`
     /// allow-list. Unknown names in `allow` are ignored.
     pub fn retain_names(&mut self, allow: &[&str]) {

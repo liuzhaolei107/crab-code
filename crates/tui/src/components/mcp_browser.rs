@@ -15,7 +15,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Widget};
 
-use crab_agent::ToolRegistry;
+use crab_agents::ToolRegistry;
 
 use crate::keybindings::KeyContext;
 use crate::overlay::{Overlay, OverlayAction};
