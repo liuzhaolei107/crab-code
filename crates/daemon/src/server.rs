@@ -37,7 +37,7 @@ pub struct DaemonConfig {
 
 impl Default for DaemonConfig {
     fn default() -> Self {
-        let data_dir = directories::ProjectDirs::from("", "", "crab-code").map_or_else(
+        let data_dir = crab_utils::path::ProjectDirs::from("", "", "crab-code").map_or_else(
             || {
                 crab_utils::path::home_dir()
                     .join(".local")

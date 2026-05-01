@@ -167,7 +167,7 @@ fn write_token_file(path: &Path, body: &str) -> crab_core::Result<()> {
         })?;
     }
 
-    let mut lock = fd_lock::RwLock::new(f);
+    let mut lock = crab_fs::lock::RwLock::new(f);
     let mut guard = lock
         .write()
         .map_err(|e| crab_core::Error::Other(format!("fd-lock failed: {e}")))?;
@@ -180,7 +180,7 @@ fn write_token_file(path: &Path, body: &str) -> crab_core::Result<()> {
 /// Default token directory under the user's crab config root.
 #[must_use]
 pub fn default_token_dir() -> PathBuf {
-    if let Some(base) = directories::ProjectDirs::from("", "", "crab") {
+    if let Some(base) = crab_utils::path::ProjectDirs::from("", "", "crab") {
         base.config_dir().join("mcp").join("tokens")
     } else {
         PathBuf::from(".crab/mcp/tokens")

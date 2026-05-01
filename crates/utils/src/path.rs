@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+pub use directories::{BaseDirs, ProjectDirs, UserDirs};
+
 /// Normalizes a path by canonicalizing it (resolving symlinks, `.`, `..`)
 /// and stripping the `\\?\` prefix on Windows (via dunce).
 /// Falls back to the original path if canonicalization fails.

@@ -15,7 +15,6 @@ serde_json.workspace = true
 toml.workspace = true
 toml_edit.workspace = true
 jsonschema.workspace = true
-directories.workspace = true
 
 # Optional: only used by the `gen-schema` example. Production binaries
 # never link schemars because the feature is disabled by default.

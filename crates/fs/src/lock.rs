@@ -1,5 +1,7 @@
 //! File locking via `fd-lock`.
 
+pub use fd_lock::RwLock;
+
 use std::path::Path;
 
 /// A held file lock. Dropped when the guard goes out of scope.

@@ -15,7 +15,7 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
-directories.workspace = true
+crab-utils.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

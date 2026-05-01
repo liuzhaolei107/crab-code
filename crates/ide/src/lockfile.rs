@@ -65,7 +65,7 @@ pub enum DiscoverError {
 /// Earlier entries take precedence when multiple lockfiles exist on the
 /// same port. Missing directories are silently skipped — a non-error.
 fn search_dirs() -> Result<Vec<PathBuf>, DiscoverError> {
-    let user_dirs = directories::UserDirs::new().ok_or(DiscoverError::NoHome)?;
+    let user_dirs = crab_utils::path::UserDirs::new().ok_or(DiscoverError::NoHome)?;
     let home = user_dirs.home_dir().to_path_buf();
     Ok(vec![
         home.join(".claude").join("ide"),
