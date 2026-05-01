@@ -1,11 +1,11 @@
 [package]
-name = "crab-common"
+name = "crab-utils"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Shared utilities and constants for Crab Code"
+description = "Shared utilities for Crab Code"
 
 [dependencies]
 unicode-width.workspace = true

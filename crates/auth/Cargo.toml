@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Authentication handling for Crab Code"
 
 [dependencies]
-crab-common.workspace = true
+crab-utils.workspace = true
 crab-config.workspace = true
 crab-core.workspace = true
 keyring.workspace = true

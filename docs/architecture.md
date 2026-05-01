@@ -15,7 +15,7 @@
 | **Layer 4** Entry Layer | `cli` `daemon` | CLI entry point (clap), background daemon |
 | **Layer 3** Engine Layer | `agents` `engine` `session` `tui` `remote` | Query loop, multi-agent orchestration, session state, terminal UI, remote-control WebSocket server + client |
 | **Layer 2** Service Layer | `api` `tools` `commands` `hooks` `mcp` `acp` `fs` `process` `sandbox` `ide` `skills` `plugin` `memory` `swarm` `telemetry` `cron` | Tool system, slash command system, lifecycle hooks, MCP stack, ACP server, LLM clients, file/process/sandbox, IDE client, skill system, plugins, persistent memory, multi-agent infrastructure, telemetry, unified job scheduling |
-| **Layer 1** Foundation Layer | `core` `common` `config` `auth` | Domain model, layered config, authentication |
+| **Layer 1** Foundation Layer | `core` `utils` `config` `auth` | Domain model, utilities, layered config, authentication |
 
 > Dependency direction: upper layers depend on lower layers; reverse dependencies are prohibited. `core` defines the `Tool` trait to avoid circular dependencies between `tools` and `agent`. See §5.3 for inner-layer rules (aggregator vs leaf service; Layer 3 Event-only control flow).
 
@@ -53,7 +53,7 @@
 ├───────────────────────────────────────────────────────────────────────┤
 │                       Layer 1: Foundation Layer                         │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
-│  │   core   │  │  common  │  │  config  │  │   auth   │               │
+│  │   core   │  │  utils   │  │  config  │  │   auth   │               │
 │  │Domain    │  │Error +   │  │Multi-    │  │OAuth +   │               │
 │  │model +   │  │utility   │  │layer     │  │Keychain  │               │
 │  │Tool trait│  │path/text │  │config    │  │          │               │
@@ -70,7 +70,7 @@
 | **Tool Layer** tools/ | 52 Tool directories | `tools` + `mcp` | CC mixes tools and MCP in `services/`; Crab separates them |
 | **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` `memdir/` | `api` `mcp` `acp` `auth` `skill` `plugin` `memory` `telemetry` `sandbox` `ide` `job` | CC's service layer is flat; Crab splits by responsibility. `memdir/` → `memory`; CC `utils/sandbox/` → `sandbox`; CC IDE MCP client surface → `ide`; ACP server → `acp`; unified scheduling → `job` |
 | **Bridge Layer** bridge/ | `bridgeMain.ts` `replBridge.ts` | `remote` (server + client) | CC's `src/bridge/` (inbound server) + `src/remote/` (outbound client) both land in crates/remote, which owns the full crab-proto stack (server + client + wire types, mirroring crab-mcp) |
-| **Foundation Layer** utils/ types/ | `Tool.ts` `context.ts` | `core` `common` `config` | CC scatters types across files; Crab centralizes them in `core` |
+| **Foundation Layer** utils/ types/ | `Tool.ts` `context.ts` | `core` `utils` `config` | CC scatters types across files; Crab centralizes them in `core` |
 
 ### Core Design Philosophy
 
@@ -202,7 +202,7 @@ crab-code/
 ├── crates/                            # 26 crates (details: §6.x)
 │   │
 │   │  # ── Layer 1: Foundation ──
-│   ├── common/                        # shared utils (path/text/id/debug)
+│   ├── utils/                         # shared utils (path/text/id/debug)
 │   ├── core/                          # domain model, Tool trait, permission/, Event
 │   ├── config/                        # multi-layer config load/merge/write
 │   ├── auth/                          # OAuth + keychain + cloud credential chain
@@ -301,7 +301,7 @@ crab-code/
                               └──────────┬──────────┘
                                          │
                               ┌──────────▼──────────┐
-                              │        common       │
+                              │        utils        │
                               └─────────────────────┘
 
                          ┌────────────┐
@@ -315,22 +315,22 @@ Legend: `sb` = sandbox, `rem` = remote, `skil` = skill, `proc` = process.
 
 | # | Crate | Internal Dependencies | Notes |
 |---|-------|-----------------------|-------|
-| 1 | **common** | — | Zero-dependency foundation |
+| 1 | **utils** | — | Zero-dependency utilities |
 | 2 | **core** | — | Pure domain model |
-| 3 | **config** | core, common | Layered merge |
-| 4 | **auth** | common, core, config | Credential chain |
+| 3 | **config** | core, utils | Layered merge |
+| 4 | **auth** | utils, core, config | Credential chain |
 | 5 | **api** | core, config, auth | LlmBackend + Anthropic/OpenAI clients |
-| 6 | **fs** | common, core | File system ops |
-| 7 | **process** | common, core | Subprocess mgmt |
+| 6 | **fs** | utils, core | File system ops |
+| 7 | **process** | utils, core | Subprocess mgmt |
 | 8 | **mcp** | core | MCP client/server |
-| 9 | **telemetry** | common, core | Sidecar, optional |
+| 9 | **telemetry** | utils, core | Sidecar, optional |
 | 10 | **sandbox** | core | Trait + platform backends (seatbelt/landlock/windows/noop) |
 | 11 | **remote** | core, config, auth | crab-proto protocol + WS server + outbound client (inbound hinge for web/app/desktop entry points) |
 | 12 | **acp** | core | Agent Client Protocol server (editor → crab, Zed/Neovim/Helix) |
 | 13 | **ide** | core, mcp | Client to IDE-hosted MCP server (lockfile-based VSCode/JetBrains plugins) |
 | 14 | **cron** | core | Unified scheduler — one-shot / interval / cron |
 | 15 | **skills** | core | Skill discovery + built-in definitions |
-| 16 | **memory** | core, common | Persistent memory store + ranking + AGENTS.md parsing |
+| 16 | **memory** | core, utils | Persistent memory store + ranking + AGENTS.md parsing |
 | 17 | **hooks** | core, process | Lifecycle hook executor, registry, file watcher, built-in hooks |
 | 18 | **plugin** | core, config, mcp, skills | WASM sandbox + skill↔mcp bridge |
 | 19 | **tools** | core, config, fs, process, sandbox, mcp | Layer 2 aggregator; 40+ built-in tools |
@@ -338,10 +338,10 @@ Legend: `sb` = sandbox, `rem` = remote, `skil` = skill, `proc` = process.
 | 21 | **swarm** | core | Multi-agent infrastructure: message bus, roster, task list, retry, backends |
 | 22 | **session** | core, memory | Session + context compaction |
 | 23 | **engine** | core, api, session, tools, hooks, plugin | Raw query loop (extracted from agent) |
-| 24 | **agents** | common, core, config, engine, memory, session, tools, api, mcp, hooks, plugin, swarm, skills | Orchestrator + coordinator + builtin agents + proactive |
-| 25 | **tui** | common, core, config, agents, commands, memory | Terminal UI; receives tool state via `core::Event` |
+| 24 | **agents** | utils, core, config, engine, memory, session, tools, api, mcp, hooks, plugin, swarm, skills | Orchestrator + coordinator + builtin agents + proactive |
+| 25 | **tui** | utils, core, config, agents, commands, memory | Terminal UI; receives tool state via `core::Event` |
 | 26 | **cli** (bin) | All crates | Thin entry point (interactive) |
-| 27 | **daemon** (lib+bin) | common, core | Headless composition root — hosts server-side protocols for web/app/desktop |
+| 27 | **daemon** (lib+bin) | utils, core | Headless composition root — hosts server-side protocols for web/app/desktop |
 
 ### 5.3 Dependency Direction Principles
 
@@ -372,7 +372,7 @@ Rule 6: Layer 3 internal control flow goes via core::Event only.
 
 ## 6. Detailed Crate Designs
 
-### 6.1 `crates/common/` -- Shared Foundation
+### 6.1 `crates/utils/` -- Shared Utilities
 
 **Responsibility**: A pure utility layer with zero business logic; the lowest-level dependency for all crates
 
@@ -395,7 +395,7 @@ src/
 
 **Core Types**
 
-Note: `Error` and `Result<T>` live in `crates/core`, not common. Common is a pure utility layer with no error types.
+Note: `Error` and `Result<T>` live in `crates/core`, not utils. Utils is a pure utility layer with no error types.
 
 ```rust
 // utils/text.rs
@@ -875,7 +875,7 @@ src/
 
 The `Config` struct covers: `api_provider`, `api_base_url`, `api_key_helper`, `model`, `small_model`, `permission_mode`, `system_prompt`, `mcp_servers`, `hooks`, `theme`, and more. Secrets do **not** live on `Config` — the resolved API key flows through an independent chain in `crab-auth` (see 6.4). The configuration sources (`ConfigLayer` enum) are merged at the `toml::Value` layer by `loader::resolve()` (defaults -> plugin -> user -> project -> local -> --config -> env -> CLI flags), with higher-priority sources overriding lower-priority ones.
 
-**External Dependencies**: `crab-common`, `crab-core`, `serde`, `serde_json`, `toml`, `toml_edit`, `jsonschema`, `directories`
+**External Dependencies**: `crab-utils`, `crab-core`, `serde`, `serde_json`, `toml`, `toml_edit`, `jsonschema`, `directories`
 
 **Feature Flags**: None
 
@@ -934,7 +934,7 @@ pub fn resolve_auth_key(cfg: &crab_config::Config) -> Option<String> {
 }
 
 // keychain.rs -- Uses the auth crate's local AuthError, not crab_core::Error
-// (the common layer does not include Auth variants; Auth errors are defined in crates/auth/src/error.rs)
+// (the utils layer does not include Auth variants; Auth errors are defined in crates/auth/src/error.rs)
 use crate::error::AuthError;
 
 pub fn get(service: &str, key: &str) -> Result<String, AuthError> {
@@ -954,7 +954,7 @@ pub fn set(service: &str, key: &str, value: &str) -> Result<(), AuthError> {
 }
 ```
 
-**External Dependencies**: `crab-common`, `crab-core`, `crab-config`, `keyring`, `keyring-core`, `oauth2`, `reqwest`
+**External Dependencies**: `crab-utils`, `crab-core`, `crab-config`, `keyring`, `keyring-core`, `oauth2`, `reqwest`
 
 **Feature Flags**
 
@@ -1527,7 +1527,7 @@ pub fn apply_edit(
 }
 ```
 
-**External Dependencies**: `crab-common`, `crab-core`, `globset`, `grep-matcher`, `grep-regex`, `grep-searcher`, `ignore`, `notify`, `similar`, `fd-lock`
+**External Dependencies**: `crab-utils`, `crab-core`, `globset`, `grep-matcher`, `grep-regex`, `grep-searcher`, `ignore`, `notify`, `similar`, `fd-lock`
 
 **Feature Flags**: None
 
@@ -1612,7 +1612,7 @@ pub fn register_shutdown_handler(
 }
 ```
 
-**External Dependencies**: `crab-common`, `crab-core`, `tokio` (process, signal), `sysinfo`
+**External Dependencies**: `crab-utils`, `crab-core`, `tokio` (process, signal), `sysinfo`
 
 **Feature Flags**
 
@@ -1941,7 +1941,7 @@ impl ToolExecutor {
                     let target = trimmed.strip_prefix("cd ").unwrap().trim();
                     if target.starts_with('/') || target.starts_with("~/") {
                         let expanded = if target.starts_with("~/") {
-                            crab_common::path::home_dir().join(&target[2..])
+                            crab_utils::path::home_dir().join(&target[2..])
                         } else {
                             std::path::PathBuf::from(target)
                         };
@@ -1968,7 +1968,7 @@ impl ToolExecutor {
         // Any absolute path outside the project -> return false (require Prompt)
         abs_paths.iter().all(|p| {
             let expanded = if p.starts_with("~/") {
-                crab_common::path::home_dir().join(&p[2..])
+                crab_utils::path::home_dir().join(&p[2..])
             } else {
                 std::path::PathBuf::from(p)
             };
@@ -2661,7 +2661,7 @@ impl StreamingToolExecutor {
 }
 ```
 
-**External Dependencies**: `crab-common`, `crab-core`, `crab-config`, `crab-engine`, `crab-memory`, `crab-session`, `crab-tools`, `crab-api`, `crab-mcp`, `crab-plugin`, `crab-swarm`, `crab-skill`, `tokio`, `tokio-util`, `futures`
+**External Dependencies**: `crab-utils`, `crab-core`, `crab-config`, `crab-engine`, `crab-memory`, `crab-session`, `crab-tools`, `crab-api`, `crab-mcp`, `crab-plugin`, `crab-swarm`, `crab-skill`, `tokio`, `tokio-util`, `futures`
 
 **Feature Flags**
 
@@ -2849,7 +2849,7 @@ src/
 - The `Action` enum derives `schemars::JsonSchema` to support future multi-frontend (CLI / IDE / web) dispatch via JSON-RPC.
 - Keybinding config uses TOML at `~/.crab/keybindings.toml` with `Action` variant names that round-trip through serde.
 
-**External Dependencies**: `crab-common`, `crab-core`, `crab-config`, `crab-agents`, `crab-commands`, `crab-memory`, `ratatui`, `crossterm`, `syntect`, `pulldown-cmark`, `schemars`
+**External Dependencies**: `crab-utils`, `crab-core`, `crab-config`, `crab-agents`, `crab-commands`, `crab-memory`, `ratatui`, `crossterm`, `syntect`, `pulldown-cmark`, `schemars`
 
 > tui does not directly depend on tools; it receives tool execution state via the `crab_core::Event` enum, with crates/cli responsible for assembling agent+tui.
 
@@ -2965,7 +2965,7 @@ src/
 └── ranker.rs           // LlmMemoryRanker — Sonnet sidequery (feature = "mem-ranker")
 ```
 
-**External Dependencies**: `crab-common`, `crab-core`, `serde`, `serde_json`, `serde_yaml_ng`, `dunce`. Optional: `crab-api`, `tokio` (with `mem-ranker` feature)
+**External Dependencies**: `crab-utils`, `crab-core`, `serde`, `serde_json`, `serde_yaml_ng`, `dunce`. Optional: `crab-api`, `tokio` (with `mem-ranker` feature)
 
 **Feature Flags**
 
@@ -3028,7 +3028,7 @@ pub fn init(service_name: &str, endpoint: Option<&str>) -> crab_core::Result<()>
 }
 ```
 
-**External Dependencies**: `crab-common`, `crab-core`, `tracing`, `tracing-subscriber`; OTLP-related are optional dependencies
+**External Dependencies**: `crab-utils`, `crab-core`, `tracing`, `tracing-subscriber`; OTLP-related are optional dependencies
 
 **Feature Flags**
 
@@ -3325,7 +3325,7 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-**External Dependencies**: `crab-common`, `crab-core`
+**External Dependencies**: `crab-utils`, `crab-core`
 
 ---
 

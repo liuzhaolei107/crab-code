@@ -15,9 +15,7 @@ pub use crab_core::hook::HookTrigger;
 pub use executor::{
     HookAction, HookContext, HookDef, HookExecutor, HookResult, StructuredHookResult,
 };
-pub use registry::{
-    HookEvent, HookEventType, HookRegistry, HookSource, RegisteredHook,
-};
+pub use registry::{HookEvent, HookEventType, HookRegistry, HookSource, RegisteredHook};
 pub use types::{
     AgentHook, CommandHook, HookType, HttpHook, PromptHook, SsrfError, validate_http_hook_url,
 };

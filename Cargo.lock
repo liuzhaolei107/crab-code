@@ -1151,7 +1151,6 @@ name = "crab-agents"
 version = "0.1.0"
 dependencies = [
  "crab-api",
- "crab-common",
  "crab-config",
  "crab-core",
  "crab-engine",
@@ -1163,6 +1162,7 @@ dependencies = [
  "crab-skills",
  "crab-swarm",
  "crab-tools",
+ "crab-utils",
  "serde",
  "serde_json",
  "tempfile",
@@ -1195,9 +1195,9 @@ name = "crab-auth"
 version = "0.1.0"
 dependencies = [
  "base64",
- "crab-common",
  "crab-config",
  "crab-core",
+ "crab-utils",
  "keyring",
  "keyring-core",
  "oauth2",
@@ -1222,7 +1222,6 @@ dependencies = [
  "crab-api",
  "crab-auth",
  "crab-commands",
- "crab-common",
  "crab-config",
  "crab-core",
  "crab-mcp",
@@ -1233,6 +1232,7 @@ dependencies = [
  "crab-telemetry",
  "crab-tools",
  "crab-tui",
+ "crab-utils",
  "owo-colors 4.3.0",
  "reqwest 0.13.3",
  "semver",
@@ -1253,27 +1253,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "crab-common"
-version = "0.1.0"
-dependencies = [
- "directories",
- "dunce",
- "infer",
- "strip-ansi-escapes",
- "tempfile",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "ulid",
- "unicode-width 0.2.2",
-]
-
-[[package]]
 name = "crab-config"
 version = "0.1.0"
 dependencies = [
- "crab-common",
  "crab-core",
+ "crab-utils",
  "directories",
  "jsonschema",
  "schemars 1.2.1",
@@ -1317,8 +1301,8 @@ name = "crab-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crab-common",
  "crab-core",
+ "crab-utils",
  "directories",
  "serde",
  "serde_json",
@@ -1353,8 +1337,8 @@ dependencies = [
 name = "crab-fs"
 version = "0.1.0"
 dependencies = [
- "crab-common",
  "crab-core",
+ "crab-utils",
  "fd-lock",
  "globset",
  "grep-matcher",
@@ -1428,8 +1412,8 @@ name = "crab-memory"
 version = "0.1.0"
 dependencies = [
  "crab-api",
- "crab-common",
  "crab-core",
+ "crab-utils",
  "dunce",
  "serde",
  "serde_json",
@@ -1458,8 +1442,8 @@ dependencies = [
 name = "crab-process"
 version = "0.1.0"
 dependencies = [
- "crab-common",
  "crab-core",
+ "crab-utils",
  "sysinfo",
  "tokio",
 ]
@@ -1502,9 +1486,9 @@ name = "crab-session"
 version = "0.1.0"
 dependencies = [
  "base64",
- "crab-common",
  "crab-core",
  "crab-memory",
+ "crab-utils",
  "image",
  "serde",
  "serde_json",
@@ -1588,10 +1572,10 @@ dependencies = [
  "chrono",
  "crab-agents",
  "crab-commands",
- "crab-common",
  "crab-config",
  "crab-core",
  "crab-memory",
+ "crab-utils",
  "crossterm 0.29.0",
  "futures",
  "libc",
@@ -1609,6 +1593,22 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "crab-utils"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "dunce",
+ "infer",
+ "strip-ansi-escapes",
+ "tempfile",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "ulid",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]

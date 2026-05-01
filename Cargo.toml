@@ -152,7 +152,7 @@ tempfile = "3"
 wat = "1"
 
 # ─── 内部 crate ───
-crab-common = { path = "crates/common" }
+crab-utils = { path = "crates/utils" }
 crab-core = { path = "crates/core" }
 crab-config = { path = "crates/config" }
 crab-auth = { path = "crates/auth" }
