@@ -99,6 +99,8 @@ pub enum AppEvent {
     },
     /// An agent error occurred.
     AgentError(String),
+    /// Streaming response was aborted — discard partial assistant content.
+    StreamAborted { reason: String },
     /// A permission request arrived from the agent.
     PermissionRequested {
         request_id: String,

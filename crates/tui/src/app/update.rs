@@ -870,6 +870,11 @@ impl App {
                 Event::Error { message } => {
                     vec![AppEvent::AgentError(message.clone())]
                 }
+                Event::StreamAborted { reason } => {
+                    vec![AppEvent::StreamAborted {
+                        reason: reason.clone(),
+                    }]
+                }
                 Event::ThinkingDelta { delta, .. } => {
                     vec![AppEvent::ThinkingAppend(delta.clone())]
                 }
@@ -1105,6 +1110,13 @@ impl App {
                 });
                 self.notifications.error(&message);
                 crate::terminal_notify::notify("Crab Code", "Agent error");
+                AppAction::None
+            }
+            AppEvent::StreamAborted { reason } => {
+                if matches!(self.messages.last(), Some(ChatMessage::Assistant { .. })) {
+                    self.messages.pop();
+                }
+                self.notifications.warn(reason);
                 AppAction::None
             }
             AppEvent::PermissionRequested {

@@ -102,6 +102,11 @@ impl ContentBlock {
     pub const fn is_tool_result(&self) -> bool {
         matches!(self, Self::ToolResult { .. })
     }
+
+    /// Returns true if this is an `Image` block.
+    pub const fn is_image(&self) -> bool {
+        matches!(self, Self::Image { .. })
+    }
 }
 
 /// Image source data (base64 encoded).
@@ -577,6 +582,15 @@ mod tests {
         let text = ContentBlock::text("hi");
         assert!(!text.is_tool_use());
         assert!(!text.is_tool_result());
+    }
+
+    #[test]
+    fn content_block_is_image() {
+        let img = ContentBlock::Image {
+            source: ImageSource::base64("image/png", "data"),
+        };
+        assert!(img.is_image());
+        assert!(!ContentBlock::text("hello").is_image());
     }
 
     #[test]

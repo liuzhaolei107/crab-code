@@ -76,6 +76,11 @@ impl Conversation {
         self.inner.messages()
     }
 
+    /// Mutable access to the underlying messages vec.
+    pub fn messages_mut(&mut self) -> &mut Vec<Message> {
+        self.inner.messages_mut()
+    }
+
     /// Number of messages.
     pub fn len(&self) -> usize {
         self.inner.len()

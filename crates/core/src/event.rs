@@ -149,6 +149,10 @@ pub enum Event {
     // ─── Errors ───
     /// An error occurred during processing.
     Error { message: String },
+
+    /// The current streaming response was aborted (e.g. model overloaded,
+    /// falling back to alternate model). TUI should discard partial content.
+    StreamAborted { reason: String },
 }
 
 // ── Frontend abstraction layer ───────────────────────────────────────

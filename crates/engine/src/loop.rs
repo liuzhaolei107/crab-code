@@ -28,7 +28,10 @@ use crate::QueryConfig;
 
 const MAX_PTL_RETRIES: u32 = 3;
 const MAX_OUTPUT_TOKEN_RETRIES: u32 = 3;
-const OUTPUT_TOKEN_SCALE_FACTOR: f64 = 1.5;
+const ESCALATED_MAX_TOKENS: u32 = 64_000;
+const MAX_OUTPUT_TOKENS_RECOVERY: &str = "Output token limit hit. Resume directly — no apology, no recap. \
+     Pick up mid-thought if that is where the cut happened. \
+     Break remaining work into smaller pieces.";
 
 /// Core agent loop: user input -> LLM SSE stream -> parse tool calls ->
 /// execute tools -> serialize results -> next round.
@@ -135,6 +138,12 @@ pub async fn query_loop(
                         ),
                     })
                     .await;
+                // Try stripping image blocks first (cheap, no LLM needed)
+                let stripped = strip_images(conversation);
+                if stripped > 0 {
+                    tracing::info!(stripped, "stripped image blocks for PTL recovery");
+                    continue;
+                }
                 force_compact(
                     conversation,
                     &event_tx,
@@ -151,6 +160,14 @@ pub async fn query_loop(
                 let _ = event_tx
                     .send(Event::Error {
                         message: format!(
+                            "Primary model overloaded, falling back to {}",
+                            fallback.as_str()
+                        ),
+                    })
+                    .await;
+                let _ = event_tx
+                    .send(Event::StreamAborted {
+                        reason: format!(
                             "Primary model overloaded, falling back to {}",
                             fallback.as_str()
                         ),
@@ -185,22 +202,41 @@ pub async fn query_loop(
             .send(Event::MessageEnd { usage: total_usage })
             .await;
 
-        // Handle max_tokens truncation: increase output cap and retry
+        // Handle max_tokens truncation with escalation + continuation
         if is_max_tokens_stop(stop_reason.as_deref())
             && output_token_retries < MAX_OUTPUT_TOKEN_RETRIES
         {
             output_token_retries += 1;
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let new_max = (f64::from(effective_max_tokens) * OUTPUT_TOKEN_SCALE_FACTOR) as u32;
+
+            // First attempt: escalate token cap without injecting a message.
+            // The model retries with a higher ceiling, no conversation change.
+            if output_token_retries == 1 && effective_max_tokens < ESCALATED_MAX_TOKENS {
+                effective_max_tokens = ESCALATED_MAX_TOKENS;
+                let _ = event_tx
+                    .send(Event::Error {
+                        message: format!(
+                            "Output truncated, escalating to {ESCALATED_MAX_TOKENS} tokens \
+                             ({output_token_retries}/{MAX_OUTPUT_TOKEN_RETRIES})"
+                        ),
+                    })
+                    .await;
+                continue;
+            }
+
+            // Subsequent: keep truncated assistant message, inject continuation
             let _ = event_tx
                 .send(Event::Error {
                     message: format!(
-                        "Output truncated (max_tokens), retrying with {new_max} tokens \
+                        "Output truncated, injecting continuation \
                          ({output_token_retries}/{MAX_OUTPUT_TOKEN_RETRIES})"
                     ),
                 })
                 .await;
-            effective_max_tokens = new_max;
+            if let Some(persister) = &config.session_persister {
+                persister.persist_message(&assistant_msg);
+            }
+            conversation.push(assistant_msg);
+            conversation.push(Message::user(MAX_OUTPUT_TOKENS_RECOVERY));
             continue;
         }
         // Reset on non-truncated success
@@ -731,6 +767,33 @@ async fn force_compact(
         })
         .await;
 
+    // Summarize-first: when a client is available, try semantic summarization
+    // before falling back to truncation. Preserves more context per token.
+    if client.is_some() {
+        let summarize_config = CompactionConfig {
+            mode: CompactionMode::Summarize,
+            ..compaction_config.clone()
+        };
+        if let Ok(r) = run_compaction(
+            conversation,
+            client,
+            &summarize_config,
+            CompactionStrategy::Summarize,
+        )
+        .await
+            && r.tokens_saved() > 0
+        {
+            let _ = event_tx
+                .send(Event::CompactEnd {
+                    after_tokens: r.tokens_after,
+                    removed_messages: r.messages_removed(),
+                })
+                .await;
+            fire_compact_hook(hook_executor, session_id);
+            return;
+        }
+    }
+
     // Force truncation mode for PTL recovery
     let ptl_config = CompactionConfig {
         mode: CompactionMode::Truncate,
@@ -767,6 +830,23 @@ async fn force_compact(
             fire_compact_hook(hook_executor, session_id);
         }
     }
+}
+
+/// Strip all image content blocks from the conversation to free token budget.
+/// Returns the number of image blocks removed.
+fn strip_images(conversation: &mut Conversation) -> usize {
+    let mut stripped = 0;
+    for msg in conversation.messages_mut() {
+        msg.content.retain(|block| {
+            if block.is_image() {
+                stripped += 1;
+                false
+            } else {
+                true
+            }
+        });
+    }
+    stripped
 }
 
 /// Fire Compact lifecycle hook in the background (fire-and-forget).
@@ -1232,8 +1312,8 @@ mod tests {
         assert!(MAX_PTL_RETRIES <= 5);
         assert!(MAX_OUTPUT_TOKEN_RETRIES >= 1);
         assert!(MAX_OUTPUT_TOKEN_RETRIES <= 5);
-        assert!(OUTPUT_TOKEN_SCALE_FACTOR > 1.0);
-        assert!(OUTPUT_TOKEN_SCALE_FACTOR <= 3.0);
+        assert!(ESCALATED_MAX_TOKENS >= 16_000);
+        assert!(!MAX_OUTPUT_TOKENS_RECOVERY.is_empty());
     }
 
     // ─── context upgrade tests ───

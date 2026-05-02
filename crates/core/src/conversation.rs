@@ -85,6 +85,11 @@ impl Conversation {
         &self.messages
     }
 
+    /// Mutable access to the messages vec.
+    pub fn messages_mut(&mut self) -> &mut Vec<Message> {
+        &mut self.messages
+    }
+
     /// Iterate over all messages.
     pub fn iter(&self) -> impl Iterator<Item = &Message> {
         self.messages.iter()
@@ -379,6 +384,14 @@ mod tests {
         let turn = Turn::new(vec![]);
         assert_eq!(turn.messages.len(), 0);
         assert_eq!(turn.estimated_tokens(), 0);
+    }
+
+    #[test]
+    fn messages_mut_allows_modification() {
+        let mut conv = Conversation::new();
+        conv.push(Message::user("hello"));
+        conv.messages_mut()[0] = Message::user("modified");
+        assert_eq!(conv.messages()[0].text(), "modified");
     }
 
     #[test]
