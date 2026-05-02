@@ -1,8 +1,8 @@
 # Crab Code Architecture
 
 
-> Updated: 2026-04-27
-> Changelog: Tool trait gains `is_concurrency_safe(input)` for input-dependent parallelism; PermissionMode expanded to 6 variants (+AcceptEdits/DontAsk/Plan); engine query loop adds PTL recovery, max-output-tokens retry, streaming fallback, plan model routing; plugin hooks gain `Stop` trigger and `Retry` action; multi-layer compaction pipeline (microcompact → LLM summary → heuristic fallback → compact boundary).
+> Updated: 2026-05-02
+> Changelog: LLM-driven compaction (`LlmCompactionClient` + `NullCompactionClient`, async `compact_now`); bash risk badges on permission cards (`bash_classifier::classify_command`); session grant persistence (`SessionFile.grants`, `RuntimeInitMeta.resumed_grants`); permission feedback on deny (`PermissionResult { allowed, feedback }`, `DenyWithFeedback` TUI variant).
 
 ---
 
@@ -249,10 +249,10 @@ crab-code/
 | Library crate | 25 | `crates/*` — includes `commands`, `hooks`, `swarm`, `ide`, `memory`, `engine`, `remote`, `sandbox`, `acp`, `cron` |
 | Lib+Bin crate | 1 | `crates/daemon` (lib.rs + main.rs) |
 | Binary crate | 1 | `crates/cli` |
-| Helper crate | 1 | `xtask` |
-| **Total** | **28** | -- |
+| Helper crate | 1 | `xtask` (build tooling, not shipped) |
+| **Total** | **27 + 1** | 27 product crates + xtask |
 | Total modules | ~310 | Across 26 library crates |
-| Total tests | ~2700 | `cargo test --workspace` |
+| Total tests | ~4700 | `cargo nextest run --workspace` |
 
 
 ---
@@ -785,8 +785,8 @@ pub enum Event {
     ToolResult { id: String, output: ToolOutput },
 
     // --- Permission interaction ---
-    PermissionRequest { tool_name: String, input_summary: String, request_id: String },
-    PermissionResponse { request_id: String, allowed: bool, feedback: Option<String> },
+    PermissionRequest { tool_name: String, input_summary: String, request_id: String, tool_input: Value },
+    PermissionResponse { request_id: String, allowed: bool, feedback: Option<String> },  // feedback from deny
 
     // --- Context compaction ---
     CompactStart { strategy: String, before_tokens: u64 },
@@ -1634,7 +1634,7 @@ pty = ["portable-pty"]
 src/
 ├── lib.rs
 ├── registry.rs       // ToolRegistry: registration, lookup, schema generation
-├── executor.rs       // Unified executor with permission checking
+├── executor.rs       // Unified executor, PermissionResult { allowed, feedback }
 ├── permission.rs     // Tool permission checking logic
 │
 ├── builtin/              // Built-in tools (~45 files + computer_use/ subdir)
@@ -1643,7 +1643,7 @@ src/
 │   │
 │   │  // ── Core file tools ──
 │   ├── bash.rs           // BashTool -- shell command execution
-│   ├── bash_classifier.rs // Bash command safety classification
+│   ├── bash_classifier.rs // classify_command() → risk badge (read-only / file-write / dangerous / …)
 │   ├── bash_security.rs  // Bash security checks
 │   ├── powershell.rs     // PowerShellTool -- Windows PowerShell execution
 │   ├── read.rs           // ReadTool -- file reading
@@ -1861,10 +1861,15 @@ impl ToolExecutor {
         };
 
         if needs_prompt {
-            // Request user confirmation via event channel
-            let approved = self.request_permission(tool_name, &input, ctx).await?;
-            if !approved {
-                return Ok(ToolOutput::error("user denied permission"));
+            // Request user confirmation via event channel.
+            // Returns PermissionResult { allowed, feedback } — feedback is an
+            // optional free-text note (typically only set on deny) forwarded to
+            // the model so it can adjust its next move.
+            let result = self.request_permission(tool_name, &input, ctx).await?;
+            if !result.allowed {
+                return Ok(ToolOutput::error(
+                    reject_message_with_feedback(result.feedback.as_deref()),
+                ));
             }
         }
 
@@ -2103,7 +2108,8 @@ src/
 ├── auto_compact.rs    // Auto-compaction trigger + cleanup
 ├── snip_compact.rs    // Snip compaction: "[snipped]" marker
 ├── input_expand.rs    // Input expansion (variable interpolation)
-├── history.rs         // Session persistence, recovery, search, export
+├── history.rs         // Session persistence, recovery, search, export (SessionFile stores grants)
+├── llm_compaction_client.rs  // NullCompactionClient (no-op fallback for CompactionClient)
 ├── memory.rs          // Re-exports from crab-memory (MemoryStore, MemoryFile, etc.)
 ├── memory_extract.rs  // Conversation → memory extraction
 ├── cost.rs            // Token counting, cost tracking, cost persistence
@@ -2206,8 +2212,9 @@ pub trait CompactionClient: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = crab_core::Result<String>> + Send + '_>>;
 }
 
-// LlmBackend adapts to CompactionClient via enum dispatch (in crab-api)
-// impl CompactionClient for LlmBackend { ... }
+// Two implementations:
+// - LlmCompactionClient (in crab-agents) wraps Arc<LlmBackend> for real LLM summarisation
+// - NullCompactionClient (in crab-session) returns empty string, letting heuristics take over
 
 pub async fn compact(
     conversation: &mut Conversation,
@@ -2235,6 +2242,8 @@ impl MemoryStore {
     }
 }
 ```
+
+**Session persistence** (`history.rs`): The on-disk `SessionFile` stores `messages`, metadata, and a `grants: Vec<String>` field. Grants are persisted on save and restored on resume/switch. `RuntimeInitMeta.resumed_grants` (in `crab-agents`) rehydrates the TUI's session-level "always allow" set on `--continue` so users are not re-prompted for tools they already granted.
 
 **External Dependencies**: `crab-core`, `crab-memory`
 
@@ -2279,7 +2288,8 @@ src/
 src/
 ├── lib.rs
 ├── definition.rs            // AgentDefinition, ToolSet, AgentSource, AgentColor
-├── runtime.rs               // Top-level agent runtime entry
+├── runtime.rs               // AgentRuntime + RuntimeInitMeta + compact_now (async)
+├── llm_compaction_client.rs // LlmCompactionClient (Arc<LlmBackend> → CompactionClient)
 ├── builtin/                 // Built-in agent presets (Explore, Plan, general-purpose)
 │   ├── mod.rs               //   builtin_agents() -> Vec<AgentDefinition>
 │   ├── explore.rs           //   Read-only codebase search agent
@@ -2301,7 +2311,7 @@ src/
 │
 ├── session/                 // Layer 3 session runtime
 │   ├── mod.rs
-│   ├── runtime.rs           //   AgentSession + CoordinatorContext + compact_conversation
+│   ├── runtime.rs           //   AgentSession + CoordinatorContext
 │   └── session_config.rs    //   SessionConfig (flat value struct)
 │
 ├── prompt/                  // Modular prompt assembly
@@ -2695,7 +2705,7 @@ The TUI is organized into 9 top-level module directories plus core files. Module
 - **Animation** (`animation/`): `FrameScheduler`, braille/dots/line `Spinner`, `ShimmerState` (per-column color lookup)
 - **Markdown** (`markdown/`): LRU cache keyed by (content, theme, width), background `syntect` highlighting thread, GFM table renderer
 - **Vim** (`vim/`): 5-file key-handling state machine (mode / motion / operator / handler / mod), supports Normal/Insert/Visual/Command modes with operator-motion composition
-- **Components** (`components/`): ~55 higher-level views including input_area, message_list, header, bottom_bar, virtual_list, call_card, permission, autocomplete, command_palette, toast_queue, notification_banner, token_warning, message_pill, sticky_header, update_banner, context_visualization, prompt_chips, message_actions, at_mention, and more
+- **Components** (`components/`): ~55 higher-level views including input_area, message_list, header, bottom_bar, virtual_list, call_card, permission (risk badges + feedback-on-deny), autocomplete, command_palette, toast_queue, notification_banner, token_warning, message_pill, sticky_header, update_banner, context_visualization, prompt_chips, message_actions, at_mention, and more
 
 **Directory Structure**
 
@@ -2791,7 +2801,7 @@ src/
 │   ├── notification.rs        // Toast notification system
 │   ├── notification_banner.rs // Persistent sticky banners
 │   ├── output_styles.rs       // Shared styling helpers
-│   ├── permission.rs          // Permission dialog
+│   ├── permission.rs          // Permission card (risk badges, feedback-on-deny input)
 │   ├── permissions_browser.rs // Permission rules browser
 │   ├── plan_card.rs           // Plan display card
 │   ├── progress_indicator.rs  // Progress bar
@@ -4101,16 +4111,19 @@ MCP protocol extension modules:
 error_recovery::category + error_recovery::strategy    -- classify + recommend Retry/AskUser/Abort
 teams::retry                                           -- exponential backoff
 file_history                                           -- per-session Edit/Write snapshots, /rewind
-summarizer + session::runtime::compact_conversation    -- /compact and auto-compact at 80% watermark
-microcompact                                           -- truncate stale tool results before full compaction
-llm_summarizer                                         -- LLM-driven summary (falls back to heuristic)
+runtime::compact_now + session::compact_with_config    -- /compact and auto-compact at 80% watermark (async)
+session::micro_compact                                 -- truncate stale tool results before full compaction
+llm_compaction_client::LlmCompactionClient             -- LLM-driven summary via Arc<LlmBackend>
+session::llm_compaction_client::NullCompactionClient   -- no-op fallback (heuristic path)
 ```
 
-**Compaction pipeline** (multi-layer, triggered by context window pressure):
+**Compaction pipeline** (`compact_with_config` five-level strategy, triggered by context window pressure):
 1. **Microcompaction** — truncate old Bash/Grep/Glob/Read/Web tool results, mark as `[Old tool result content cleared]`
-2. **LLM summarization** — call small model to generate semantic summary preserving decisions and code changes
-3. **Heuristic fallback** — pattern-based extraction (Decision/CodeChange/UnresolvedIssue) when LLM is unavailable
+2. **LLM summarization** — `LlmCompactionClient` calls a small model to generate semantic summary preserving decisions and code changes; falls back to heuristic when no backend is wired in (`NullCompactionClient`)
+3. **Heuristic fallback** — pattern-based extraction (Decision/CodeChange/UnresolvedIssue) when LLM returns empty or is unavailable
 4. **Compact boundary** — session marks compaction point; API only sees post-boundary messages
+
+`AgentRuntime::compact_now()` is async. The `/compact` slash command calls it; the engine also invokes `compact_with_config` automatically during the query loop when context pressure exceeds the configured threshold.
 
 **Engine-level recovery** (in `crates/engine`):
 - PTL retry with message group eviction (max 3 attempts)
