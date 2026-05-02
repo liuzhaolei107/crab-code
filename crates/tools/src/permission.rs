@@ -49,7 +49,7 @@ pub fn check_permission(
     // any layer, any source) MUST NOT override it. Reordering these two
     // branches would silently turn a working blocklist into a no-op the
     // moment a sibling allow rule matches the same tool. See
-    // `docs/config.md` §8.4 and `crates/config/tests/
+    // `docs/config-design.md` §8.4 and `crates/config/tests/
     // permission_deny_wins_spec.rs` for the explicit invariant.
     //
     // 1. Denied list — always deny, any mode (supports glob + param matching)

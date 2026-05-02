@@ -54,10 +54,6 @@ pub enum SnapshotError {
 /// `track_edit` call.
 pub struct FileHistory {
     session_dir: PathBuf,
-    /// In-memory index: path → ordered list of `(version, storage_path)`.
-    ///
-    /// Uses `BTreeMap` so versions stay sorted ascending — LRU eviction is
-    /// "drop lowest version" which matches CCB's fileHistory semantics.
     index: BTreeMap<PathBuf, Vec<(u32, PathBuf)>>,
 }
 

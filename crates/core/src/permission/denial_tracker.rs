@@ -1,7 +1,5 @@
 //! Denial tracking for permission decisions.
 //!
-//! Maps to CCB `utils/permissions/denialTracking.ts`.
-//!
 //! Tracks consecutive and total permission denials so the system can warn the
 //! user or the agent when it appears stuck in a denial loop (e.g., repeatedly
 //! trying a denied tool).

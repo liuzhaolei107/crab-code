@@ -1,7 +1,5 @@
 //! Shadowed rule detection for permission configurations.
 //!
-//! Maps to CCB `utils/permissions/shadowedRuleDetection.ts`.
-//!
 //! Detects permission rules that are "shadowed" (unreachable) because an
 //! earlier, broader rule already covers them. For example, if `allowed_tools`
 //! contains `["*", "Bash(command:git*)"]`, the second rule is shadowed because

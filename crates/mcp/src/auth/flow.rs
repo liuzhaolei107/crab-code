@@ -71,7 +71,7 @@ fn build_authorize_url(config: &OAuthConfig, pkce: &PkceChallenge, state: &str) 
     let separator = if url.contains('?') { '&' } else { '?' };
     url.push(separator);
 
-    // Order matches CCB + most provider examples; order isn't semantically
+    // Stable ordering matches most provider examples; order isn't semantically
     // required, but stable ordering helps when comparing captured redirect
     // URLs in tests / debugging.
     let scope = config.scopes.join(" ");

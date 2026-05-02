@@ -204,8 +204,8 @@ mod tests {
         assert!(worker_reg.get("Edit").is_some(), "worker needs Edit");
         assert!(worker_reg.get("Read").is_some(), "worker needs Read");
 
-        // Worker can still nest an Agent call (unlike TeamCreate — CCB
-        // INTERNAL_WORKER_TOOLS blocks team management, not delegation).
+        // Worker can still nest an Agent call (unlike TeamCreate —
+        // WORKER_DENIED_TOOLS blocks team management, not delegation).
         assert!(worker_reg.get("Agent").is_some());
     }
 

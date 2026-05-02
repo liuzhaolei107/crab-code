@@ -96,7 +96,7 @@ pub struct DateRange {
     pub to: Option<String>,
 }
 
-// ── Search result cache ────────────────────────────��─────────────────
+// ── Search result cache ──────────────────────────────────────────────
 
 /// Cached search results for a query.
 #[derive(Debug, Clone)]
@@ -347,10 +347,8 @@ impl Tool for WebSearchTool {
         true
     }
 
-    // ── CCB-aligned rendering hooks ──
-
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // CCB: message = "query text"
+        // message = "query text"
         let query = input["query"].as_str()?;
         Some(format!("WebSearch (\"{query}\")"))
     }

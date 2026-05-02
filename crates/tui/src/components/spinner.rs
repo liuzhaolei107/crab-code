@@ -1,7 +1,6 @@
 //! Spinner component — animated loading indicator with random verb messages.
 //!
-//! Matches CCB's `Spinner.tsx` + `spinnerVerbs.ts`: displays an animated
-//! braille spinner with a randomly-selected verb from a pool of 188 verbs,
+//! Displays a spinner with a randomly-selected verb from a pool of 187 verbs,
 //! plus a shimmer highlight effect sliding across the verb text.
 
 use ratatui::buffer::Buffer;
@@ -12,14 +11,11 @@ use ratatui::widgets::Widget;
 
 // ── Spinner animation frames ──────────────────────────────────────────
 
-/// Braille-based spinner frames for smooth animation.
-/// CC uses `*` as spinner character (not braille). Matches the screenshot.
 const FRAMES: &[&str] = &["*"];
 
-// ── CCB SPINNER_VERBS (188 verbs from constants/spinnerVerbs.ts) ──────
+// ── Spinner verbs ─────────────────────────────────────────────────────
 
 /// Spinner verb pool — one is randomly selected each time the spinner starts.
-/// Exact copy of CCB's `SPINNER_VERBS` array.
 pub const SPINNER_VERBS: &[&str] = &[
     "Accomplishing",
     "Actioning",

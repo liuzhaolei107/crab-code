@@ -1,7 +1,5 @@
 //! Permission decision explainer.
 //!
-//! Maps to CCB `utils/permissions/permissionExplainer.ts`.
-//!
 //! Generates human-readable explanations for permission decisions, telling the
 //! user *why* a tool was allowed, denied, or requires confirmation. Useful for
 //! debugging permission rules and for surfacing context in the TUI.

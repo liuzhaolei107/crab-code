@@ -1,6 +1,6 @@
 //! Specification-level tests for the value-layer merge engine.
 //!
-//! Each test corresponds to a row in `docs/config.md` §4 (Merge Semantics)
+//! Each test corresponds to a row in `docs/config-design.md` §4 (Merge Semantics)
 //! or §9 (Precedence Summary). They exercise [`merge_toml_values`]
 //! directly so the contract is independent of the loader pipeline.
 

@@ -125,10 +125,8 @@ impl Tool for GrepTool {
         true
     }
 
-    // ── CCB-aligned rendering hooks ──
-
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // CCB: message = pattern: "X", path: "Y"
+        // message = pattern: "X", path: "Y"
         let pattern = input["pattern"].as_str()?;
         let path = input["path"].as_str();
         let msg = match path {
@@ -151,8 +149,8 @@ impl Tool for GrepTool {
             });
         }
 
-        // CCB: "Found N files" / "Found N lines" depending on output_mode
-        // We detect by looking at content format
+        // "Found N files" / "Found N lines" depending on output_mode.
+        // We detect by looking at content format.
         let total_lines = text.lines().count();
 
         // Check if output is file-list mode (one file per line, no colons with line numbers)
@@ -167,7 +165,7 @@ impl Tool for GrepTool {
 
         let mut lines = vec![ToolDisplayLine::new(&summary, ToolDisplayStyle::Muted)];
 
-        // Show results with ⎿ connector (CCB verbose tree style)
+        // Show results with ⎿ connector (verbose tree style).
         for line in text.lines().take(20) {
             let style = if line.contains(':') {
                 ToolDisplayStyle::Highlight

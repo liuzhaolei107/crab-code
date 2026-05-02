@@ -1,6 +1,6 @@
 //! Auth key resolution chain — independent of `Config` business fields.
 //!
-//! Implements the out-of-chain auth resolution order from `docs/config.md` §3:
+//! Implements the out-of-chain auth resolution order from `docs/config-design.md` §3:
 //!   `CRAB_API_KEY` env (universal, any provider)
 //!     → `ANTHROPIC_AUTH_TOKEN` env (anthropic provider only)
 //!     → provider-specific env (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY`)
@@ -31,9 +31,9 @@ pub fn resolve_auth_key(cfg: &Config) -> Option<String> {
     }
 
     // 2. ANTHROPIC_AUTH_TOKEN: only consulted for anthropic provider (or unset, which
-    //    defaults to anthropic). This token is anthropic-specific (CCB-compat OAuth-equivalent);
+    //    defaults to anthropic). This token is anthropic-specific;
     //    leaking it to deepseek/openai would send the wrong credential and trigger 401s for
-    //    users who have it set in their shell from a prior CCB session.
+    //    users who have it set in their shell from a prior Claude Code session.
     if matches!(provider, None | Some("anthropic"))
         && let Some(v) = read_env("ANTHROPIC_AUTH_TOKEN")
     {

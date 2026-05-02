@@ -175,7 +175,7 @@ impl Default for ResolveContext {
 
 /// Resolve a [`Config`] by merging every layer in priority order.
 ///
-/// Priority (low → high, aligned with `docs/config.md` §9):
+/// Priority (low → high, aligned with `docs/config-design.md` §9):
 ///
 /// ```text
 ///   defaults
@@ -190,7 +190,7 @@ impl Default for ResolveContext {
 ///
 /// Each file source is graceful: a missing file is skipped, a malformed
 /// file currently surfaces as an error (Phase 8 will downgrade parse
-/// failures to a warning per `docs/config.md` §10.1).
+/// failures to a warning per `docs/config-design.md` §10.1).
 pub fn resolve(ctx: &ResolveContext) -> crab_core::Result<Config> {
     let mut value = defaults_as_value()?;
 
@@ -212,7 +212,7 @@ pub fn resolve(ctx: &ResolveContext) -> crab_core::Result<Config> {
     merge_toml_values(&mut runtime, cli_flags_to_value(&ctx.flags)?);
     merge_toml_values(&mut value, runtime);
 
-    // Schema validation. Per `docs/config.md` §10.1, schema violations are
+    // Schema validation. Per `docs/config-design.md` §10.1, schema violations are
     // graceful: the offending leaf is pruned and a warning is logged so the
     // surrounding config keeps working. Whole-file parse / deserialization
     // failures are still hard errors.
@@ -285,7 +285,7 @@ fn defaults_as_value() -> crab_core::Result<Value> {
 
 /// Read a TOML file into a `toml::Value`.
 ///
-/// Graceful-degradation contract (per `docs/config.md` §10.1): every failure
+/// Graceful-degradation contract (per `docs/config-design.md` §10.1): every failure
 /// mode here returns `Ok(None)` so the surrounding `resolve` keeps working
 /// with the remaining layers. The runtime never crashes because one source
 /// is missing, unreadable, or malformed.
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn malformed_toml_degrades_to_empty_layer() {
-        // Per `docs/config.md` §10.1 — a malformed file must not crash
+        // Per `docs/config-design.md` §10.1 — a malformed file must not crash
         // resolve. The bad layer is dropped (warning printed) and the rest
         // of the chain (here: just the compiled-in defaults) still applies.
         let root = std::env::temp_dir().join("crab-loader-test-malformed");
@@ -514,7 +514,7 @@ mod tests {
 
     #[test]
     fn resolve_with_zero_files_creates_no_disk_state() {
-        // First-run invariant (`docs/config.md` §10.2): pure defaults can
+        // First-run invariant (`docs/config-design.md` §10.2): pure defaults can
         // resolve without any file on disk and without creating anything.
         let root = std::env::temp_dir().join("crab-loader-test-zero-side-effects");
         let _ = std::fs::remove_dir_all(&root);
@@ -595,7 +595,7 @@ mod tests {
 
     #[test]
     fn resolve_drops_only_bad_permission_rules_element_wise() {
-        // Per `docs/config.md` §10.1 — one malformed entry must not poison
+        // Per `docs/config-design.md` §10.1 — one malformed entry must not poison
         // the whole `permissions.allow` array. The bad rule is dropped, the
         // valid siblings survive into the resolved `Config`.
         let root = std::env::temp_dir().join("crab-loader-test-prune-perms");

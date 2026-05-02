@@ -10,11 +10,10 @@
 //!    blocks (`ContentBlockParam::Document { source: Source::File { file_id } }`
 //!    / `Source::Image { file_id }`).
 //!
-//! Mirrors CCB `services/api/filesApi.ts`. Sharing the same
-//! `reqwest::Client` + auth chain as the Messages API would be nice in a
-//! future refactor; for now this client builds its own so the module is
-//! self-contained and usable from workflow helpers without needing to
-//! hold on to an `AnthropicClient`.
+//! Sharing the same `reqwest::Client` + auth chain as the Messages API
+//! would be nice in a future refactor; for now this client builds its own
+//! so the module is self-contained and usable from workflow helpers without
+//! needing to hold on to an `AnthropicClient`.
 
 use std::path::Path;
 

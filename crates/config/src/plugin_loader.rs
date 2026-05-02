@@ -6,7 +6,7 @@
 //! alphabetical order of `<name>` so the upstream merge chain can fold each
 //! contribution in deterministically.
 //!
-//! Aligned with `docs/config.md` §2 (plugin layer notes) and §10.1
+//! Aligned with `docs/config-design.md` §2 (plugin layer notes) and §10.1
 //! (graceful degradation: skip-and-warn on individual plugin parse errors).
 //!
 //! Security constraint: a plugin's `config.json` MUST NOT set the top-level

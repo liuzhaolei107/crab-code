@@ -1,7 +1,7 @@
 //! System prompt overlay for a Coordinator session.
 //!
 //! This is an **anti-pattern guardrail** appended to the coordinator's
-//! system prompt when Coordinator Mode is active. It mirrors CCB's
+//! system prompt when Coordinator Mode is active. It enforces an
 //! "understand before delegating" rule — a hard warning against the
 //! "Based on your findings, fix X" pattern where the coordinator paraphrases
 //! the user request and hands it off without first understanding it.

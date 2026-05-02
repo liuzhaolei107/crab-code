@@ -814,7 +814,7 @@ fn classify_permission_kind(
 }
 
 /// Append colored diff lines to an output buffer. No line cap — shows
-/// the complete unified diff, matching CCB behavior.
+/// the complete unified diff.
 fn render_diff_lines(diff_text: &str, dim: Style, out: &mut Vec<Line<'static>>) {
     for line in diff_text.lines() {
         let style = if line.starts_with('+') {

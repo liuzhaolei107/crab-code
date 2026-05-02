@@ -406,10 +406,8 @@ impl Tool for NotebookTool {
         true
     }
 
-    // ── CCB-aligned rendering hooks ──
-
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // CCB: "NotebookEdit (path)"
+        // "NotebookEdit (path)"
         let path = input["notebook_path"].as_str()?;
         let filename = path.rsplit(['/', '\\']).next().unwrap_or(path);
         Some(format!("NotebookEdit ({filename})"))

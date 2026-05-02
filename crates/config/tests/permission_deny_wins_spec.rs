@@ -1,7 +1,7 @@
 //! Regression: `permissions.deny` always beats a matching `permissions.allow`,
 //! regardless of which source contributed which rule.
 //!
-//! This is a security-boundary invariant — see `docs/config.md` §8.4 and §10.
+//! This is a security-boundary invariant — see `docs/config-design.md` §8.4 and §10.
 //! The merge layer in `crates/config` must surface both lists intact so the
 //! runtime resolver in `crab_core::permission::PermissionPolicy` can apply
 //! deny-first ordering. If a future refactor accidentally turned `allow`
@@ -55,7 +55,7 @@ fn deny_wins_when_same_source_contains_both() {
 #[test]
 fn deny_wins_across_layers_user_allow_project_deny() {
     // User-level layer says "allow Bash", project-level layer says
-    // "deny Bash". Per `docs/config.md` §8.4, `deny` wins regardless of
+    // "deny Bash". Per `docs/config-design.md` §8.4, `deny` wins regardless of
     // which layer contributed it.
     let root = std::env::temp_dir().join("crab-deny-wins-user-allow-project-deny");
     let user_dir = root.join("user");
@@ -99,8 +99,8 @@ fn deny_wins_across_layers_project_allow_user_deny() {
     // Reverse direction — the lower-priority layer (user) holds the deny;
     // the higher-priority layer (project) holds the allow. Deny still wins.
     // Documents that this is about the deny-first *check order*, not about
-    // layer precedence. CCB users sometimes assume "more specific layer
-    // wins" but that's not how deny works.
+    // layer precedence. Users may assume "more specific layer wins" but
+    // that's not how deny works.
     let root = std::env::temp_dir().join("crab-deny-wins-project-allow-user-deny");
     let user_dir = root.join("user");
     let project_dir = root.join("project");

@@ -4,8 +4,6 @@
 //! persisting as memories (user preferences, corrections, project facts,
 //! reference links). Extracted memories are proposed to the memory store
 //! for deduplication and persistence.
-//!
-//! Maps to CCB `memdir/extractMemories.ts`.
 
 use crab_core::message::{Message, Role};
 use crab_memory::types::MemoryType;
@@ -41,8 +39,8 @@ pub struct ExtractedMemory {
 /// reference links, project configuration hints, and tool usage patterns.
 /// This is a heuristic, keyword-based extraction pass — not LLM-based.
 ///
-/// In CCB, this is done via a forked agent with full LLM capability. Our
-/// implementation uses pattern matching as a lightweight local fallback.
+/// This is a lightweight local fallback using heuristic pattern matching;
+/// full LLM-based extraction can be performed by a forked agent elsewhere.
 pub fn extract_memories_from_conversation(messages: &[Message]) -> ExtractionResult {
     let mut memories = Vec::new();
 

@@ -141,7 +141,7 @@ fn register_chat(r: &mut Resolver) {
         Action::ToggleVimMode,
     );
 
-    // Chord bindings (Ctrl+K prefix is the common CCB pattern).
+    // Chord bindings (Ctrl+K prefix).
     r.bind(
         KeyContext::Chat,
         chord_seq(

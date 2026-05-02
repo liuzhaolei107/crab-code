@@ -1,7 +1,6 @@
 //! Core skill types.
 //!
 //! Defines [`Skill`], [`SkillTrigger`], [`SkillContext`], and [`SkillSource`].
-//! Aligned with CCB `types/command.ts` (`PromptCommand` + `BuiltinSkillDefinition`).
 
 use std::collections::HashMap;
 use std::path::PathBuf;

@@ -12,7 +12,7 @@
 //! [`FileCache::read`] calls `fs::metadata(path)?.modified()` on every
 //! lookup — if the mtime differs from the cached value (file was
 //! written to on disk), the entry is invalidated and the file re-read
-//! from disk. This matches the `FileStateCache` behaviour in CCB.
+//! from disk.
 //!
 //! ## Sizing
 //!

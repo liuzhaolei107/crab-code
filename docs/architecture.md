@@ -65,12 +65,12 @@
 
 | Claude Code (TS) | Path | Crab Code (Rust) | Notes |
 |-------------------|------|-------------------|-------|
-| **Entry Layer** entrypoints/ | `cli.tsx` `main.tsx` | `cli` `daemon` | CC uses React/Ink for rendering; Crab uses ratatui |
-| **Command Layer** commands/ | `query.ts` `QueryEngine.ts` `coordinator/` | `engine` + `agent` | CC's `query.ts` ↔ crab `engine`; `QueryEngine.ts` ↔ `agent`; domain-pure swarm infra in `crates/swarm/` |
-| **Tool Layer** tools/ | 52 Tool directories | `tools` + `mcp` | CC mixes tools and MCP in `services/`; Crab separates them |
-| **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` `memdir/` | `api` `mcp` `acp` `auth` `skill` `plugin` `memory` `telemetry` `sandbox` `ide` `job` | CC's service layer is flat; Crab splits by responsibility. `memdir/` → `memory`; CC `utils/sandbox/` → `sandbox`; CC IDE MCP client surface → `ide`; ACP server → `acp`; unified scheduling → `job` |
-| **Bridge Layer** bridge/ | `bridgeMain.ts` `replBridge.ts` | `remote` (server + client) | CC's `src/bridge/` (inbound server) + `src/remote/` (outbound client) both land in crates/remote, which owns the full crab-proto stack (server + client + wire types, mirroring crab-mcp) |
-| **Foundation Layer** utils/ types/ | `Tool.ts` `context.ts` | `core` `utils` `config` | CC scatters types across files; Crab centralizes them in `core` |
+| **Entry Layer** entrypoints/ | `cli.tsx` `main.tsx` | `cli` `daemon` | TS reference uses React/Ink for rendering; Crab uses ratatui |
+| **Command Layer** commands/ | `query.ts` `QueryEngine.ts` `coordinator/` | `engine` + `agent` | `query.ts` maps to crab `engine`; `QueryEngine.ts` maps to `agent`; domain-pure swarm infra in `crates/swarm/` |
+| **Tool Layer** tools/ | 52 Tool directories | `tools` + `mcp` | TS reference mixes tools and MCP in `services/`; Crab separates them |
+| **Service Layer** services/ | `api/` `mcp/` `oauth/` `compact/` `memdir/` | `api` `mcp` `acp` `auth` `skill` `plugin` `memory` `telemetry` `sandbox` `ide` `job` | TS reference's service layer is flat; Crab splits by responsibility. `memdir/` → `memory`; `utils/sandbox/` → `sandbox`; IDE MCP client surface → `ide`; ACP server → `acp`; unified scheduling → `job` |
+| **Bridge Layer** bridge/ | `bridgeMain.ts` `replBridge.ts` | `remote` (server + client) | `src/bridge/` (inbound server) + `src/remote/` (outbound client) both land in crates/remote, which owns the full crab-proto stack (server + client + wire types, mirroring crab-mcp) |
+| **Foundation Layer** utils/ types/ | `Tool.ts` `context.ts` | `core` `utils` `config` | TS reference scatters types across files; Crab centralizes them in `core` |
 
 ### Core Design Philosophy
 
@@ -523,7 +523,7 @@ src/
 **Core Type Definitions**
 
 ```rust
-// message.rs -- Message model (corresponds to CC src/types/message.ts)
+// message.rs -- Message model
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -589,7 +589,7 @@ impl Message {
 ```
 
 ```rust
-// tool.rs -- Tool trait (corresponds to CC src/Tool.ts)
+// tool.rs -- Tool trait
 // Returns Pin<Box<dyn Future>> instead of native async fn because dyn Trait requires object safety
 // (Arc<dyn Tool> requires the trait to be object-safe; RPITIT's impl Future does not satisfy this)
 use serde_json::Value;
@@ -851,7 +851,7 @@ pub struct PermissionPolicy {
 
 ### 6.3 `crates/config/` -- Configuration System
 
-**Responsibility**: Read/write and merge multi-layered configuration (corresponds to CC `src/services/remoteManagedSettings/` + `src/context/` config sections)
+**Responsibility**: Read/write and merge multi-layered configuration
 
 **Directory Structure**
 
@@ -883,7 +883,7 @@ The `Config` struct covers: `api_provider`, `api_base_url`, `api_key_helper`, `m
 
 ### 6.4 `crates/auth/` -- Authentication
 
-**Responsibility**: Unified management of all authentication methods (corresponds to CC `src/services/oauth/` + authentication-related code)
+**Responsibility**: Unified management of all authentication methods
 
 **Directory Structure**
 
@@ -969,7 +969,7 @@ vertex  = []
 
 ### 6.5 `crates/api/` -- LLM API Client
 
-**Responsibility**: Encapsulate all LLM API communication with two independent clients implementing the two major API standards (corresponds to CC `src/services/api/`)
+**Responsibility**: Encapsulate all LLM API communication with two independent clients implementing the two major API standards
 
 **Core Design**: No unified trait abstraction is used -- the Anthropic Messages API and OpenAI Chat Completions API
 differ too much (message format, streaming event granularity, tool call protocol). Forcing unification would create a
@@ -1253,7 +1253,7 @@ proxy   = ["reqwest/socks"]
 
 ### 6.6 `crates/mcp/` -- MCP Facade
 
-**Responsibility**: Crab's own MCP facade and protocol adaptation layer (corresponds to CC `src/services/mcp/`)
+**Responsibility**: Crab's own MCP facade and protocol adaptation layer
 
 MCP is an open protocol that lets LLMs connect to external tools/resources, based on JSON-RPC 2.0.
 `crab-mcp` does not directly expose the underlying SDK to `cli` / `tools` / `session`; instead, it absorbs the official SDK internally and exposes a stable Crab-side interface: `McpClient`, `McpManager`, `ToolRegistryHandler`, `mcp__<server>__<tool>` naming, and config discovery logic all live in this layer.
@@ -1447,7 +1447,7 @@ ws = ["tokio-tungstenite"]
 
 ### 6.7 `crates/fs/` -- File System Operations
 
-**Responsibility**: Encapsulate all file system related operations (corresponds to the underlying logic of GlobTool/GrepTool/FileReadTool in CC)
+**Responsibility**: Encapsulate all file system related operations (underlying logic for GlobTool/GrepTool/FileReadTool)
 
 **Directory Structure**
 
@@ -1535,7 +1535,7 @@ pub fn apply_edit(
 
 ### 6.8 `crates/process/` -- Subprocess Management
 
-**Responsibility**: Subprocess lifecycle management (corresponds to the underlying execution logic of CC's BashTool)
+**Responsibility**: Subprocess lifecycle management (underlying execution layer used by `BashTool`)
 
 **Directory Structure**
 
@@ -1626,7 +1626,7 @@ pty = ["portable-pty"]
 
 ### 6.9 `crates/tools/` -- Tool System
 
-**Responsibility**: Tool registration, lookup, execution, including all built-in tools (corresponds to CC `src/tools/`)
+**Responsibility**: Tool registration, lookup, execution, including all built-in tools
 
 **Directory Structure**
 
@@ -2060,9 +2060,9 @@ impl ToolExecutor {
 }
 ```
 
-**CC Tool Mapping Table (CC has 52 tools; below are the core mappings)**
+**Tool Mapping Table (52 reference tools; below are the core mappings)**
 
-| CC Tool | Crab Tool | File |
+| Reference Tool | Crab Tool | File |
 |---------|----------|------|
 | BashTool | BashTool | `bash.rs` |
 | FileReadTool | ReadTool | `read.rs` |
@@ -2092,7 +2092,7 @@ pty = ["portable-pty", "strip-ansi-escapes"]
 
 ### 6.10 `crates/session/` -- Session Management
 
-**Responsibility**: State management for multi-turn conversations (corresponds to CC `src/services/compact/` + `src/services/SessionMemory/` + `src/services/sessionTranscript/`). Memory system extracted to `crates/memory/`; session re-exports core memory types.
+**Responsibility**: State management for multi-turn conversations. Memory system extracted to `crates/memory/`; session re-exports core memory types.
 
 **Directory Structure**
 
@@ -2278,7 +2278,7 @@ src/
 
 ### 6.12 `crates/agents/` -- Orchestrator & Multi-Agent System
 
-**Responsibility**: wraps the raw query loop (`crates/engine`) and adds session-aware orchestration — system prompt assembly, context injection (git/PR), error recovery, multi-agent coordination, file-history snapshots, conversation compaction. Slash commands are in `crates/commands/` (see §6.27). Corresponds to CC `QueryEngine.ts` + `coordinator/` + `tasks/` + `services/compact/` + `utils/fileHistory.ts`. **Does not** contain the low-level message loop (that moved to `crates/engine`, see §6.21).
+**Responsibility**: wraps the raw query loop (`crates/engine`) and adds session-aware orchestration — system prompt assembly, context injection (git/PR), error recovery, multi-agent coordination, file-history snapshots, conversation compaction. Slash commands are in `crates/commands/` (see §6.27). **Does not** contain the low-level message loop (that lives in `crates/engine`, see §6.21).
 
 **Directory Structure** 
 
@@ -2319,7 +2319,7 @@ src/
 │   ├── pr_context.rs        //   gh PR context
 │   └── tips.rs              //   Contextual tips
 │
-├── file_history/            // CCB fileHistory equivalent
+├── file_history/            // File history snapshots
 │   ├── mod.rs
 │   └── snapshot.rs          //   FileHistory + Snapshot + rewind / LRU(100)
 │
@@ -2331,7 +2331,7 @@ src/
 ├── summarizer.rs            // Conversation compaction (/compact, auto at 80%)
 ├── repl_commands.rs         // ReplCommand enum + parser
 ├── auto_dream.rs            // Background memory consolidation (cargo feature `auto-dream`)
-└── proactive/               // CCB feature('PROACTIVE') placeholder (cargo feature `proactive`)
+└── proactive/               // Proactive suggestions placeholder (cargo feature `proactive`)
     ├── mod.rs
     ├── mini_agent.rs
     ├── suggestion.rs
@@ -2346,7 +2346,6 @@ The raw message loop, stop hooks, token budget, and effort mapping live in `crat
 
 ```rust
 // query_loop.rs -- Core message loop
-// Corresponds to CC src/query.ts query() function
 use crab_core::event::Event;
 use crab_core::message::{ContentBlock, Message};
 use crab_session::Conversation;
@@ -2631,8 +2630,8 @@ impl TaskStore {
 
 **Streaming Tool Execution (StreamingToolExecutor)**
 
-CC starts tool execution immediately once the `tool_use` JSON is fully parsed during API streaming,
-without waiting for the `message_stop` event. Crab Code should implement the same optimization:
+Tool execution should begin immediately once the `tool_use` JSON is fully parsed during API streaming,
+without waiting for the `message_stop` event:
 
 ```
 API SSE stream:  [content_block_start: tool_use] -> [input_json_delta...] -> [content_block_stop]
@@ -2687,9 +2686,9 @@ proactive  = []
 
 **Layer**: Layer 3 Engine.
 
-**Responsibility**: All terminal interface rendering (corresponds to CC `src/components/` + `src/screens/` + `src/ink/` + `src/vim/` + `src/bridge/bridgeUI.ts`).
+**Responsibility**: All terminal interface rendering.
 
-CC uses React/Ink to render the terminal UI; Crab uses ratatui + crossterm to achieve equivalent experience. Control flow between tui and other Layer 3 crates (agent / session / remote / engine) follows Rule 6 (§5.3): state is consumed via `core::Event` broadcasts. Read-only access to `session::Conversation` and cost accumulators is allowed.
+Crab uses ratatui + crossterm for the terminal UI. Control flow between tui and other Layer 3 crates (agent / session / remote / engine) follows Rule 6 (§5.3): state is consumed via `core::Event` broadcasts. Read-only access to `session::Conversation` and cost accumulators is allowed.
 
 **Architecture overview**:
 
@@ -2867,7 +2866,7 @@ src/
 
 ### 6.14 `crates/skills/` -- Skill System
 
-**Responsibility**: Skill discovery, loading, registry, and built-in skill definitions (corresponds to CC `src/skills/`)
+**Responsibility**: Skill discovery, loading, registry, and built-in skill definitions
 
 **Directory Structure**
 
@@ -2953,7 +2952,7 @@ wasm = ["wasmtime"]
 
 ### 6.17 `crates/memory/` -- Persistent Memory System
 
-**Responsibility**: File-based cross-session memory storage — user preferences, feedback, project context, external references (corresponds to CC `src/memdir/`)
+**Responsibility**: File-based cross-session memory storage — user preferences, feedback, project context, external references
 
 **Directory Structure**
 
@@ -2989,7 +2988,7 @@ mem-ranker = ["dep:crab-api", "dep:tokio"]                   # LLM-driven memory
 
 ### 6.18 `crates/telemetry/` -- Observability
 
-**Responsibility**: Distributed tracing and metrics collection (corresponds to CC `src/services/analytics/` + `src/services/diagnosticTracking.ts`)
+**Responsibility**: Distributed tracing and metrics collection
 
 **Directory Structure**
 
@@ -3059,7 +3058,7 @@ otlp = [                                                       # OpenTelemetry O
 
 ### 6.19 `crates/cli/` -- Terminal Entry Point
 
-**Responsibility**: An extremely thin binary entry point that only does assembly with no business logic (corresponds to CC `src/entrypoints/cli.tsx`)
+**Responsibility**: An extremely thin binary entry point that only does assembly with no business logic
 
 **Directory Structure**
 
@@ -3384,7 +3383,7 @@ pub struct AppRuntime {
 
 ### 6.22 `crates/engine/` -- Raw Query Loop
 
-**Responsibility**: the pure "conversation + backend + tool executor → streaming events" loop. Corresponds to CC `src/query.ts` + `src/query/{stopHooks,tokenBudget,transitions,config,deps}.ts`. Contains no session persistence, no REPL state, no swarm, no system-prompt assembly.
+**Responsibility**: the pure "conversation + backend + tool executor → streaming events" loop. Contains no session persistence, no REPL state, no swarm, no system-prompt assembly.
 
 **Directory Structure**
 
@@ -3490,7 +3489,7 @@ src/
 
 ### 6.24 `crates/sandbox/` -- Process Sandbox
 
-**Responsibility**: Layer 2 leaf service. `Sandbox` trait + platform backends (seatbelt / landlock / windows / noop), consumed by `crates/tools` for Bash/PowerShell execution. Corresponds to CC `src/utils/sandbox/sandbox-adapter.ts` (985 LOC).
+**Responsibility**: Layer 2 leaf service. `Sandbox` trait + platform backends (seatbelt / landlock / windows / noop), consumed by `crates/tools` for Bash/PowerShell execution.
 
 **Directory Structure**
 
@@ -3665,15 +3664,14 @@ src/
 
 ## 6.X Multi-Agent Three-Layer Architecture
 
-crab models multi-agent collaboration in **three conceptually distinct layers**,
-aligned with CCB's design but structured in Rust-idiomatic form.
+crab models multi-agent collaboration in **three conceptually distinct layers**, structured in Rust-idiomatic form.
 
-| Layer | Purpose | CCB equivalent | crab location |
-|-------|---------|----------------|---------------|
-| **L1 — Teams (infrastructure)** | Mailbox, shared task list with `claimTask()`, spawner backends, worker pool, roster (team/member) | `isAgentSwarmsEnabled()` gate + `TeamCreate/Delete/SendMessage` tools + `teammateMailbox` | `crates/agents/src/teams/` ** |
-| **L2a — Swarm (flat topology)** | Peer-to-peer, competitive task claiming; default usage when Teams is on and Coordinator Mode is off | "opened Teams but didn't enable Coordinator Mode" | `TeamMode::PeerToPeer` enum variant — no separate module |
-| **L2b — Coordinator Mode (star overlay)** | Coordinator agent stripped of hands-on tools, workers run with allow-list, anti-pattern prompt ("understand before delegating") | `feature('COORDINATOR_MODE') && CLAUDE_CODE_COORDINATOR_MODE=1` | `crates/agents/src/coordinator/` ** |
-| **L3 — Session runtime** | `AgentSession` ties conversation + backend + executor + topology choice | — | `crates/agents/src/session/` ** |
+| Layer | Purpose | crab location |
+|-------|---------|---------------|
+| **L1 — Teams (infrastructure)** | Mailbox, shared task list with `claimTask()`, spawner backends, worker pool, roster (team/member) | `crates/agents/src/teams/` ** |
+| **L2a — Swarm (flat topology)** | Peer-to-peer, competitive task claiming; default usage when Teams is on and Coordinator Mode is off | `TeamMode::PeerToPeer` enum variant — no separate module |
+| **L2b — Coordinator Mode (star overlay)** | Coordinator agent stripped of hands-on tools, workers run with allow-list, anti-pattern prompt ("understand before delegating") | `crates/agents/src/coordinator/` ** |
+| **L3 — Session runtime** | `AgentSession` ties conversation + backend + executor + topology choice | `crates/agents/src/session/` ** |
 
 ### Gating
 
@@ -3681,15 +3679,15 @@ aligned with CCB's design but structured in Rust-idiomatic form.
 - **L2a (Swarm)** is the natural usage pattern whenever multiple agents exist and no overlay is active. Not a feature — just a topology choice via `TeamMode::PeerToPeer`.
 - **L2b (Coordinator Mode)** is gated on `CRAB_COORDINATOR_MODE=1` env only (no CLI flag — keeps the surface hidden from `--help`). Helper: `crates/cli/src/main.rs::coordinator_mode_enabled()`.
 
-### Divergence from CCB
+### Design Choices
 
-| CCB choice | crab choice | Reason |
-|------------|-------------|--------|
-| `feature('COORDINATOR_MODE')` GrowthBook feature flag | `settings.experimental.coordinator_mode_enabled`  + env var | No remote telemetry; no GrowthBook in crab |
-| `<task-notification>` XML protocol | Reuse `crab_core::Event` + `serde_json` | Rust serde is idiomatic; XML is a JS/TS artefact |
-| Node `proper-lockfile` for `claimTask()` | `fd-lock` crate  | Rust-native, cross-platform |
-| 7 concrete `*Task` classes | `trait TaskExecutor` + 4 concrete impls  | Rust trait polymorphism vs JS duck typing |
-| CCB gates Agent Teams behind env + CLI flag | L1 Teams ships unconditional; only Coordinator Mode is gated | Teams is base plumbing for crab's multi-agent story — not an experiment to toggle |
+| Topic | crab choice | Reason |
+|-------|-------------|--------|
+| Coordinator Mode gate | `settings.experimental.coordinator_mode_enabled` + env var | No remote telemetry; no GrowthBook in crab |
+| Task-notification protocol | Reuse `crab_core::Event` + `serde_json` | Rust serde is idiomatic |
+| Cross-process file lock for `claimTask()` | `fd-lock` crate | Rust-native, cross-platform |
+| Task executor abstraction | `trait TaskExecutor` + 4 concrete impls | Rust trait polymorphism |
+| Teams infrastructure gating | L1 Teams ships unconditional; only Coordinator Mode is gated | Teams is base plumbing for crab's multi-agent story — not an experiment to toggle |
 
 ### Current state
 
@@ -3715,8 +3713,8 @@ aligned with CCB's design but structured in Rust-idiomatic form.
 | 6 | **Feature flags control optional dependencies** | No Bedrock? Don't compile AWS SDK. No WASM? Don't compile wasmtime. | Reduces compile time and binary size |
 | 7 | **workspace.dependencies unifies versions** | All crates share the same version of third-party libraries | Avoids dependency conflicts and duplicate compilation |
 | 8 | **Binary crates only do assembly** | cli/daemon only do assembly; all logic lives in library crates | Makes it easy to add new entry points in the future (desktop/wasm/mobile) |
-| 9 | **CCB parity audit per crate** | Every existing crate gets a per-crate gap report vs CCB initially; reports live in `docs/superpowers/audits/` | Prevents silent drift from CCB behavior and makes Rust-idiom diverge decisions explicit. See `docs/superpowers/specs/2026-04-17-crate-restructure-design.md` §11 |
-| 10 | **CCB references stay in docs, not code** | Audit reports, specs, and architecture docs may cite CCB paths. Code comments, identifier names, and test names must not. | Maintains clean separation between research material and shipping code |
+| 9 | **Reference parity audit per crate** | Every existing crate gets a per-crate gap report vs the upstream reference; reports live in `docs/superpowers/audits/` | Prevents silent drift and makes Rust-idiom divergence decisions explicit. See `docs/superpowers/specs/2026-04-17-crate-restructure-design.md` §11 |
+| 10 | **Upstream references stay in docs, not code** | Audit reports, specs, and architecture docs may cite reference paths. Code comments, identifier names, and test names must not. | Maintains clean separation between research material and shipping code |
 
 ---
 
@@ -3821,9 +3819,9 @@ full = [                                              # Full-feature build
 | Library only | `cargo build -p crab-core` | Single crate compilation |
 | WASM target | `cargo build -p crab-core --target wasm32-unknown-unknown` | core layer WASM |
 
-### 8.3 Mapping to CC Feature Flags
+### 8.3 Runtime vs Compile-Time Flags
 
-CC source code manages about 31 runtime flags through `featureFlags.ts`; Crab Code splits them into:
+Crab Code splits feature toggles into two categories:
 
 - **Compile-time features**: Provider selection, WASM plugins, PTY, etc. (Cargo features)
 - **Runtime flags**: Managed via `config.toml` settings and environment variables at startup
@@ -4130,7 +4128,7 @@ session::llm_compaction_client::NullCompactionClient   -- no-op fallback (heuris
 - Stop hook retry via `HookAction::Retry`
 
 The in-memory `rollback.rs` UndoStack was replaced with the file-backed
-`file_history/` module that mirrors CCB's `src/utils/fileHistory.ts`.
+`file_history/` module.
 
 
 ### 11.4 TUI Component Library (crab-tui, 21 Components)

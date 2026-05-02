@@ -4,7 +4,7 @@
 //! a fast, good-enough estimate for context window management and cost
 //! tracking. Accuracy is ~85-90% for English text compared to `cl100k_base`.
 //!
-//! CCB uses a 4/3 padding strategy for conservative estimates.
+//! Uses a 4/3 padding strategy for conservative estimates.
 
 use crab_core::message::{ContentBlock, Message};
 
@@ -33,7 +33,7 @@ pub fn estimate_tokens(text: &str) -> usize {
 ///
 /// Accounts for message framing overhead (role tags, content block wrappers)
 /// in addition to the raw text content. Uses a 4/3 padding multiplier for
-/// conservative estimation (matching CCB's approach).
+/// conservative estimation.
 pub fn estimate_message_tokens(messages: &[Message]) -> usize {
     let mut total = 0;
 
@@ -46,7 +46,7 @@ pub fn estimate_message_tokens(messages: &[Message]) -> usize {
         }
     }
 
-    // Apply 4/3 padding for conservative estimate (CCB convention)
+    // Apply 4/3 padding for conservative estimate
     total * 4 / 3
 }
 

@@ -3,8 +3,6 @@
 //! Provides a set of configurable stop conditions that are checked after each
 //! turn of the agent loop. When any condition is met, a [`StopReason`] is
 //! returned describing why the loop should terminate.
-//!
-//! Maps to CCB `query/stopHooks.ts`.
 
 // ─── Stop reason ───────────────────────────────────────────────────────
 
@@ -117,8 +115,6 @@ mod tests {
     #[test]
     fn default_conditions_never_stop() {
         let conds = StopConditions::default();
-        // should_stop has a todo!() body so we can only test
-        // that it compiles and the type is correct.
         assert_eq!(conds.current_turn, 0);
         assert_eq!(conds.tokens_used, 0);
     }

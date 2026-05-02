@@ -6,7 +6,7 @@
 //! [`merge_toml_values`] defines the semantics for every layer transition,
 //! so adding a new field to `Config` requires no merge-logic change.
 //!
-//! Semantics (aligned with `docs/config.md` §4):
+//! Semantics (aligned with `docs/config-design.md` §4):
 //!
 //! | overlay kind | base kind | result |
 //! |---|---|---|

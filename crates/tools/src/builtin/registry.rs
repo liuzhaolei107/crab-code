@@ -20,7 +20,7 @@ use super::powershell;
 /// Whether to expose the `PowerShell` tool to the model.
 ///
 /// Windows-only; opt-in via `CRAB_USE_POWERSHELL_TOOL` (truthy value).
-/// Mirrors CCB's `isPowerShellToolEnabled` for external users (default off).
+/// Default off for external users.
 #[cfg(target_os = "windows")]
 fn is_powershell_tool_enabled() -> bool {
     std::env::var("CRAB_USE_POWERSHELL_TOOL")

@@ -3,8 +3,7 @@
 //! Unlike a plain `serde + toml::to_string` round trip, this writer parses the
 //! existing file as a `toml_edit::DocumentMut`, mutates the addressed key in
 //! place, and writes the document back. Comments, key order, and whitespace
-//! survive the mutation — strictly better than CCB's JSON write-back, which
-//! discards every comment.
+//! survive the mutation — unlike JSON serializers that discard every comment.
 //!
 //! The writer is the single entry point shared by every `crab config set`
 //! invocation. Concretely it:

@@ -8,7 +8,7 @@
 //!
 //! The output is a *scaffold* — a starting point for hand-edits to
 //! `assets/config.schema.json`. It is intentionally NOT committed and not
-//! consumed by CI (`docs/config.md` §12.1). The hand-written schema is the
+//! consumed by CI (`docs/config-design.md` §12.1). The hand-written schema is the
 //! source of truth; this tool exists only to bootstrap the next big
 //! restructure when adding many fields at once would be tedious.
 //!

@@ -467,7 +467,7 @@ allow = ["Bash", "Edit", "Read"]
     fn permission_rule_pruning_is_element_wise() {
         // End-to-end: schema must emit element-level errors and prune must
         // drop only the bad element, leaving valid siblings intact.
-        // Per `docs/config.md` §10.1, one bad rule cannot poison the whole
+        // Per `docs/config-design.md` §10.1, one bad rule cannot poison the whole
         // `permissions.allow` array.
         let mut value: toml::Value = toml::from_str(
             r#"

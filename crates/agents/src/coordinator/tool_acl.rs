@@ -5,9 +5,8 @@
 //! `TaskStop`. Workers spawned by a Coordinator additionally cannot nest
 //! their own team creation or message other workers directly.
 //!
-//! These constants mirror CCB's `ASYNC_AGENT_ALLOWED_TOOLS` /
-//! `INTERNAL_WORKER_TOOLS` lists but stay a static `&[&str]` slice for
-//! compile-time visibility.
+//! These constants stay a static `&[&str]` slice for compile-time
+//! visibility.
 
 use crab_tools::builtin::agent::AGENT_TOOL_NAME;
 use crab_tools::builtin::task::TASK_STOP_TOOL_NAME;

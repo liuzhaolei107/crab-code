@@ -31,7 +31,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ./target/release/crab -p "修复 bug"      # 非交互
 ```
 
-更多用法见 `crab --help`。配置在 `~/.crab/config.toml`（snake_case TOML），完整加载与合并规范见 [`docs/config.md`](docs/config.md)。
+更多用法见 `crab --help`。配置在 `~/.crab/config.toml`（snake_case TOML），完整加载与合并规范见 [`docs/config-design.md`](docs/config-design.md)。
 
 ## 配置
 

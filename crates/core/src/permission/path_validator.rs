@@ -1,7 +1,5 @@
 //! File path permission engine.
 //!
-//! Maps to CCB `utils/permissions/filesystem.ts` (1778 LOC) + `pathValidation.ts` (486 LOC).
-//!
 //! Validates file paths against allowed/denied path rules. Detects directory
 //! traversal attacks, symlink escapes, and ensures operations stay within
 //! the designated working directory.

@@ -125,10 +125,8 @@ impl Tool for WriteTool {
         true
     }
 
-    // ── CCB-aligned rendering hooks ──
-
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // CCB: userFacingName="Write", message = file path
+        // userFacingName="Write", message = file path
         let path = input["file_path"].as_str()?;
         let filename = path.rsplit(['/', '\\']).next().unwrap_or(path);
         Some(format!("Write ({filename})"))
@@ -137,9 +135,9 @@ impl Tool for WriteTool {
     fn format_result(&self, output: &ToolOutput) -> Option<ToolDisplayResult> {
         use crab_core::tool::{ToolDisplayLine, ToolDisplayResult, ToolDisplayStyle};
         let text = output.text();
-        // CCB: "Wrote N lines to filename" (N and filename bold)
+        // "Wrote N lines to filename" (N and filename bold).
         let line_count = text.lines().count();
-        // Show first 10 lines of content as preview (CCB: MAX_LINES_TO_RENDER=10)
+        // Show first 10 lines of content as preview (MAX_LINES_TO_RENDER=10).
         let preview_lines: Vec<&str> = text.lines().take(10).collect();
         let mut lines = vec![ToolDisplayLine::new(
             format!("Wrote {line_count} lines"),

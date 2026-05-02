@@ -71,7 +71,7 @@ fn find_suitable_shell() -> Option<String> {
     None
 }
 
-/// Path name contains "bash" or "zsh" — same heuristic CCB uses.
+/// Path name contains "bash" or "zsh".
 fn is_acceptable(path: &str) -> bool {
     path.contains("bash") || path.contains("zsh")
 }
@@ -206,10 +206,8 @@ impl Tool for BashTool {
         true
     }
 
-    // ── CCB-aligned rendering hooks ──
-
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // CCB: userFacingName="Run", message = truncated command (max 160 chars).
+        // userFacingName="Run", message = truncated command (max 160 chars).
         // Commands can contain multi-byte UTF-8 (paths, grep patterns, echo args);
         // truncate_chars counts codepoints to avoid panics on non-ASCII input.
         let cmd = input["command"].as_str()?;
@@ -220,10 +218,10 @@ impl Tool for BashTool {
     fn format_result(&self, output: &ToolOutput) -> Option<ToolDisplayResult> {
         use crab_core::tool::{ToolDisplayLine, ToolDisplayResult, ToolDisplayStyle};
         let text = output.text();
-        // CCB: stdout in normal color, stderr in error color.
+        // stdout in normal color, stderr in error color.
         // We don't have separate stdout/stderr here, so use is_error flag.
         if text.is_empty() {
-            // CCB: "(No output)" dimmed when empty
+            // "(No output)" dimmed when empty
             return Some(ToolDisplayResult {
                 lines: vec![ToolDisplayLine::new("(No output)", ToolDisplayStyle::Muted)],
                 preview_lines: 1,
@@ -236,8 +234,7 @@ impl Tool for BashTool {
         };
         let all_lines: Vec<&str> = text.lines().collect();
         let total = all_lines.len();
-        // CCB: shows last 5 lines in progress; for result, show all but
-        // truncate display. We show up to 20 lines with count indicator.
+        // Show up to 20 lines with count indicator (last 5 used for progress).
         let show = total.min(20);
         let mut lines: Vec<ToolDisplayLine> = all_lines[..show]
             .iter()

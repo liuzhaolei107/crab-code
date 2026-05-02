@@ -190,11 +190,8 @@ impl Tool for EditTool {
         true
     }
 
-    // ── CCB-aligned rendering hooks ──
-
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // CCB: userFacingName = "Update" (if old_string non-empty) or "Create" (if empty)
-        // message = file path
+        // "Update" when replacing existing text, "Create" when old_string is empty.
         let path = input["file_path"].as_str()?;
         let filename = path.rsplit(['/', '\\']).next().unwrap_or(path);
         let verb = if input["old_string"].as_str().is_some_and(|s| !s.is_empty()) {
@@ -212,7 +209,7 @@ impl Tool for EditTool {
             return None;
         }
 
-        // CCB: summary "Added N lines, Removed M lines" + colored diff below
+        // Count diff hunks (lines starting with +/-), not file content lines.
         let mut added = 0usize;
         let mut removed = 0usize;
         let mut diff_lines: Vec<ToolDisplayLine> = Vec::new();
@@ -231,7 +228,7 @@ impl Tool for EditTool {
             }
         }
 
-        // Summary line first (CCB style: "Added N lines, Removed M lines")
+        // Summary line first ("Added N lines, Removed M lines").
         let mut result_lines = vec![ToolDisplayLine::new(
             format!("Added {added} lines, Removed {removed} lines"),
             ToolDisplayStyle::Muted,

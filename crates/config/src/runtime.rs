@@ -1,7 +1,7 @@
 //! Runtime-layer projection: env vars and CLI flags → `toml::Value`.
 //!
 //! Both kinds of input live above the file layer in the merge chain
-//! (`docs/config.md` §9). They are projected into partial `toml::Value`
+//! (`docs/config-design.md` §9). They are projected into partial `toml::Value`
 //! tables here so the loader can deep-merge them with everything else.
 //!
 //! Two functions live in this module:
@@ -28,7 +28,7 @@ use toml::value::Table;
 /// | `CRAB_API_PROVIDER`  | `apiProvider`  |                                        |
 /// | `CRAB_DEFAULT_SHELL` | `default_shell`| `"bash"` or `"powershell"` for `!` routing |
 /// | `CRAB_BASE_URL`       | `base_url`   | universal override (highest priority)  |
-/// | `ANTHROPIC_BASE_URL` | `base_url`   | only when provider is anthropic/unset (CCB-compat name) |
+/// | `ANTHROPIC_BASE_URL` | `base_url`   | only when provider is anthropic/unset                  |
 /// | `OPENAI_BASE_URL`     | `base_url`   | only when provider is openai          |
 /// | `DEEPSEEK_BASE_URL`   | `base_url`   | only when provider is deepseek         |
 ///

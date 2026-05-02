@@ -1,5 +1,4 @@
-//! Background memory-consolidation cycles — crab's port of CCB's
-//! `src/services/autoDream/`.
+//! Background memory-consolidation cycles.
 //!
 //! autoDream runs when a session closes: it checks three cheap gates (time
 //! since last run, number of new sessions since, lock-file availability)
@@ -13,13 +12,10 @@
 //!
 //! ## Status
 //!
-//! Ported from CCB in layers:
-//!
-//! - **Done** (this commit): `AutoDreamConfig` mirroring CCB
-//!   `{ minHours, minSessions, enabled }`; three-gate `DreamGate` check;
-//!   `CONSOLIDATION_PROMPT` template aligned with CCB
-//!   `consolidationPrompt.ts`; `AutoDream` bookkeeping state (cycle count,
-//!   last-run timestamp); lock-file helper using `fd-lock`.
+//! - **Done**: `AutoDreamConfig` (`{ min_hours, min_sessions, enabled }`);
+//!   three-gate `DreamGate` check; `CONSOLIDATION_PROMPT` template;
+//!   `AutoDream` bookkeeping state (cycle count, last-run timestamp);
+//!   lock-file helper using `fd-lock`.
 //! - **Deferred**: the actual forked-agent runner that sends the prompt to
 //!   the LLM, applies the returned Edit/Write tool calls, and appends an
 //!   `"Improved N memories"` system message to the main transcript. That
@@ -30,24 +26,23 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// Default minimum hours between dream cycles (CCB: 24h).
+/// Default minimum hours between dream cycles.
 pub const DEFAULT_MIN_HOURS: u32 = 24;
 
-/// Default minimum new sessions before a dream is allowed (CCB: 5).
+/// Default minimum new sessions before a dream is allowed.
 pub const DEFAULT_MIN_SESSIONS: u32 = 5;
 
 /// Default consolidation lock filename, stored under the session history root.
 pub const DEFAULT_LOCK_FILENAME: &str = ".consolidate-lock";
 
 /// Stale-lock threshold: any lock older than this is reclaimable even if the
-/// PID appears live (CCB: 1 hour).
+/// PID appears live.
 pub const STALE_LOCK_AFTER: Duration = Duration::from_secs(60 * 60);
 
-/// Configuration mirroring CCB's `AutoDreamConfig` from `autoDream.ts:59-67`.
+/// Configuration controlling when a dream cycle is allowed to run.
 #[derive(Debug, Clone)]
 pub struct AutoDreamConfig {
-    /// Whether auto-dream is enabled. Equivalent to CCB's settings-level
-    /// `autoDreamEnabled` + `GrowthBook` check.
+    /// Whether auto-dream is enabled.
     pub enabled: bool,
     /// Minimum hours between cycles.
     pub min_hours: u32,
@@ -91,9 +86,7 @@ impl AutoDreamConfig {
     }
 }
 
-/// The reason a dream cycle ran, was skipped, or failed — equivalent to
-/// CCB's analytics events `tengu_auto_dream_fired` / `…_completed` /
-/// `…_failed`.
+/// The reason a dream cycle ran, was skipped, or failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DreamOutcome {
     /// One or more gates are closed; no dream ran.
@@ -135,7 +128,7 @@ impl AutoDream {
     /// older than [`STALE_LOCK_AFTER`]) is considered open.
     ///
     /// Returns a specific gate reason when a check fails — useful for
-    /// tracing/telemetry parity with CCB's three-tier gate.
+    /// tracing/telemetry on which of the three gates closed.
     #[must_use]
     pub fn gate(&self, sessions_since_last: u32, lock_path: Option<&Path>) -> DreamGate {
         if !self.config.enabled {
@@ -216,7 +209,7 @@ impl AutoDream {
 }
 
 /// Three-state gate result. `Open` means a dream may run right now; `Closed`
-/// carries a short human-readable reason matching CCB's telemetry fields.
+/// carries a short human-readable reason for tracing/telemetry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DreamGate {
     Open,
@@ -257,9 +250,8 @@ pub fn lock_is_held(path: &Path) -> bool {
     }
 }
 
-/// The CCB `consolidationPrompt.ts` body, with `{memory_root}` /
-/// `{transcript_dir}` / `{session_ids}` placeholders filled in by
-/// [`build_consolidation_prompt`].
+/// Consolidation prompt body, with `{memory_root}` / `{transcript_dir}` /
+/// `{session_ids}` placeholders filled in by [`build_consolidation_prompt`].
 pub const CONSOLIDATION_PROMPT_TEMPLATE: &str = "\
 # Dream: Memory Consolidation
 
@@ -305,10 +297,6 @@ Sessions since last consolidation ({session_count}):
 ";
 
 /// Fill placeholders in [`CONSOLIDATION_PROMPT_TEMPLATE`].
-///
-/// The `{memory_root}`, `{transcript_dir}`, `{session_count}`, and
-/// `{session_list}` tokens are handcrafted placeholders handled by
-/// `str::replace`, not `format!` arguments — hence the allow below.
 #[allow(clippy::literal_string_with_formatting_args)]
 #[must_use]
 pub fn build_consolidation_prompt(
@@ -346,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn default_config_matches_ccb() {
+    fn default_config_uses_documented_defaults() {
         let c = AutoDreamConfig::default();
         assert!(!c.enabled);
         assert_eq!(c.min_hours, DEFAULT_MIN_HOURS);

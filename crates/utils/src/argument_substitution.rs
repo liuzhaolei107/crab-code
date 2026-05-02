@@ -1,8 +1,7 @@
 //! Slash-command argument substitution.
 //!
 //! Templates like `/review PR $1` or `/open $FILE:$LINE` expand against
-//! a list of positional args + a named-arg map. Three forms are supported,
-//! matching CCB's `utils/argumentSubstitution.ts` behaviour:
+//! a list of positional args + a named-arg map. Three forms are supported:
 //!
 //! - `$N` — positional, 1-indexed. `$1` is the first arg, `$2` the second, etc.
 //! - `$NAME` — named. Looked up in the `named_args` map. Uppercase letters, digits,

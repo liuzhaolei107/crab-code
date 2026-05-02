@@ -141,7 +141,7 @@ fn describe_target(target: WriteTarget) -> PathBuf {
 
 /// `crab config edit` — open the config file in $EDITOR.
 ///
-/// Per `docs/config.md` §10.2 the CLI never creates config dirs or files just
+/// Per `docs/config-design.md` §10.2 the CLI never creates config dirs or files just
 /// to read them. We hand the path to the editor as-is; the editor (or the OS)
 /// creates the file when the user actually saves a non-empty buffer. The
 /// writer module owns first-time directory creation for `crab config set`.

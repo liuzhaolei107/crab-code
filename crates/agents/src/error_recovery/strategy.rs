@@ -4,9 +4,8 @@ use super::category::ErrorCategory;
 
 // ── Recovery strategy ─────────────────────────────────────────────────
 
-/// Action to take when recovering from an error. Mirrors CCB's minimal set
-/// — CCB does not ship a `Fallback` path (retries exhausted → surface error
-/// to the user), so crab drops that variant too.
+/// Action to take when recovering from an error. There is no `Fallback`
+/// variant: when retries are exhausted the error is surfaced to the user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecoveryAction {
     /// Retry the operation after a delay.

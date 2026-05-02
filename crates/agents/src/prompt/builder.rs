@@ -96,10 +96,9 @@ fn append_environment_info(prompt: &mut String) {
     let _ = writeln!(prompt, "- Platform: {}", std::env::consts::OS);
     let _ = writeln!(prompt, "- Architecture: {}", std::env::consts::ARCH);
 
-    // Shell. Mirrors CCB's getShellInfoLine: read $SHELL only (never COMSPEC —
-    // that's cmd.exe, which would push the model toward Windows syntax), and
-    // on Windows append explicit Unix-syntax guidance since our Bash tool runs
-    // bash/zsh (Git Bash).
+    // Shell: read $SHELL only (never COMSPEC — that's cmd.exe, which would
+    // push the model toward Windows syntax). On Windows append explicit
+    // Unix-syntax guidance since the Bash tool runs bash/zsh (Git Bash).
     let shell_raw = std::env::var("SHELL").unwrap_or_else(|_| "unknown".to_string());
     let shell_name = if shell_raw.contains("zsh") {
         "zsh"

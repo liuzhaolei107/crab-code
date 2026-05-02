@@ -3,8 +3,6 @@
 //! Manages token allocation across input and output during a query loop iteration.
 //! The budget tracks cumulative usage and provides decisions on whether to continue,
 //! compact, or abort based on remaining capacity.
-//!
-//! Maps to CCB `query/tokenBudget.ts`.
 
 // ─── Budget decision ───────────────────────────────────────────────────
 

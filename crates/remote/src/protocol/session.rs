@@ -1,7 +1,6 @@
 //! Session-related request / result / notification params.
 //!
-//! Roughly corresponds to CCB's `bridge/protocol/inbound.ts` +
-//! `outbound.ts`. Every type derives [`JsonSchema`] so TS / Swift / Kotlin
+//! Every type derives [`JsonSchema`] so TS / Swift / Kotlin
 //! client stubs can be generated from the same source.
 
 use schemars::JsonSchema;

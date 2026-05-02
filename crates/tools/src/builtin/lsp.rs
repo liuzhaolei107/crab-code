@@ -120,10 +120,8 @@ impl Tool for LspTool {
         true
     }
 
-    // ── CCB-aligned rendering hooks ──
-
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // CCB: "LSP (operation: "X", symbol: "Y", in: "Z")"
+        // "LSP (operation: "X", symbol: "Y", in: "Z")"
         let op = input["operation"].as_str()?;
         let file = input["file_path"].as_str().unwrap_or("?");
         let filename = file.rsplit(['/', '\\']).next().unwrap_or(file);
@@ -136,7 +134,7 @@ impl Tool for LspTool {
         if text.is_empty() {
             return None;
         }
-        // CCB: "Found N references" / "Found N symbols" etc.
+        // "Found N references" / "Found N symbols" etc.
         let line_count = text.lines().count();
         Some(ToolDisplayResult {
             lines: vec![ToolDisplayLine::new(

@@ -3,8 +3,6 @@
 //! Monitors token usage relative to the model's context window and triggers
 //! compaction when a configurable threshold is exceeded. After compaction,
 //! performs cleanup to re-attach file/skill attachments and reset caches.
-//!
-//! Maps to CCB `compact/autoCompact.ts` + `reactiveCompact.ts`.
 
 // ─── Constants ────────────────────────────────────────────────────────
 
@@ -129,7 +127,7 @@ pub fn should_auto_compact(
         return Some(CompactTrigger::ThresholdExceeded { usage_percent });
     }
 
-    // Also check absolute token threshold (CCB-style buffer approach)
+    // Also check absolute token threshold (buffer approach)
     let threshold = auto_compact_threshold(context_window);
     if total_tokens >= threshold {
         let usage_pct = total_tokens as f64 / context_window as f64;
@@ -147,14 +145,9 @@ pub fn should_auto_compact(
 /// context attachments (open files, active skills) need to be re-injected
 /// into the conversation so the model retains awareness of them.
 ///
-/// This is currently a no-op placeholder. The actual re-injection will
-/// be implemented when the file-tracking and skill systems are built
-/// (Phases 7-8). The function signature is stable for callers.
-pub fn post_compact_cleanup() {
-    // Phase 7 (tools) will track open files for re-injection.
-    // Phase 8 (skills) will track active skills for re-injection.
-    // For now, compaction.rs already handles the core message rewriting.
-}
+/// No-op placeholder — will re-inject context attachments (open files,
+/// active skills) after compaction once those systems are wired up.
+pub fn post_compact_cleanup() {}
 
 // ─── Tests ─────────────────────────────────────────────────────────────
 

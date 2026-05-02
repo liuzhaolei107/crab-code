@@ -1,7 +1,5 @@
 //! Permission rule AST parser.
 //!
-//! Maps to CCB `utils/permissions/permissionRuleParser.ts` + `shellRuleMatching.ts`.
-//!
 //! Parses permission rules like `"Bash(cmd:git*)"`, `"Edit(path:/src/*)"` into a
 //! structured AST, and matches tool invocations against those rules. Also supports
 //! bash-specific command pattern parsing for shell rule matching.

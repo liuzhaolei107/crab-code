@@ -87,10 +87,8 @@ impl Tool for GlobTool {
         true
     }
 
-    // ── CCB-aligned rendering hooks ──
-
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // CCB: userFacingName="Search", message = pattern: "X", path: "Y"
+        // userFacingName="Search", message = pattern: "X", path: "Y"
         let pattern = input["pattern"].as_str()?;
         let path = input["path"].as_str();
         let msg = match path {
@@ -112,13 +110,13 @@ impl Tool for GlobTool {
                 preview_lines: 1,
             });
         }
-        // CCB: "Found N files" (N bold) as summary, files listed below in verbose
+        // "Found N files" (N bold) as summary, files listed below in verbose.
         let file_count = text.lines().count();
         let mut lines = vec![ToolDisplayLine::new(
             format!("Found {file_count} files"),
             ToolDisplayStyle::Muted,
         )];
-        // Show file list indented with ⎿ connector (CCB verbose style)
+        // Show file list indented with ⎿ connector (verbose style).
         for f in text.lines().take(20) {
             lines.push(ToolDisplayLine::new(
                 format!("  ⎿ {f}"),

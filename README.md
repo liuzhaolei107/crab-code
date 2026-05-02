@@ -31,7 +31,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ./target/release/crab -p "fix the bug"  # Non-interactive
 ```
 
-See `crab --help` for more. Config lives at `~/.crab/config.toml` (snake_case TOML); the full loading & merge spec is in [`docs/config.md`](docs/config.md).
+See `crab --help` for more. Config lives at `~/.crab/config.toml` (snake_case TOML); the full loading & merge spec is in [`docs/config-design.md`](docs/config-design.md).
 
 ## Configuration
 

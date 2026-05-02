@@ -7,10 +7,10 @@ use serde_json::Value;
 
 /// Tool for returning structured output validated against a JSON Schema.
 ///
-/// Mirrors CCB's `StructuredOutput` tool. Only registered in non-interactive
-/// mode when the user provides `--json-schema`. The tool's input schema is
-/// replaced by the user-supplied schema, and `execute()` validates the model's
-/// output against it before returning.
+/// Only registered in non-interactive mode when the user provides
+/// `--json-schema`. The tool's input schema is replaced by the user-supplied
+/// schema, and `execute()` validates the model's output against it before
+/// returning.
 pub struct StructuredOutputTool {
     /// The user-supplied JSON Schema (used as `input_schema`).
     schema: Value,

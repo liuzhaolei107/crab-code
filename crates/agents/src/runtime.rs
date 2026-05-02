@@ -531,15 +531,8 @@ impl AgentRuntime {
         }
     }
 
-    // ── Slash command dispatch ──────────────────────────────────────────
+    // ── Accessors ──────────────────────────────────────────────────────
 
-    /// Route a `/command` through the built-in registry and skills.
-    ///
-    /// Priority order:
-    /// Access the memory directory, if configured.
-    /// Resolved shell choice for the TUI's `!` prefix. The TUI consults
-    /// this together with the live tool registry to decide whether to
-    /// route to `Bash` or `PowerShell`.
     #[must_use]
     pub fn default_shell(&self) -> crab_config::DefaultShell {
         self.default_shell

@@ -37,7 +37,7 @@ file layer (persisted, file-driven)
 
 ### Notes on the Plugin Layer
 
-- **Gating**: the `enabledPlugins` field in the main `config.toml` determines which plugins' `config.json` files get loaded. Schema (aligned with CCB `types.ts:566-574`):
+- **Gating**: the `enabledPlugins` field in the main `config.toml` determines which plugins' `config.json` files get loaded. Schema:
   ```
   enabledPlugins: HashMap<String, Value>
   // key format: "plugin-id@marketplace-id"
@@ -48,8 +48,8 @@ file layer (persisted, file-driven)
   ```
 - **Load timing**: at process startup, every enabled plugin's `config.json` is loaded **once** and merged into the file layer. Skill/command/subagent invocations never re-trigger config merging. "Plugin enabled" (contributes config) and "plugin used" (runs skill/wasm) are independent events.
 - **Format**: JSON — same format as `plugin.json` manifest. Everything under a plugin directory is machine-distributed and not hand-edited, so JSON is the appropriate format. The loader parses each file as `serde_json::Value`, then converts to `toml::Value` to join the main merge chain.
-- **Order**: plugins merged alphabetically by `<name>`. This differs from CCB's registration-order behavior — alphabetical order is more deterministic.
-- **Optional**: a plugin is not required to ship a `config.json`. Most existing CCB plugins contribute settings via code registration; Crab plugins use a static file because WASM/Skill plugins cannot cleanly call host-side registration APIs.
+- **Order**: plugins merged alphabetically by `<name>`. Alphabetical order is more deterministic than registration order.
+- **Optional**: a plugin is not required to ship a `config.json`. Some plugin systems contribute settings via code registration; Crab plugins use a static file because WASM/Skill plugins cannot cleanly call host-side registration APIs.
 - **Security**: plugins cannot set the `env` field via `config.json` (this would let them silently inject secrets or proxies). The schema enforces a reduced subset for plugin contributions.
 - **First version stance**: the directory layout borrows from Anthropic's plugin convention (`plugins/<name>/plugin.json` + `skills/` + `commands/` + `agents/`) so Crab can consume the Anthropic plugin repo. The `config.json` contribution file is Crab's own addition.
 
@@ -88,7 +88,7 @@ CRAB_API_KEY (universal, any provider)
 
 Critical invariants:
 - **`CRAB_API_KEY`** is the universal escape hatch — set it when you want crab to use one key regardless of provider routing.
-- **`ANTHROPIC_AUTH_TOKEN` never flows to non-anthropic providers**. CCB users routinely have it set in their shell environment; without provider gating, configuring `provider = "deepseek"` in `config.toml` would silently leak the Anthropic token to deepseek's endpoint and produce a 401.
+- **`ANTHROPIC_AUTH_TOKEN` never flows to non-anthropic providers**. Users routinely have it set in their shell environment; without provider gating, configuring `provider = "deepseek"` in `config.toml` would silently leak the Anthropic token to deepseek's endpoint and produce a 401.
 
 This chain is orthogonal to the file-layer merge chain. A user may configure `apiKeyHelper` in `config.toml`, but the secret it returns never round-trips through `Config`.
 
@@ -131,7 +131,7 @@ The concat+dedup rule ensures that, for example, `permissions.allow` accumulates
 
 ### 4.3 Permissions Resolution (Deny Always Wins)
 
-After `permissions.allow` and `permissions.deny` have been merged (concat+dedup), tool-invocation authorization follows this order (aligned with CCB `permissions.ts:1169-1297`):
+After `permissions.allow` and `permissions.deny` have been merged (concat+dedup), tool-invocation authorization follows this order:
 
 1. **Check deny first**: if any deny rule matches, return denial immediately — subsequent allow rules are **never evaluated**.
 2. Check allow: a match grants permission.
@@ -317,16 +317,16 @@ file layer (persisted)
 
 ## 10. Error Handling & Edge Cases
 
-Crab's philosophy aligns with CCB: **fall back gracefully, never crash on malformed config**. Bad data is logged as a warning; the user gets a running tool instead of a dead one.
+Crab's philosophy: **fall back gracefully, never crash on malformed config**. Bad data is logged as a warning; the user gets a running tool instead of a dead one.
 
 ### 10.1 Malformed Files
 
-| Failure | Behavior | Reference (CCB) |
-|---------|----------|-----------------|
-| `config.toml` has a TOML/JSON parse error | That source returns nothing (treated as empty). Warning logged. Subsequent layers unaffected. | `settings.ts:213`, `json.ts:31-40` |
-| A single invalid permission rule | Only the bad rule is filtered out; the rest of that layer is applied. | `validation.ts:224-265` |
-| A plugin's `config.json` is unreadable or fails schema | That plugin is skipped with a warning; other plugins continue to load. | (same pattern as above) |
-| Schema validation fails on a specific field | The field is discarded with a warning; unrelated valid fields in the same file are retained. | — |
+| Failure | Behavior |
+|---------|----------|
+| `config.toml` has a TOML/JSON parse error | That source returns nothing (treated as empty). Warning logged. Subsequent layers unaffected. |
+| A single invalid permission rule | Only the bad rule is filtered out; the rest of that layer is applied. |
+| A plugin's `config.json` is unreadable or fails schema | That plugin is skipped with a warning; other plugins continue to load. |
+| Schema validation fails on a specific field | The field is discarded with a warning; unrelated valid fields in the same file are retained. |
 
 **No crash, no hard error on startup.** The crab process always starts with at least the compiled-in defaults, even if every file on disk is corrupted.
 
@@ -335,11 +335,11 @@ Crab's philosophy aligns with CCB: **fall back gracefully, never crash on malfor
 - On a fresh system (no `~/.crab/config.toml`), Crab runs with the compiled-in defaults.
 - Crab **does not auto-create** any config file and **does not prompt** the user to create one.
 - The `~/.crab/` directory and `config.toml` are created **only** when the user first runs a mutating command — `crab config set …`, `crab auth login`, etc.
-- This matches CCB (`envUtils.ts:10`, `settings.ts:309-317`): new installs cost the user zero actions until they actually want to change something.
+- New installs cost the user zero actions until they actually want to change something.
 
 ### 10.3 OS-Specific Paths
 
-Crab uses the same path convention on all platforms (aligned with CCB `envUtils.ts:7-14`):
+Crab uses the same path convention on all platforms:
 
 ```
 $CRAB_CONFIG_DIR  ?? join(homedir(), ".crab")
@@ -359,7 +359,7 @@ Two project-local files are intentionally per-checkout and must never be committ
 | `.crab/config.local.toml` | First write via `crab config set --local` |
 | `AGENTS.local.md` | First time the file is observed during memory loading |
 
-The check is two-layered for both (aligned with CCB `gitignore.ts:62-83`):
+The check is two-layered for both:
 
 1. Run `git check-ignore <path>` — if Git already ignores the file (via any `.gitignore` in the repo, or via a global `~/.config/git/ignore` rule), skip.
 2. Inspect the global gitignore for a matching entry (`**/config.local.toml` or `**/AGENTS.local.md`); if present, skip.
@@ -370,14 +370,14 @@ Only when both checks pass does Crab append `/.crab/config.local.toml` or `/AGEN
 
 ## 11. Write-Back (Config Mutation)
 
-Crab can mutate persisted config via `crab config set <key> <value>` (and analogous commands). The mechanism mirrors CCB's `updateSettingsForSource()` (`settings.ts:416-524`) with one upgrade.
+Crab can mutate persisted config via `crab config set <key> <value>` (and analogous commands). The mechanism mirrors `updateSettingsForSource()` with one key improvement.
 
 | Aspect | Behavior |
 |--------|----------|
 | Writable layers | `user`, `project`, `local` |
 | Non-writable layers | `defaults`, `plugin`, `--config` (ephemeral), runtime (env/flag) |
 | Target layer selection | `--global` → user; `--local` → local; default → project |
-| Comment preservation | **Yes, via `toml_edit`** — original comments, key order, and formatting are preserved through round-trip. This is strictly better than CCB, whose JSON serializer discards comments. |
+| Comment preservation | **Yes, via `toml_edit`** — original comments, key order, and formatting are preserved through round-trip. This is strictly better than the typical JSON serializer approach which discards comments. |
 | Directory creation | `.crab/` created on demand if absent |
 | `.gitignore` hook | Triggered automatically when first writing `config.local.toml` (see 10.4) |
 | Post-write validation | The resulting file is re-parsed and re-validated against the schema; if validation fails, the write is rolled back and an error is surfaced — this prevents leaving a broken config on disk |
@@ -501,11 +501,11 @@ For local-only installs, point at a local path:
 5. **TOML for human-edited files, JSON for machine-written files.** Format follows the reader, not uniformity.
 6. **`CRAB_CONFIG_DIR` supported from day one.** Enables containers, tests, and multi-identity scenarios without layer-rule changes.
 7. **Hand-written schema, not auto-generated.** Higher quality, low churn, matches ecosystem convention; drift is caught by fixture tests.
-8. **Plugin layer borrows the Anthropic directory layout.** First version follows CCB's convention (`plugins/<name>/plugin.json` + `skills/` + `commands/` + `agents/`), enabling direct consumption of the Anthropic plugin repo. The `config.json` contribution channel is Crab's own addition because Crab's WASM/Skill plugin model cannot register settings via host-side code the way CCB's TypeScript plugins can.
-9. **Plugin directories use JSON; the main chain uses TOML.** Plugin content is machine-distributed, so JSON (consistent with `plugin.json`) is the right format; the main chain is human-edited, so TOML wins. At load time, plugin JSON is converted to `toml::Value` to join the main merge chain. Plugins merge in alphabetical order (more deterministic than CCB's registration order) and cannot set `[env]` (security constraint).
+8. **Plugin layer borrows the Anthropic directory layout.** First version follows the convention (`plugins/<name>/plugin.json` + `skills/` + `commands/` + `agents/`), enabling direct consumption of the Anthropic plugin repo. The `config.json` contribution channel is Crab's own addition because Crab's WASM/Skill plugin model cannot register settings via host-side code the way TypeScript plugins can.
+9. **Plugin directories use JSON; the main chain uses TOML.** Plugin content is machine-distributed, so JSON (consistent with `plugin.json`) is the right format; the main chain is human-edited, so TOML wins. At load time, plugin JSON is converted to `toml::Value` to join the main merge chain. Plugins merge in alphabetical order (more deterministic than registration order) and cannot set `[env]` (security constraint).
 10. **The schema is both a contract and a defaults document.** `Config::default()` is the runtime source; the schema's `default` keyword on every leaf field lets IDEs, documentation, and users see the same defaults — drift is guarded by the `rust_defaults_match_schema_defaults` test. Dynamic defaults stay Rust-only; they are not declared in the schema.
-11. **Graceful-degradation error handling.** Malformed files, bad plugin configs, and schema-invalid fields are logged and skipped, not fatal. The user always gets a running tool, even with everything on disk corrupted. Aligns with CCB.
+11. **Graceful-degradation error handling.** Malformed files, bad plugin configs, and schema-invalid fields are logged and skipped, not fatal. The user always gets a running tool, even with everything on disk corrupted.
 12. **Permissions: deny always wins.** No allow rule from any source, at any level, can override a deny. This is a non-negotiable security boundary.
 13. **Zero-config first run.** Nothing is created on disk until the user first mutates config. No auto-generated templates, no prompts.
 14. **`~/.crab/` on all platforms.** Windows does not follow `%APPDATA%` convention; consistency with Linux/macOS wins. `CRAB_CONFIG_DIR` overrides for edge cases.
-15. **Write-back preserves TOML comments.** Via `toml_edit`, Crab retains user-authored comments and key order across mutations — strictly better than CCB's JSON-serializer round-trip which drops them.
+15. **Write-back preserves TOML comments.** Via `toml_edit`, Crab retains user-authored comments and key order across mutations — strictly better than a JSON-serializer round-trip which drops them.

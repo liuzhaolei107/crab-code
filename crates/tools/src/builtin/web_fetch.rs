@@ -1,7 +1,4 @@
 //! Web page fetching tool — fetches a URL and extracts text content.
-//!
-//! Currently returns a stub response. Real HTTP fetching with HTML-to-text
-//! conversion is deferred to Phase 2 (requires adding `reqwest` dependency).
 
 use crab_core::Result;
 use crab_core::tool::{Tool, ToolContext, ToolDisplayResult, ToolOutput};
@@ -133,10 +130,8 @@ impl Tool for WebFetchTool {
         true
     }
 
-    // ── CCB-aligned rendering hooks ──
-
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // CCB: message = URL (non-verbose) or url: "X" + prompt: "Y" (verbose)
+        // message = URL (non-verbose) or url: "X" + prompt: "Y" (verbose)
         let url = input["url"].as_str()?;
         Some(format!("Fetch ({url})"))
     }
@@ -144,8 +139,8 @@ impl Tool for WebFetchTool {
     fn format_result(&self, output: &ToolOutput) -> Option<ToolDisplayResult> {
         use crab_core::tool::{ToolDisplayLine, ToolDisplayResult, ToolDisplayStyle};
         let text = output.text();
-        // CCB: "Received SIZE (STATUS CODE STATUS_TEXT)"
-        // Our output embeds "[CODE TEXT | SIZE]" on the first line
+        // "Received SIZE (STATUS CODE STATUS_TEXT)".
+        // Our output embeds "[CODE TEXT | SIZE]" on the first line.
         let summary = if let Some(first_line) = text.lines().next()
             && first_line.starts_with('[')
             && first_line.contains(']')

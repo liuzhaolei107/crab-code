@@ -100,7 +100,6 @@ pub struct Config {
 }
 
 /// Value variants accepted under `enabledPlugins.<key>`.
-/// Aligned with CCB `types.ts:566-574`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "gen-schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]

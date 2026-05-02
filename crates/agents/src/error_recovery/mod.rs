@@ -1,5 +1,4 @@
-//! Error classification and recovery strategy — aligned with CCB's
-//! `classifyAPIError()` approach from `src/services/api/errors.ts`.
+//! Error classification and recovery strategy.
 //!
 //! Two modules:
 //!
@@ -8,11 +7,6 @@
 //!   `Timeout` / `Permanent` / `Unknown`).
 //! - [`strategy`] — [`RecoveryAction`] + [`RecoveryStrategy`] pick
 //!   `Retry` / `AskUser` / `Abort` per category.
-//!
-//! The earlier `circuit` (`CircuitBreaker`) and `degradation`
-//! (`GracefulDegradation`) modules were removed in Phase 4.1 — CCB does
-//! not ship equivalent abstractions, and crab's versions were
-//! unintegrated.
 
 pub mod category;
 pub mod strategy;
