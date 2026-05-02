@@ -8,10 +8,10 @@ use std::sync::Arc;
 use crate::registry::ToolRegistry;
 
 use super::{
-    agent, ask_user, bash, brief, config_tool, cron, edit, glob, grep, lsp, mcp_auth, mcp_resource,
-    monitor, notebook, plan_mode, read, remote_trigger, send_user_file, sleep, snip, task, team,
-    todo_write, tool_search, verify_plan, web_browser, web_fetch, web_search, workflow, worktree,
-    write,
+    agent, ask_user, bash, brief, computer_use, config_tool, cron, edit, glob, grep, lsp, mcp_auth,
+    mcp_resource, monitor, notebook, plan_mode, read, remote_trigger, send_user_file, sleep, snip,
+    task, team, todo_write, tool_search, verify_plan, web_browser, web_fetch, web_search, workflow,
+    worktree, write,
 };
 
 #[cfg(target_os = "windows")]
@@ -96,6 +96,15 @@ pub fn register_all_builtins(
     if is_powershell_tool_enabled() {
         registry.register(Arc::new(powershell::PowerShellTool));
     }
+
+    // ComputerUse tool — always on Windows, requires display on Linux/macOS
+    #[cfg(target_os = "windows")]
+    registry.register(Arc::new(computer_use::ComputerUseTool));
+
+    #[cfg(not(target_os = "windows"))]
+    if std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok() {
+        registry.register(Arc::new(computer_use::ComputerUseTool));
+    }
 }
 
 /// Create a `ToolRegistry` pre-populated with all built-in tools.
@@ -109,6 +118,12 @@ pub fn create_default_registry() -> ToolRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn is_computer_use_available() -> bool {
+        cfg!(windows)
+            || std::env::var("DISPLAY").is_ok()
+            || std::env::var("WAYLAND_DISPLAY").is_ok()
+    }
 
     #[test]
     fn register_all_builtins_populates_registry() {
@@ -163,6 +178,10 @@ mod tests {
         assert!(registry.get("Workflow").is_some());
         assert!(registry.get("Monitor").is_some());
         assert!(registry.get("SendUserFile").is_some());
+
+        // ComputerUse tool (conditional based on display availability)
+        #[cfg(target_os = "windows")]
+        assert!(registry.get("ComputerUse").is_some());
     }
 
     #[test]
@@ -172,7 +191,10 @@ mod tests {
         let ps_enabled = cfg!(windows)
             && std::env::var("CRAB_USE_POWERSHELL_TOOL")
                 .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"));
-        let expected = if ps_enabled { 45 } else { 44 };
+        let mut expected = if ps_enabled { 45 } else { 44 };
+        if is_computer_use_available() {
+            expected += 1;
+        }
         assert_eq!(registry.len(), expected);
     }
 
@@ -184,7 +206,10 @@ mod tests {
         let ps_enabled = cfg!(windows)
             && std::env::var("CRAB_USE_POWERSHELL_TOOL")
                 .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"));
-        let expected = if ps_enabled { 45 } else { 44 };
+        let mut expected = if ps_enabled { 45 } else { 44 };
+        if is_computer_use_available() {
+            expected += 1;
+        }
         assert_eq!(schemas.len(), expected);
         for schema in &schemas {
             assert!(schema.get("name").is_some());

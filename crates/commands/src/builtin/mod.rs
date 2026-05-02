@@ -1,3 +1,5 @@
+pub mod auth;
+pub mod feedback;
 pub mod git;
 pub mod meta;
 pub mod model;
@@ -84,4 +86,30 @@ pub fn register_all(registry: &mut CommandRegistry) {
     // Navigation — copy / rewind
     registry.register(Arc::new(navigation::CopyCommand));
     registry.register(Arc::new(navigation::RewindCommand));
+
+    // Auth
+    registry.register(Arc::new(auth::LoginCommand));
+    registry.register(Arc::new(auth::LogoutCommand));
+
+    // Feedback
+    registry.register(Arc::new(feedback::FeedbackCommand));
+
+    // New meta commands
+    registry.register(Arc::new(meta::AgentsCommand));
+    registry.register(Arc::new(meta::HooksCommand));
+    registry.register(Arc::new(meta::TasksCommand));
+    registry.register(Arc::new(meta::ColorCommand));
+    registry.register(Arc::new(meta::IdeCommand));
+    registry.register(Arc::new(meta::ReloadPluginsCommand));
+
+    // New status commands
+    registry.register(Arc::new(status::ContextCommand));
+    registry.register(Arc::new(status::ReleaseNotesCommand));
+
+    // New model commands
+    registry.register(Arc::new(model::VimCommand));
+    registry.register(Arc::new(model::SandboxCommand));
+
+    // New navigation command
+    registry.register(Arc::new(navigation::BtwCommand));
 }

@@ -96,6 +96,7 @@ pub struct AgentRuntime {
     /// (`crab_config::DefaultShell`). Captured at init time from
     /// [`SessionConfig::default_shell`].
     default_shell: crab_config::DefaultShell,
+    skill_dirs: Vec<PathBuf>,
 }
 
 /// Snapshot of the current team state — rendered by the TUI team browser.
@@ -331,6 +332,8 @@ impl AgentRuntime {
         let default_shell =
             crab_config::DefaultShell::from_str_or_default(&config.session_config.default_shell);
 
+        let skill_dirs = config.skill_dirs.clone();
+
         let runtime = Self {
             conversation,
             executor,
@@ -346,6 +349,7 @@ impl AgentRuntime {
             compaction_config,
             file_history: Some(file_history),
             default_shell,
+            skill_dirs,
         };
 
         let meta = RuntimeInitMeta {
@@ -547,11 +551,11 @@ impl AgentRuntime {
         &self.skill_registry
     }
 
-    /// Re-discover skills from the given directories.
-    pub fn reload_skills(&mut self, skill_dirs: &[PathBuf]) -> usize {
+    /// Re-discover skills from the stored skill directories.
+    pub fn reload_skills(&mut self) -> usize {
         let mut new_registry = SkillRegistry::new();
         new_registry.register_all(crab_skills::builtin::builtin_skills());
-        match SkillRegistry::discover(skill_dirs) {
+        match SkillRegistry::discover(&self.skill_dirs) {
             Ok(disk) => {
                 for skill in disk.list() {
                     new_registry.register(skill.clone());

@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn registry_has_expected_command_count() {
         let reg = CommandRegistry::new();
-        assert_eq!(reg.len(), 34);
+        assert_eq!(reg.len(), 48);
         assert!(!reg.is_empty());
     }
 
@@ -140,7 +140,7 @@ mod tests {
     fn list_returns_all() {
         let reg = CommandRegistry::new();
         let list = reg.list();
-        assert_eq!(list.len(), 34);
+        assert_eq!(list.len(), 48);
         let names: Vec<&str> = list.iter().map(|(n, _)| *n).collect();
         assert!(names.contains(&"help"));
         assert!(names.contains(&"exit"));
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn default_registry_has_commands() {
         let reg = CommandRegistry::default();
-        assert_eq!(reg.len(), 34);
+        assert_eq!(reg.len(), 48);
     }
 
     #[test]

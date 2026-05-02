@@ -561,14 +561,24 @@ fn register_all_builtins_produces_expected_tools() {
     assert_eq!(registry.len(), expected);
 }
 
-/// Expected total tool count. On Windows the PowerShell tool is opt-in via
-/// `CRAB_USE_POWERSHELL_TOOL`, so the registry is 44 unless the env var is
-/// truthy; on other platforms the count is always 44.
+/// Expected total tool count. PowerShell is opt-in on Windows via
+/// `CRAB_USE_POWERSHELL_TOOL`. ComputerUse is always on Windows, conditional
+/// on `DISPLAY`/`WAYLAND_DISPLAY` elsewhere.
 fn expected_builtin_count() -> usize {
     let ps_enabled = cfg!(windows)
         && std::env::var("CRAB_USE_POWERSHELL_TOOL")
             .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"));
-    if ps_enabled { 45 } else { 44 }
+    let cu_enabled = cfg!(windows)
+        || std::env::var("DISPLAY").is_ok()
+        || std::env::var("WAYLAND_DISPLAY").is_ok();
+    let mut count = 44;
+    if ps_enabled {
+        count += 1;
+    }
+    if cu_enabled {
+        count += 1;
+    }
+    count
 }
 
 #[test]

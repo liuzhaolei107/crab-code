@@ -145,6 +145,148 @@ impl SlashCommand for MemoryCommand {
     }
 }
 
+pub struct AgentsCommand;
+
+impl SlashCommand for AgentsCommand {
+    fn name(&self) -> &'static str {
+        "agents"
+    }
+    fn description(&self) -> &'static str {
+        "List agent configurations"
+    }
+    fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandResult {
+        let mut entries = Vec::new();
+        let agents_md = ctx.working_dir.join("AGENTS.md");
+        if agents_md.exists() {
+            entries.push(format!("  AGENTS.md ({})", agents_md.display()));
+        }
+        let agents_dir = ctx.working_dir.join(".claude").join("agents");
+        if agents_dir.is_dir()
+            && let Ok(rd) = std::fs::read_dir(&agents_dir)
+        {
+            for entry in rd.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|e| e == "md") {
+                    entries.push(format!(
+                        "  {}",
+                        p.file_name().unwrap_or_default().to_string_lossy()
+                    ));
+                }
+            }
+        }
+        if entries.is_empty() {
+            CommandResult::Message(
+                "No agent configurations found.\nRun /init to create AGENTS.md.".into(),
+            )
+        } else {
+            CommandResult::Message(format!("Agent configurations:\n{}", entries.join("\n")))
+        }
+    }
+}
+
+pub struct HooksCommand;
+
+impl SlashCommand for HooksCommand {
+    fn name(&self) -> &'static str {
+        "hooks"
+    }
+    fn description(&self) -> &'static str {
+        "Show hook configuration"
+    }
+    fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandResult {
+        let settings_path = ctx.working_dir.join(".claude").join("settings.json");
+        if !settings_path.exists() {
+            return CommandResult::Message("No hooks configured.".into());
+        }
+        match std::fs::read_to_string(&settings_path) {
+            Ok(content) => {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
+                    && let Some(hooks) = json.get("hooks")
+                {
+                    return CommandResult::Message(format!(
+                        "Hooks:\n{}",
+                        serde_json::to_string_pretty(hooks).unwrap_or_default()
+                    ));
+                }
+                CommandResult::Message("No hooks configured.".into())
+            }
+            Err(e) => CommandResult::Message(format!("Failed to read settings: {e}")),
+        }
+    }
+}
+
+pub struct TasksCommand;
+
+impl SlashCommand for TasksCommand {
+    fn name(&self) -> &'static str {
+        "tasks"
+    }
+    fn description(&self) -> &'static str {
+        "List active tasks"
+    }
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandResult {
+        CommandResult::Message("Task information is available in the team browser (/team).".into())
+    }
+}
+
+pub struct ColorCommand;
+
+impl SlashCommand for ColorCommand {
+    fn name(&self) -> &'static str {
+        "color"
+    }
+    fn description(&self) -> &'static str {
+        "Set prompt color (/color <name>)"
+    }
+    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandResult {
+        let color = args.trim();
+        if color.is_empty() {
+            return CommandResult::Message(
+                "Usage: /color <name>\nAvailable: red, green, blue, yellow, cyan, magenta, white"
+                    .into(),
+            );
+        }
+        match color {
+            "red" | "green" | "blue" | "yellow" | "cyan" | "magenta" | "white" => {
+                CommandResult::Effect(CommandEffect::SetColor(color.to_string()))
+            }
+            _ => CommandResult::Message(format!(
+                "Unknown color '{color}'. Available: red, green, blue, yellow, cyan, magenta, white"
+            )),
+        }
+    }
+}
+
+pub struct IdeCommand;
+
+impl SlashCommand for IdeCommand {
+    fn name(&self) -> &'static str {
+        "ide"
+    }
+    fn description(&self) -> &'static str {
+        "Show IDE connection status"
+    }
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandResult {
+        let port = std::env::var("CRAB_ACP_PORT").unwrap_or_else(|_| "not set".into());
+        let ide = std::env::var("CRAB_IDE").unwrap_or_else(|_| "none".into());
+        CommandResult::Message(format!("IDE status:\n  IDE: {ide}\n  ACP port: {port}"))
+    }
+}
+
+pub struct ReloadPluginsCommand;
+
+impl SlashCommand for ReloadPluginsCommand {
+    fn name(&self) -> &'static str {
+        "reload-plugins"
+    }
+    fn description(&self) -> &'static str {
+        "Reload plugins and skills"
+    }
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandResult {
+        CommandResult::Effect(CommandEffect::ReloadPlugins)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,5 +387,91 @@ mod tests {
         } else {
             panic!("expected Message");
         }
+    }
+
+    #[test]
+    fn agents_no_config_shows_hint() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        if let CommandResult::Message(text) = AgentsCommand.execute("", &ctx) {
+            assert!(text.contains("No agent configurations"));
+        } else {
+            panic!("expected Message");
+        }
+    }
+
+    #[test]
+    fn hooks_no_settings_shows_message() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        if let CommandResult::Message(text) = HooksCommand.execute("", &ctx) {
+            assert!(text.contains("No hooks configured"));
+        } else {
+            panic!("expected Message");
+        }
+    }
+
+    #[test]
+    fn tasks_shows_message() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        if let CommandResult::Message(text) = TasksCommand.execute("", &ctx) {
+            assert!(text.contains("team browser"));
+        } else {
+            panic!("expected Message");
+        }
+    }
+
+    #[test]
+    fn color_no_args_shows_usage() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        if let CommandResult::Message(text) = ColorCommand.execute("", &ctx) {
+            assert!(text.contains("Usage:"));
+        } else {
+            panic!("expected Message");
+        }
+    }
+
+    #[test]
+    fn color_valid_returns_effect() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        assert!(matches!(
+            ColorCommand.execute("red", &ctx),
+            CommandResult::Effect(CommandEffect::SetColor(ref c)) if c == "red"
+        ));
+    }
+
+    #[test]
+    fn color_invalid_shows_error() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        if let CommandResult::Message(text) = ColorCommand.execute("puce", &ctx) {
+            assert!(text.contains("Unknown color"));
+        } else {
+            panic!("expected Message");
+        }
+    }
+
+    #[test]
+    fn ide_shows_status() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        if let CommandResult::Message(text) = IdeCommand.execute("", &ctx) {
+            assert!(text.contains("IDE status:"));
+        } else {
+            panic!("expected Message");
+        }
+    }
+
+    #[test]
+    fn reload_plugins_returns_effect() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        assert!(matches!(
+            ReloadPluginsCommand.execute("", &ctx),
+            CommandResult::Effect(CommandEffect::ReloadPlugins)
+        ));
     }
 }

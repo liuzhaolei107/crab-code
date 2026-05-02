@@ -53,7 +53,9 @@ pub fn simulate_input(event: &InputEvent) -> InputResult {
     };
     InputResult {
         success: false,
-        message: format!("Input simulation ({detail}) is not available without platform integration"),
+        message: format!(
+            "Input simulation ({detail}) is not available without platform integration"
+        ),
     }
 }
 

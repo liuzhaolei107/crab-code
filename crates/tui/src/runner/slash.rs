@@ -12,82 +12,16 @@ use crab_commands::{CommandContext, CommandEffect, CommandRegistry, CommandResul
 use crate::app::{App, ChatMessage};
 use crate::components::autocomplete::CommandInfo;
 
-/// Static list of built-in slash commands for Tab completion.
-pub(super) fn builtin_slash_commands() -> Vec<CommandInfo> {
-    vec![
-        CommandInfo {
-            name: "/help".into(),
-            description: "Show available commands".into(),
-        },
-        CommandInfo {
-            name: "/clear".into(),
-            description: "Clear conversation history".into(),
-        },
-        CommandInfo {
-            name: "/compact".into(),
-            description: "Compact conversation (free context)".into(),
-        },
-        CommandInfo {
-            name: "/exit".into(),
-            description: "Exit crab-code".into(),
-        },
-        CommandInfo {
-            name: "/model".into(),
-            description: "Show or switch the current model".into(),
-        },
-        CommandInfo {
-            name: "/cost".into(),
-            description: "Show token usage and cost".into(),
-        },
-        CommandInfo {
-            name: "/status".into(),
-            description: "Show session status".into(),
-        },
-        CommandInfo {
-            name: "/memory".into(),
-            description: "Show or manage memory files".into(),
-        },
-        CommandInfo {
-            name: "/config".into(),
-            description: "Open settings configuration".into(),
-        },
-        CommandInfo {
-            name: "/permissions".into(),
-            description: "Show current permission mode".into(),
-        },
-        CommandInfo {
-            name: "/resume".into(),
-            description: "Resume a previous session".into(),
-        },
-        CommandInfo {
-            name: "/diff".into(),
-            description: "Show recent file changes".into(),
-        },
-        CommandInfo {
-            name: "/review".into(),
-            description: "Review recent code changes".into(),
-        },
-        CommandInfo {
-            name: "/commit".into(),
-            description: "Create a git commit".into(),
-        },
-        CommandInfo {
-            name: "/plan".into(),
-            description: "Enter plan mode".into(),
-        },
-        CommandInfo {
-            name: "/fast".into(),
-            description: "Toggle fast mode".into(),
-        },
-        CommandInfo {
-            name: "/thinking".into(),
-            description: "Toggle extended thinking".into(),
-        },
-        CommandInfo {
-            name: "/effort".into(),
-            description: "Set effort level".into(),
-        },
-    ]
+/// Build the slash command list for Tab completion from the registry.
+pub(super) fn builtin_slash_commands(registry: &CommandRegistry) -> Vec<CommandInfo> {
+    registry
+        .list()
+        .into_iter()
+        .map(|(name, desc)| CommandInfo {
+            name: format!("/{name}"),
+            description: desc.to_string(),
+        })
+        .collect()
 }
 
 /// What should happen after processing a user-submitted line.
@@ -182,6 +116,7 @@ fn build_command_ctx<'a>(rt: &'a AgentRuntime, session_id: &'a str) -> CommandCo
             api_calls: summary.api_calls,
         },
         estimated_tokens,
+        context_window: rt.conversation().context_window,
         message_count: rt.conversation().len(),
         memory_dir: rt.memory_dir(),
     }
@@ -346,6 +281,54 @@ pub(super) async fn apply_command_effect(
                 }
             }
             SubmitOutcome::Handled
+        }
+
+        CommandEffect::ToggleVim => {
+            app.vim.toggle();
+            let label = if app.vim.is_enabled() {
+                "Vim mode enabled"
+            } else {
+                "Normal mode"
+            };
+            app.push_system_message(label);
+            SubmitOutcome::Handled
+        }
+
+        CommandEffect::ToggleSandbox => {
+            app.push_system_message("Sandbox toggle is not yet supported on this platform.");
+            SubmitOutcome::Handled
+        }
+
+        CommandEffect::SetColor(ref color) => {
+            app.push_system_message(format!(
+                "Prompt color set to {color} (visual update pending)"
+            ));
+            SubmitOutcome::Handled
+        }
+
+        CommandEffect::Login => {
+            app.push_system_message(
+                "Login: use `crab auth login` in a terminal, or press `!` to run it inline.",
+            );
+            SubmitOutcome::Handled
+        }
+
+        CommandEffect::Logout => {
+            app.push_system_message("Logout: use `crab auth logout` in a terminal.");
+            SubmitOutcome::Handled
+        }
+
+        CommandEffect::ReloadPlugins => {
+            rt.reload_skills();
+            app.push_system_message("Plugins and skills reloaded.");
+            SubmitOutcome::Handled
+        }
+
+        CommandEffect::SideQuestion(question) => {
+            let prompt = format!(
+                "[Side question — answer briefly without affecting the main conversation]\n\n{question}"
+            );
+            SubmitOutcome::SpawnQuery(prompt)
         }
     }
 }

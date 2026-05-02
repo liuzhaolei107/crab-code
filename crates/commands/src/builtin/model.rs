@@ -74,6 +74,34 @@ impl SlashCommand for PlanCommand {
     }
 }
 
+pub struct VimCommand;
+
+impl SlashCommand for VimCommand {
+    fn name(&self) -> &'static str {
+        "vim"
+    }
+    fn description(&self) -> &'static str {
+        "Toggle vim input mode"
+    }
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandResult {
+        CommandResult::Effect(CommandEffect::ToggleVim)
+    }
+}
+
+pub struct SandboxCommand;
+
+impl SlashCommand for SandboxCommand {
+    fn name(&self) -> &'static str {
+        "sandbox"
+    }
+    fn description(&self) -> &'static str {
+        "Toggle sandbox mode"
+    }
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandResult {
+        CommandResult::Effect(CommandEffect::ToggleSandbox)
+    }
+}
+
 fn resolve_model_alias(alias: &str) -> String {
     match alias {
         "sonnet" => "claude-sonnet-4-6".to_string(),
@@ -190,6 +218,26 @@ mod tests {
         assert!(matches!(
             PlanCommand.execute("", &ctx),
             CommandResult::Effect(CommandEffect::TogglePlanMode)
+        ));
+    }
+
+    #[test]
+    fn vim_returns_toggle() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        assert!(matches!(
+            VimCommand.execute("", &ctx),
+            CommandResult::Effect(CommandEffect::ToggleVim)
+        ));
+    }
+
+    #[test]
+    fn sandbox_returns_toggle() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        assert!(matches!(
+            SandboxCommand.execute("", &ctx),
+            CommandResult::Effect(CommandEffect::ToggleSandbox)
         ));
     }
 }

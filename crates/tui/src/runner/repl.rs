@@ -4,7 +4,6 @@
 //! events, SIGCONT (Unix), and external-editor handoffs.
 
 use std::io;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
@@ -26,7 +25,7 @@ use crate::app_event::AppEvent;
 use crate::event_broker::EventBroker;
 use crate::frame_requester::FrameRequester;
 
-use super::slash::{SubmitOutcome, handle_submit};
+use super::slash::{SubmitOutcome, builtin_slash_commands, handle_submit};
 
 /// The core render + event loop.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
@@ -43,11 +42,11 @@ pub(super) async fn run_loop(
     session_id: &str,
     event_broker: Arc<EventBroker>,
     frame_requester: FrameRequester,
-    skill_dirs: &[PathBuf],
 ) -> anyhow::Result<()> {
     // `state` starts as None (Initializing) and is populated by InitComplete.
     let mut state: Option<AgentRuntime> = None;
     let slash_registry = CommandRegistry::new();
+    app.set_slash_commands(builtin_slash_commands(&slash_registry));
     let mut init_rx = Some(init_rx);
 
     let mut conv_return: Option<tokio::sync::oneshot::Receiver<crab_agents::QueryTaskResult>> =
@@ -246,7 +245,7 @@ pub(super) async fn run_loop(
                         }
                         crate::watcher::WatchEvent::SkillsChanged => {
                             if let Some(ref mut rt) = state {
-                                let count = rt.reload_skills(skill_dirs);
+                                let count = rt.reload_skills();
                                 app.apply_event(crate::app_event::AppEvent::SkillsReloaded { count });
                                 rt.fire_file_changed_hook(
                                     std::path::Path::new("skills/"),

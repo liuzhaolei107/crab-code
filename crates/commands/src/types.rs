@@ -44,6 +44,13 @@ pub enum CommandEffect {
     CopyLast,
     Rewind(Option<String>),
     OpenOverlay(OverlayKind),
+    ToggleVim,
+    ToggleSandbox,
+    SetColor(String),
+    Login,
+    Logout,
+    ReloadPlugins,
+    SideQuestion(String),
 }
 
 /// Which overlay a command requests the TUI to open.

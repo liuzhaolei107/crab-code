@@ -46,6 +46,7 @@ pub struct TuiConfig {
 /// `InitResult` via a oneshot channel and transitions to `Idle`.
 pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
     let mut prepared = init::prepare(config)?;
+    let session_start = std::time::Instant::now();
 
     let result = repl::run_loop(
         &mut prepared.terminal,
@@ -60,7 +61,6 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
         &prepared.session_id,
         Arc::clone(&prepared.event_broker),
         prepared.frame_requester.clone(),
-        &prepared.skill_dirs,
     )
     .await;
 
@@ -77,6 +77,14 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
         LeaveAlternateScreen
     )?;
     prepared.terminal.show_cursor()?;
+
+    if exit_info.had_conversation {
+        use crate::components::status_bar::StatusBar;
+        let dur = StatusBar::format_duration(session_start.elapsed());
+        let in_t = prepared.app.total_input_tokens;
+        let out_t = prepared.app.total_output_tokens;
+        eprintln!("Session: {in_t} in · {out_t} out · {dur}");
+    }
 
     result.map(|()| exit_info)
 }

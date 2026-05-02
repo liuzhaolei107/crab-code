@@ -28,6 +28,10 @@ strip-ansi-escapes = { workspace = true, optional = true }
 default = ["pdf"]
 pdf = ["pdf_oxide"]
 pty = ["portable-pty", "strip-ansi-escapes"]
+macos-ax = []
+win-native = []
+x11 = []
+wayland = []
 
 [dev-dependencies]
 tokio-util.workspace = true

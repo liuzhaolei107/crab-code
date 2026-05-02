@@ -115,6 +115,62 @@ impl SlashCommand for DoctorCommand {
     }
 }
 
+pub struct ContextCommand;
+
+impl SlashCommand for ContextCommand {
+    fn name(&self) -> &'static str {
+        "context"
+    }
+    fn description(&self) -> &'static str {
+        "Show context window usage"
+    }
+    #[allow(clippy::cast_sign_loss)]
+    fn execute(&self, _args: &str, ctx: &CommandContext) -> CommandResult {
+        let used = ctx.estimated_tokens;
+        let total = ctx.context_window;
+        let pct = if total > 0 {
+            (used as f64 / total as f64 * 100.0) as u64
+        } else {
+            0
+        };
+        let filled = (pct as usize) / 5;
+        let empty = 20_usize.saturating_sub(filled);
+        let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
+        let c = &ctx.cost;
+        CommandResult::Message(format!(
+            "Context usage: {pct}% ({used} / {total} tokens)\n{bar} {pct}%\nInput: {} · Output: {}\nMessages: {} · API calls: {}",
+            c.input_tokens, c.output_tokens, ctx.message_count, c.api_calls,
+        ))
+    }
+}
+
+pub struct ReleaseNotesCommand;
+
+impl SlashCommand for ReleaseNotesCommand {
+    fn name(&self) -> &'static str {
+        "release-notes"
+    }
+    fn description(&self) -> &'static str {
+        "Show release notes"
+    }
+    fn aliases(&self) -> &'static [&'static str] {
+        &["changelog"]
+    }
+    fn execute(&self, _args: &str, _ctx: &CommandContext) -> CommandResult {
+        CommandResult::Message(
+            "Crab Code v0.1.0\n\n\
+             - Agentic coding CLI with multi-provider LLM support\n\
+             - Full TUI with syntax highlighting and diff viewer\n\
+             - 44+ built-in tools (Bash, Read, Write, Edit, Glob, Grep, ...)\n\
+             - Agent teams with in-process coordination\n\
+             - MCP server integration\n\
+             - Session persistence and resume\n\n\
+             For full changelog, see CHANGELOG.md"
+                .into(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,5 +223,34 @@ mod tests {
         } else {
             panic!("expected Message");
         }
+    }
+
+    #[test]
+    fn context_shows_usage() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        if let CommandResult::Message(text) = ContextCommand.execute("", &ctx) {
+            assert!(text.contains("Context usage:"));
+            assert!(text.contains("tokens"));
+            assert!(text.contains("Messages:"));
+        } else {
+            panic!("expected Message");
+        }
+    }
+
+    #[test]
+    fn release_notes_shows_info() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        if let CommandResult::Message(text) = ReleaseNotesCommand.execute("", &ctx) {
+            assert!(text.contains("Crab Code"));
+        } else {
+            panic!("expected Message");
+        }
+    }
+
+    #[test]
+    fn release_notes_has_changelog_alias() {
+        assert_eq!(ReleaseNotesCommand.aliases(), &["changelog"]);
     }
 }

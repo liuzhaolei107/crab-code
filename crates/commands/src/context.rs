@@ -25,6 +25,7 @@ pub struct CommandContext<'a> {
     pub permission_mode: PermissionMode,
     pub cost: CostSnapshot,
     pub estimated_tokens: u64,
+    pub context_window: u64,
     pub message_count: usize,
     pub memory_dir: Option<&'a Path>,
 }

@@ -31,6 +31,7 @@ pub(crate) mod test_helpers {
             permission_mode: PermissionMode::Default,
             cost: CostSnapshot::default(),
             estimated_tokens: 5000,
+            context_window: 200_000,
             message_count: 10,
             memory_dir: None,
         }

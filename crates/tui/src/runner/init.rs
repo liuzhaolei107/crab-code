@@ -6,7 +6,6 @@
 //! `InitResult` via a oneshot channel and transitions to `Idle`.
 
 use std::io;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
@@ -28,7 +27,6 @@ use crate::event_broker::EventBroker;
 use crate::frame_requester::FrameRequester;
 
 use super::TuiConfig;
-use super::slash::builtin_slash_commands;
 
 /// All resources prepared by [`prepare`] and consumed by the event loop.
 ///
@@ -59,7 +57,6 @@ pub(super) struct PreparedRuntime {
     pub(super) session_id: String,
     pub(super) event_broker: Arc<EventBroker>,
     pub(super) frame_requester: FrameRequester,
-    pub(super) skill_dirs: Vec<PathBuf>,
     pub(super) _file_watcher: Option<crate::watcher::FileWatcher>,
 }
 
@@ -105,8 +102,8 @@ pub(super) fn prepare(config: TuiConfig) -> anyhow::Result<PreparedRuntime> {
         app.set_memory_dir(memory_dir);
     }
 
-    // Register built-in slash commands for Tab completion
-    app.set_slash_commands(builtin_slash_commands());
+    // Slash command tab completion is set up in run_loop() once the
+    // CommandRegistry is constructed, so it stays in sync automatically.
 
     // ── Phase 3: Event infrastructure ────────────────────────────────────
 
@@ -185,7 +182,6 @@ pub(super) fn prepare(config: TuiConfig) -> anyhow::Result<PreparedRuntime> {
     }
 
     let session_id = config.session_config.session_id.clone();
-    let skill_dirs = config.skill_dirs.clone();
 
     Ok(PreparedRuntime {
         terminal,
@@ -200,7 +196,6 @@ pub(super) fn prepare(config: TuiConfig) -> anyhow::Result<PreparedRuntime> {
         session_id,
         event_broker,
         frame_requester,
-        skill_dirs,
         _file_watcher: file_watcher,
     })
 }

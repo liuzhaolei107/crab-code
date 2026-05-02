@@ -11,6 +11,7 @@ pub mod bash;
 pub mod bash_classifier;
 pub mod bash_security;
 pub mod brief;
+pub mod computer_use;
 pub mod config_tool;
 pub mod cron;
 pub mod edit;

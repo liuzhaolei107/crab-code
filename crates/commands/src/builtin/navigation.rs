@@ -94,6 +94,24 @@ impl SlashCommand for RewindCommand {
     }
 }
 
+pub struct BtwCommand;
+
+impl SlashCommand for BtwCommand {
+    fn name(&self) -> &'static str {
+        "btw"
+    }
+    fn description(&self) -> &'static str {
+        "Quick side question (/btw <question>)"
+    }
+    fn execute(&self, args: &str, _ctx: &CommandContext) -> CommandResult {
+        let question = args.trim();
+        if question.is_empty() {
+            return CommandResult::Message("Usage: /btw <question>\nAsk a quick side question without affecting the main conversation.".into());
+        }
+        CommandResult::Effect(CommandEffect::SideQuestion(question.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +190,27 @@ mod tests {
         assert!(matches!(
             RewindCommand.execute("foo.rs", &ctx),
             CommandResult::Effect(CommandEffect::Rewind(Some(ref p))) if p == "foo.rs"
+        ));
+    }
+
+    #[test]
+    fn btw_no_args_shows_usage() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        if let CommandResult::Message(text) = BtwCommand.execute("", &ctx) {
+            assert!(text.contains("Usage:"));
+        } else {
+            panic!("expected Message");
+        }
+    }
+
+    #[test]
+    fn btw_with_args_returns_effect() {
+        let (model, dir) = test_model_and_dir();
+        let ctx = make_test_ctx(&model, &dir);
+        assert!(matches!(
+            BtwCommand.execute("what is 2+2?", &ctx),
+            CommandResult::Effect(CommandEffect::SideQuestion(ref q)) if q == "what is 2+2?"
         ));
     }
 }
