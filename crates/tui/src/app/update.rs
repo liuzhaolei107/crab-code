@@ -13,6 +13,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::App;
 use super::state::{ActiveToolInfo, AppAction, AppState, ChatMessage, ExitKey, ThinkingState};
+use crate::components::autocomplete::AutoComplete;
 use crate::components::context_collapse::CollapsibleSection;
 use crate::components::permission::{PermissionCard, PermissionResponse};
 use crate::components::tool_output::ToolOutputEntry;
@@ -476,11 +477,10 @@ impl App {
             }
         }
 
-        // '/' key activates search when idle/waiting and input is empty
-        if (self.state == AppState::Idle || self.state == AppState::WaitingForInput)
-            && key.code == KeyCode::Char('/')
-            && key.modifiers.is_empty()
-            && self.input.is_empty()
+        // Ctrl+F activates in-conversation search
+        if key.code == KeyCode::Char('f')
+            && key.modifiers == KeyModifiers::CONTROL
+            && self.state != AppState::Confirming
         {
             self.search.activate();
             return AppAction::None;
@@ -617,8 +617,23 @@ impl App {
                 } else {
                     self.input.handle_key(key);
                 }
+
+                // Auto-trigger slash command completion as the user types
+                self.try_auto_complete();
+
                 AppAction::None
             }
+        }
+    }
+
+    fn try_auto_complete(&mut self) {
+        use crate::components::autocomplete::CompletionContext;
+        let text = self.input.text();
+        let (_, col) = self.input.cursor();
+        if CompletionContext::SlashCommand == AutoComplete::detect_context(&text, col) {
+            self.autocomplete.complete(&text, col);
+        } else {
+            self.autocomplete.dismiss();
         }
     }
 
@@ -772,11 +787,7 @@ impl App {
             TuiEvent::Tick => vec![AppEvent::Tick],
             TuiEvent::Resize { width, height } => vec![AppEvent::Resize(*width, *height)],
             TuiEvent::Paste(text) => vec![AppEvent::Paste(text.clone())],
-            TuiEvent::Key(_) => {
-                // Key translation is complex (depends on state, search, autocomplete).
-                // For now, key events go through the existing handle_key path.
-                Vec::new()
-            }
+            TuiEvent::Key(_) => Vec::new(),
             TuiEvent::Agent {
                 event: agent_event, ..
             } => match agent_event {

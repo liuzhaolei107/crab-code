@@ -74,7 +74,7 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
     execute!(
         prepared.terminal.backend_mut(),
         DisableBracketedPaste,
-        LeaveAlternateScreen
+        LeaveAlternateScreen,
     )?;
     prepared.terminal.show_cursor()?;
 

@@ -18,7 +18,7 @@ pub(super) fn builtin_slash_commands(registry: &CommandRegistry) -> Vec<CommandI
         .list()
         .into_iter()
         .map(|(name, desc)| CommandInfo {
-            name: format!("/{name}"),
+            name: name.to_string(),
             description: desc.to_string(),
         })
         .collect()
