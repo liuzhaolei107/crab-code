@@ -8,15 +8,18 @@ use crab_api::types::{CacheBreakpoint, MessageRequest, StreamEvent};
 use crab_core::event::Event;
 use crab_core::message::{ContentBlock, Message, Role};
 use crab_core::model::{ModelId, TokenUsage};
-use crab_core::tool::{ToolContext, ToolOutput};
+use crab_core::tool::ToolContext;
 use crab_hooks::{HookAction, HookContext, HookExecutor, HookTrigger};
 use crab_session::{
     AutoCompactState, CompactionClient, CompactionConfig, CompactionMode, CompactionStrategy,
     ContextAction, ContextManager, Conversation, CostAccumulator, compact_with_config,
 };
-use crab_tools::builtin::bash::BASH_TOOL_NAME;
+use std::collections::HashSet;
+use std::sync::Arc;
+
 use crab_tools::builtin::plan_mode::{ENTER_PLAN_MODE_TOOL_NAME, EXIT_PLAN_MODE_TOOL_NAME};
-use crab_tools::executor::{StreamingOutput, ToolExecutor};
+use crab_tools::executor::ToolExecutor;
+use crab_tools::registry::ToolRegistry;
 use futures::StreamExt;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -111,12 +114,14 @@ pub async fn query_loop(
         };
 
         // Stream the LLM response with retry support + fallback + PTL recovery
-        let (mut assistant_msg, total_usage, stop_reason) = match stream_with_retry(
+        let (mut assistant_msg, total_usage, stop_reason, inline_ids) = match stream_with_retry(
             backend,
             req.clone(),
             &retry_policy,
             &event_tx,
             &cancel,
+            Some(executor),
+            Some(tool_ctx),
         )
         .await
         {
@@ -155,7 +160,16 @@ pub async fn query_loop(
                     model: fallback.clone(),
                     ..req
                 };
-                stream_with_retry(backend, fallback_req, &retry_policy, &event_tx, &cancel).await?
+                stream_with_retry(
+                    backend,
+                    fallback_req,
+                    &retry_policy,
+                    &event_tx,
+                    &cancel,
+                    Some(executor),
+                    Some(tool_ctx),
+                )
+                .await?
             }
             Err(e) => return Err(e),
         };
@@ -245,7 +259,8 @@ pub async fn query_loop(
             return Ok(());
         }
 
-        // Extract tool calls and execute them (with hook integration + plan mode)
+        // Execute remaining tool calls (skipping any already handled inline
+        // during streaming).
         let tool_results = crate::tool_orchestration::execute_tool_calls(
             &assistant_msg,
             executor,
@@ -255,6 +270,7 @@ pub async fn query_loop(
             config.hook_executor.as_deref(),
             config.session_id.as_deref(),
             plan_mode,
+            &inline_ids,
         )
         .await?;
 
@@ -287,11 +303,20 @@ async fn stream_with_retry(
     policy: &RetryPolicy,
     event_tx: &mpsc::Sender<Event>,
     cancel: &CancellationToken,
-) -> crab_core::Result<(Message, TokenUsage, Option<String>)> {
+    executor: Option<&ToolExecutor>,
+    tool_ctx: Option<&ToolContext>,
+) -> crab_core::Result<(Message, TokenUsage, Option<String>, HashSet<String>)> {
     let mut attempt = 0u32;
     loop {
         let req_clone = req.clone();
-        match stream_response(backend, req_clone, event_tx, cancel).await {
+        let inline_ctx = match (executor, tool_ctx) {
+            (Some(exec), Some(tc)) => Some(InlineExecCtx {
+                registry: exec.registry_arc(),
+                tool_ctx: tc,
+            }),
+            _ => None,
+        };
+        match stream_response(backend, req_clone, event_tx, cancel, inline_ctx).await {
             Ok(result) => return Ok(result),
             Err(e) => {
                 // Check if we should retry: only retry transient errors
@@ -389,28 +414,39 @@ fn is_max_tokens_stop(stop_reason: Option<&str>) -> bool {
     )
 }
 
+/// Optional context for inline tool execution during streaming.
+struct InlineExecCtx<'a> {
+    registry: Arc<ToolRegistry>,
+    tool_ctx: &'a ToolContext,
+}
+
 /// Stream an LLM response, assembling the assistant message from SSE events.
 ///
 /// Uses `StreamingToolParser` for incremental `tool_use` block parsing and
 /// `StreamingUsage` for accurate token accumulation.
 ///
-/// Returns the assembled message, total usage, and stop reason.
+/// When `inline_ctx` is provided, concurrency-safe tools are spawned as soon
+/// as their JSON input is fully parsed (before the stream ends). The returned
+/// `HashSet` contains the IDs of tool blocks already executed inline; the
+/// caller should skip these when running the post-stream batch executor.
 async fn stream_response(
     backend: &LlmBackend,
     req: MessageRequest<'_>,
     event_tx: &mpsc::Sender<Event>,
     cancel: &CancellationToken,
-) -> crab_core::Result<(Message, TokenUsage, Option<String>)> {
+    inline_ctx: Option<InlineExecCtx<'_>>,
+) -> crab_core::Result<(Message, TokenUsage, Option<String>, HashSet<String>)> {
     let mut stream = std::pin::pin!(backend.stream_message(req));
 
-    // Use StreamingToolParser for incremental tool_use parsing
     let mut tool_parser = StreamingToolParser::new();
-    // Use StreamingUsage for accurate token accumulation
     let mut usage_tracker = StreamingUsage::new();
-    // Track thinking content blocks by index
     let mut thinking_blocks: std::collections::HashMap<usize, String> =
         std::collections::HashMap::new();
-    // Track which block indices are thinking blocks
+
+    let mut streaming_executor = inline_ctx
+        .as_ref()
+        .map(|_| crate::streaming::StreamingToolExecutor::new(cancel.child_token()));
+
     while let Some(event) = stream.next().await {
         if cancel.is_cancelled() {
             break;
@@ -421,8 +457,17 @@ async fn stream_response(
         // Update usage tracker
         usage_tracker.update(&event);
 
-        // Feed event to tool parser for incremental tool_use assembly
-        tool_parser.process(&event);
+        if let Some(completed) = tool_parser.process(&event)
+            && let Some(se) = &mut streaming_executor
+            && let Some(ictx) = &inline_ctx
+        {
+            se.spawn_if_eligible(
+                &completed,
+                ictx.registry.clone(),
+                ictx.tool_ctx.clone(),
+                event_tx.clone(),
+            );
+        }
 
         match &event {
             StreamEvent::MessageStart { id, .. } => {
@@ -512,7 +557,15 @@ async fn stream_response(
     let message = Message::new(Role::Assistant, content);
     let total_usage = usage_tracker.into_usage();
 
-    Ok((message, total_usage, stop_reason))
+    let inline_ids = match streaming_executor {
+        Some(mut se) => {
+            se.collect_all().await;
+            se.spawned_ids().clone()
+        }
+        None => HashSet::new(),
+    };
+
+    Ok((message, total_usage, stop_reason, inline_ids))
 }
 
 /// Check context usage; try upgrading to a larger-context model variant
@@ -785,337 +838,6 @@ async fn run_compaction(
     }
 }
 
-/// Legacy — now delegates to [`crate::tool_orchestration::execute_tool_calls`].
-/// Kept for test compatibility; will be removed in future cleanup.
-#[allow(dead_code)]
-#[allow(clippy::too_many_arguments)]
-async fn execute_tool_calls(
-    assistant_msg: &Message,
-    executor: &ToolExecutor,
-    ctx: &ToolContext,
-    event_tx: &mpsc::Sender<Event>,
-    cancel: &CancellationToken,
-    hook_executor: Option<&HookExecutor>,
-    session_id: Option<&str>,
-    plan_mode: bool,
-) -> crab_core::Result<Vec<(String, Result<ToolOutput, crab_core::Error>)>> {
-    let registry = executor.registry();
-    let mut results = Vec::new();
-
-    // Partition into read-only (concurrent) and write (sequential)
-    let (reads, writes) = partition_tool_calls(&assistant_msg.content, registry);
-
-    // Execute read-only tools concurrently
-    // (hooks are not run for read-only tools to avoid serialization overhead)
-    if !reads.is_empty() {
-        let read_futures: Vec<_> = reads
-            .iter()
-            .map(|call| {
-                let id = call.id.to_string();
-                let name = call.name.to_string();
-                let input = call.input.clone();
-                let event_tx = event_tx.clone();
-                async move {
-                    let _ = event_tx
-                        .send(Event::ToolUseStart {
-                            id: id.clone(),
-                            name: name.clone(),
-                            input: input.clone(),
-                        })
-                        .await;
-                    let result = executor.execute(&name, input, ctx).await;
-                    let _ = event_tx
-                        .send(Event::ToolResult {
-                            id: id.clone(),
-                            output: match &result {
-                                Ok(o) => o.clone(),
-                                Err(e) => ToolOutput::error(e.to_string()),
-                            },
-                        })
-                        .await;
-                    (id, result)
-                }
-            })
-            .collect();
-
-        let read_results = futures::future::join_all(read_futures).await;
-        results.extend(read_results);
-    }
-
-    // Execute write tools sequentially (with hook support)
-    for call in &writes {
-        if cancel.is_cancelled() {
-            // Generate synthetic tool_result for all remaining writes
-            for remaining in &writes {
-                if !results.iter().any(|(id, _)| id == remaining.id) {
-                    let id = remaining.id.to_string();
-                    let output = ToolOutput::error("[Request interrupted by user for tool use]");
-                    let _ = event_tx
-                        .send(Event::ToolUseStart {
-                            id: id.clone(),
-                            name: remaining.name.to_string(),
-                            input: remaining.input.clone(),
-                        })
-                        .await;
-                    let _ = event_tx
-                        .send(Event::ToolResult {
-                            id: id.clone(),
-                            output: output.clone(),
-                        })
-                        .await;
-                    results.push((id, Ok(output)));
-                }
-            }
-            break;
-        }
-        let id = call.id.to_string();
-        let name = call.name.to_string();
-        let mut input = call.input.clone();
-
-        // ── Plan mode gate ─────────────────────────────────────────
-        // In plan mode, block write tools (except ExitPlanMode itself)
-        if plan_mode && name != EXIT_PLAN_MODE_TOOL_NAME {
-            let _ = event_tx
-                .send(Event::ToolUseStart {
-                    id: id.clone(),
-                    name: name.clone(),
-                    input: input.clone(),
-                })
-                .await;
-            let output = ToolOutput::error(
-                "Cannot execute write operations in plan mode. \
-                 Use ExitPlanMode to get approval before making changes.",
-            );
-            let _ = event_tx
-                .send(Event::ToolResult {
-                    id: id.clone(),
-                    output: output.clone(),
-                })
-                .await;
-            results.push((id, Ok(output)));
-            continue;
-        }
-
-        // ── PreToolUse hook ─────────────────────────────────────────
-        if let Some(hooks) = hook_executor {
-            let hook_ctx = HookContext {
-                tool_name: name.clone(),
-                tool_input: serde_json::to_string(&input).unwrap_or_default(),
-                working_dir: Some(ctx.working_dir.clone()),
-                tool_output: None,
-                tool_exit_code: None,
-                session_id: session_id.map(String::from),
-            };
-            match hooks.run(HookTrigger::PreToolUse, &hook_ctx).await {
-                Ok(hr) if hr.action == HookAction::Deny => {
-                    let msg = hr
-                        .message
-                        .unwrap_or_else(|| "blocked by pre-tool-use hook".into());
-                    let _ = event_tx
-                        .send(Event::ToolUseStart {
-                            id: id.clone(),
-                            name: name.clone(),
-                            input: input.clone(),
-                        })
-                        .await;
-                    let output = ToolOutput::error(format!("<hook-blocked> {msg}"));
-                    let _ = event_tx
-                        .send(Event::ToolResult {
-                            id: id.clone(),
-                            output: output.clone(),
-                        })
-                        .await;
-                    results.push((id, Ok(output)));
-                    continue;
-                }
-                Ok(hr) if hr.action == HookAction::Modify => {
-                    if let Some(modified) = hr.modified_input {
-                        input = modified;
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!(error = %e, "PreToolUse hook error, proceeding anyway");
-                }
-            }
-        }
-
-        let _ = event_tx
-            .send(Event::ToolUseStart {
-                id: id.clone(),
-                name: name.clone(),
-                input: input.clone(),
-            })
-            .await;
-
-        // Use streaming execution for Bash to get real-time output
-        let result = if name == BASH_TOOL_NAME {
-            let (streaming, mut delta_rx) = StreamingOutput::channel(64);
-            let bash_tool = crab_tools::builtin::bash::BashTool;
-            let ctx_clone = ctx.clone();
-            let input_clone = input.clone();
-
-            let exec_handle = tokio::spawn(async move {
-                bash_tool
-                    .execute_streaming(input_clone, &ctx_clone, streaming)
-                    .await
-            });
-
-            // Forward deltas as ToolOutputDelta events
-            let event_tx_delta = event_tx.clone();
-            let delta_id = id.clone();
-            let delta_fwd = tokio::spawn(async move {
-                while let Some(delta) = delta_rx.recv().await {
-                    let _ = event_tx_delta
-                        .send(Event::ToolOutputDelta {
-                            id: delta_id.clone(),
-                            delta,
-                        })
-                        .await;
-                }
-            });
-
-            let result = exec_handle
-                .await
-                .unwrap_or_else(|e| Err(crab_core::Error::Other(format!("join error: {e}"))));
-            let _ = delta_fwd.await;
-            result
-        } else {
-            executor.execute(&name, input.clone(), ctx).await
-        };
-
-        let _ = event_tx
-            .send(Event::ToolResult {
-                id: id.clone(),
-                output: match &result {
-                    Ok(o) => o.clone(),
-                    Err(e) => ToolOutput::error(e.to_string()),
-                },
-            })
-            .await;
-
-        // ── PostToolUse hook ────────────────────────────────────────
-        if let Some(hooks) = hook_executor {
-            let output_text = match &result {
-                Ok(o) => o.text(),
-                Err(e) => e.to_string(),
-            };
-            let exit_code = match &result {
-                Ok(o) if o.is_error => 1,
-                Ok(_) => 0,
-                Err(_) => 1,
-            };
-            let hook_ctx = HookContext {
-                tool_name: name.clone(),
-                tool_input: serde_json::to_string(&input).unwrap_or_default(),
-                working_dir: Some(ctx.working_dir.clone()),
-                tool_output: Some(output_text),
-                tool_exit_code: Some(exit_code),
-                session_id: session_id.map(String::from),
-            };
-            if let Err(e) = hooks.run(HookTrigger::PostToolUse, &hook_ctx).await {
-                tracing::warn!(error = %e, "PostToolUse hook error");
-            }
-        }
-
-        results.push((id, result));
-    }
-
-    Ok(results)
-}
-
-/// A reference to a tool call within a message.
-pub struct ToolCallRef<'a> {
-    pub id: &'a str,
-    pub name: &'a str,
-    pub input: &'a serde_json::Value,
-}
-
-/// Partition tool calls into read-only (concurrent) and write (sequential) groups.
-pub fn partition_tool_calls<'a>(
-    blocks: &'a [ContentBlock],
-    registry: &crab_tools::registry::ToolRegistry,
-) -> (Vec<ToolCallRef<'a>>, Vec<ToolCallRef<'a>>) {
-    let mut reads = Vec::new();
-    let mut writes = Vec::new();
-    for block in blocks {
-        if let ContentBlock::ToolUse { id, name, input } = block {
-            let call = ToolCallRef { id, name, input };
-            let is_read = registry.get(name).is_some_and(|t| t.is_read_only());
-            if is_read {
-                reads.push(call);
-            } else {
-                writes.push(call);
-            }
-        }
-    }
-    (reads, writes)
-}
-
-/// Streaming tool executor -- starts tool execution as soon as
-/// a `tool_use` block's JSON is fully parsed during SSE streaming.
-pub struct StreamingToolExecutor {
-    pub pending: Vec<tokio::task::JoinHandle<(String, crab_core::Result<ToolOutput>)>>,
-}
-
-impl StreamingToolExecutor {
-    pub fn new() -> Self {
-        Self {
-            pending: Vec::new(),
-        }
-    }
-
-    /// Spawn a tool execution as soon as its input JSON is complete.
-    pub fn spawn(
-        &mut self,
-        _id: &str,
-        name: String,
-        input: serde_json::Value,
-        ctx: ToolContext,
-        tool_fn: impl FnOnce(
-            String,
-            serde_json::Value,
-            ToolContext,
-        )
-            -> tokio::task::JoinHandle<(String, crab_core::Result<ToolOutput>)>,
-    ) {
-        let handle = tool_fn(name, input, ctx);
-        self.pending.push(handle);
-    }
-
-    /// Collect all pending tool results after `message_stop`.
-    pub async fn collect_all(&mut self) -> Vec<(String, crab_core::Result<ToolOutput>)> {
-        let mut results = Vec::new();
-        for handle in self.pending.drain(..) {
-            results.push(handle.await.expect("tool task panicked"));
-        }
-        results
-    }
-}
-
-impl Default for StreamingToolExecutor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Build a tool result `Message` (role: User) from tool outputs.
-pub fn tool_results_message(
-    results: Vec<(String, Result<ToolOutput, crab_core::Error>)>,
-) -> Message {
-    let content: Vec<ContentBlock> = results
-        .into_iter()
-        .map(|(id, result)| {
-            let (text, is_error) = match result {
-                Ok(output) => (output.text(), output.is_error),
-                Err(e) => (e.to_string(), true),
-            };
-            ContentBlock::tool_result(id, text, is_error)
-        })
-        .collect();
-    Message::new(Role::User, content)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1123,6 +845,7 @@ mod tests {
     use crab_core::message::ContentBlock;
     use crab_core::model::ModelId;
     use crab_core::query::QuerySource;
+    use crab_core::tool::ToolOutput;
 
     #[test]
     fn tool_results_message_builds_user_message() {
@@ -1201,14 +924,10 @@ mod tests {
 
     #[test]
     fn streaming_tool_executor_new_is_empty() {
-        let ste = StreamingToolExecutor::new();
-        assert!(ste.pending.is_empty());
-    }
-
-    #[test]
-    fn streaming_tool_executor_default() {
-        let ste = StreamingToolExecutor::default();
-        assert!(ste.pending.is_empty());
+        let ste = crate::streaming::StreamingToolExecutor::new(
+            tokio_util::sync::CancellationToken::new(),
+        );
+        assert!(ste.is_empty());
     }
 
     #[test]

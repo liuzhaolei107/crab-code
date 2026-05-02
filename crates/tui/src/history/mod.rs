@@ -97,6 +97,18 @@ pub fn cell_from_chat_message(msg: &crate::app::ChatMessage) -> Box<dyn HistoryC
             display.clone(),
             *collapsed,
         )),
+        ChatMessage::ToolProgress {
+            tool_name,
+            tail_output,
+            total_lines,
+            elapsed_secs,
+            tool_use_id: _,
+        } => Box::new(cells::ToolProgressCell::new(
+            tool_name.clone(),
+            tail_output.clone(),
+            *total_lines,
+            *elapsed_secs,
+        )),
         ChatMessage::System { text } => Box::new(SystemCell::new(text.clone())),
         ChatMessage::CompactBoundary {
             strategy,

@@ -66,6 +66,11 @@ impl GlobalSearchOverlay {
             ChatMessage::ToolRejected {
                 tool_name, summary, ..
             } => format!("{tool_name}: {summary}"),
+            ChatMessage::ToolProgress {
+                tool_name,
+                tail_output,
+                ..
+            } => format!("{tool_name}: {tail_output}"),
             ChatMessage::CompactBoundary { .. }
             | ChatMessage::PlanStep { .. }
             | ChatMessage::Welcome { .. } => String::new(),
@@ -200,6 +205,7 @@ impl Renderable for GlobalSearchOverlay {
                 Some(ChatMessage::Assistant { .. }) => "[asst]",
                 Some(ChatMessage::ToolUse { .. }) => "[tool]",
                 Some(ChatMessage::ToolResult { .. }) => "[rslt]",
+                Some(ChatMessage::ToolProgress { .. }) => "[run ]",
                 Some(ChatMessage::ToolRejected { .. }) => "[deny]",
                 Some(ChatMessage::Thinking { .. }) => "[thnk]",
                 Some(

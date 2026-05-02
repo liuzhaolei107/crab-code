@@ -44,6 +44,7 @@ impl PermissionsBrowserOverlay {
             PermissionMode::Dangerously => "Allow everything (DANGEROUS — audit log only)",
             PermissionMode::DontAsk => "Grant once per tool name for this session",
             PermissionMode::TrustProject => "Trust the project: allow in-project operations",
+            PermissionMode::Auto => "Auto: classifier allows safe, prompts risky, blocks dangerous",
         }
     }
 

@@ -28,7 +28,6 @@ use crate::event_broker::EventBroker;
 use crate::frame_requester::FrameRequester;
 
 use super::TuiConfig;
-use super::repl::spawn_event_forwarder;
 use super::slash::builtin_slash_commands;
 
 /// All resources prepared by [`prepare`] and consumed by the event loop.
@@ -43,7 +42,19 @@ pub(super) struct PreparedRuntime {
     pub(super) init_rx: tokio::sync::oneshot::Receiver<(AgentRuntime, RuntimeInitMeta)>,
     pub(super) watch_rx: mpsc::UnboundedReceiver<crate::watcher::WatchEvent>,
     pub(super) backend: Arc<LlmBackend>,
+    /// Long-lived plain-`Event` channel used by:
+    /// - the runtime's permission handler (out-of-band `PermissionRequest`)
+    /// - the REPL itself for synthesized error events
+    ///
+    /// Events on this channel are tagged with [`ALWAYS_CURRENT_EPOCH`]
+    /// before reaching the TUI event loop so they are never filtered out
+    /// as stale. Per-query engine events use a separate per-query channel
+    /// created in `repl::run_loop` and tagged with the query's epoch.
     pub(super) event_tx: mpsc::Sender<Event>,
+    /// Sender for tagged events, shared between the init-time forwarder
+    /// (which stamps `ALWAYS_CURRENT_EPOCH`) and the per-query forwarders
+    /// in `repl::run_loop` (which stamp the current query epoch).
+    pub(super) tagged_tx: mpsc::UnboundedSender<(u64, Event)>,
     pub(super) perm_resp_tx: mpsc::UnboundedSender<(String, bool)>,
     pub(super) session_id: String,
     pub(super) event_broker: Arc<EventBroker>,
@@ -99,16 +110,36 @@ pub(super) fn prepare(config: TuiConfig) -> anyhow::Result<PreparedRuntime> {
 
     // ── Phase 3: Event infrastructure ────────────────────────────────────
 
-    let (event_tx, event_rx) = mpsc::channel::<Event>(256);
+    // `event_tx` carries plain `Event`s from the runtime's permission
+    // handler and the REPL's synthesized error/cancel events. The init-time
+    // forwarder below stamps each one with `ALWAYS_CURRENT_EPOCH` so they
+    // bypass the REPL's stale-event filter.
+    let (event_tx, mut event_rx) = mpsc::channel::<Event>(256);
     let (perm_resp_tx, perm_resp_rx) = mpsc::unbounded_channel::<(String, bool)>();
 
-    let (agent_ui_tx, agent_ui_rx) = mpsc::unbounded_channel::<Event>();
-    spawn_event_forwarder(event_rx, agent_ui_tx);
+    // `tagged_tx`/`tagged_rx` is the shared tagged channel feeding
+    // `spawn_event_loop`. Per-query forwarders in `repl::run_loop` will
+    // also push into `tagged_tx` after stamping with the query epoch.
+    let (tagged_tx, tagged_rx) = mpsc::unbounded_channel::<(u64, Event)>();
+
+    // Init-time forwarder: stamp every event from `event_rx` with the
+    // sentinel epoch so it is never filtered as stale.
+    let always_tx = tagged_tx.clone();
+    tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            if always_tx
+                .send((crate::event::ALWAYS_CURRENT_EPOCH, event))
+                .is_err()
+            {
+                break;
+            }
+        }
+    });
 
     let event_broker = Arc::new(EventBroker::new());
     let frame_requester = FrameRequester::default();
     let tick_rate = std::time::Duration::from_millis(100);
-    let tui_rx = spawn_event_loop(agent_ui_rx, tick_rate, Arc::clone(&event_broker));
+    let tui_rx = spawn_event_loop(tagged_rx, tick_rate, Arc::clone(&event_broker));
 
     // ── Phase 4a: API preconnect (fire-and-forget TCP+TLS warmup) ──────
 
@@ -163,6 +194,7 @@ pub(super) fn prepare(config: TuiConfig) -> anyhow::Result<PreparedRuntime> {
         watch_rx,
         backend: config.backend,
         event_tx,
+        tagged_tx,
         perm_resp_tx,
         session_id,
         event_broker,

@@ -9,6 +9,21 @@ use serde_json::Value;
 
 use crate::types::StreamEvent;
 
+/// A `tool_use` block that has been fully assembled from the stream.
+///
+/// Returned by [`StreamingToolParser::process`] when a `ContentBlockStop`
+/// finalizes a tool block, so callers can act on the completed call without
+/// peeking back into the parser's internal buffers.
+#[derive(Debug, Clone)]
+pub struct CompletedToolBlock {
+    /// Tool use ID (correlates with the eventual tool result).
+    pub id: String,
+    /// Tool name.
+    pub name: String,
+    /// Parsed JSON input. Empty object on parse failure.
+    pub input: Value,
+}
+
 /// Tracks the state of a single `tool_use` block being assembled from stream deltas.
 #[derive(Debug, Clone)]
 pub struct ToolUseAccumulator {
@@ -102,8 +117,10 @@ impl StreamingToolParser {
 
     /// Process a stream event, updating internal state.
     ///
-    /// Returns `true` if the event resulted in a tool block completing.
-    pub fn process(&mut self, event: &StreamEvent) -> bool {
+    /// Returns `Some(CompletedToolBlock)` when this event finalizes a
+    /// `tool_use` block (`ContentBlockStop` for a tool index), and `None`
+    /// otherwise.
+    pub fn process(&mut self, event: &StreamEvent) -> Option<CompletedToolBlock> {
         match event {
             StreamEvent::ContentBlockStart {
                 index,
@@ -125,7 +142,7 @@ impl StreamingToolParser {
                 } else {
                     self.block_types[*index] = BlockType::Text;
                 }
-                false
+                None
             }
             StreamEvent::ContentDelta { index, delta } => {
                 let block_type = self
@@ -144,7 +161,7 @@ impl StreamingToolParser {
                         self.text_buffer.push_str(delta);
                     }
                 }
-                false
+                None
             }
             StreamEvent::ContentBlockStop { index } => {
                 let is_tool = self
@@ -157,12 +174,17 @@ impl StreamingToolParser {
                 if is_tool && let Some(pos) = self.active.iter().position(|a| a.index == *index) {
                     let mut acc = self.active.remove(pos);
                     acc.finalize();
+                    let block = CompletedToolBlock {
+                        id: acc.id.clone(),
+                        name: acc.name.clone(),
+                        input: acc.parse_input(),
+                    };
                     self.completed.push(acc);
-                    return true;
+                    return Some(block);
                 }
-                false
+                None
             }
-            _ => false,
+            _ => None,
         }
     }
 
@@ -414,7 +436,10 @@ mod tests {
         );
 
         let completed = parser.process(&StreamEvent::ContentBlockStop { index: 1 });
-        assert!(completed);
+        let block = completed.expect("tool block should complete on ContentBlockStop");
+        assert_eq!(block.id, "toolu_01");
+        assert_eq!(block.name, "read_file");
+        assert_eq!(block.input["path"], "/tmp/test.rs");
         assert_eq!(parser.completed_tools().len(), 1);
         assert_eq!(parser.completed_tools()[0].name, "read_file");
         assert_eq!(
@@ -506,18 +531,30 @@ mod tests {
     #[test]
     fn parser_ignores_non_content_events() {
         let mut parser = StreamingToolParser::new();
-        assert!(!parser.process(&StreamEvent::MessageStart {
-            id: "m1".into(),
-            usage: crab_core::model::TokenUsage::default(),
-        }));
-        assert!(!parser.process(&StreamEvent::MessageDelta {
-            usage: crab_core::model::TokenUsage::default(),
-            stop_reason: None,
-        }));
-        assert!(!parser.process(&StreamEvent::MessageStop));
-        assert!(!parser.process(&StreamEvent::Error {
-            message: "err".into(),
-        }));
+        assert!(
+            parser
+                .process(&StreamEvent::MessageStart {
+                    id: "m1".into(),
+                    usage: crab_core::model::TokenUsage::default(),
+                })
+                .is_none()
+        );
+        assert!(
+            parser
+                .process(&StreamEvent::MessageDelta {
+                    usage: crab_core::model::TokenUsage::default(),
+                    stop_reason: None,
+                })
+                .is_none()
+        );
+        assert!(parser.process(&StreamEvent::MessageStop).is_none());
+        assert!(
+            parser
+                .process(&StreamEvent::Error {
+                    message: "err".into(),
+                })
+                .is_none()
+        );
     }
 
     #[test]

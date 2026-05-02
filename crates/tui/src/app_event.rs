@@ -83,6 +83,11 @@ pub enum AppEvent {
         id: String,
         progress: crab_core::tool::ToolProgress,
     },
+    /// Incremental stdout/stderr line(s) from a still-running tool.
+    /// Drives the in-transcript [`crate::app::ChatMessage::ToolProgress`]
+    /// cell (rebuilt in-place as deltas arrive) so the user sees long
+    /// shell commands progressing instead of staring at a spinner.
+    ToolOutputDelta { id: String, delta: String },
     ToolFinished {
         id: String,
         output: crab_core::tool::ToolOutput,

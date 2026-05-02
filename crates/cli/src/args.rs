@@ -43,6 +43,11 @@ pub struct Cli {
     #[arg(long)]
     pub dangerously_skip_permissions: bool,
 
+    /// Auto mode: heuristic classifier auto-allows safe tools, prompts on
+    /// risky ones, denies dangerous patterns.
+    #[arg(long)]
+    pub auto: bool,
+
     /// Run as an ACP (Agent Client Protocol) agent over stdio. The
     /// editor (Zed, Neovim, …) spawns crab as a child process and
     /// drives it via JSON-RPC; all other flags are ignored in this
@@ -381,6 +386,18 @@ mod tests {
         let cli =
             Cli::try_parse_from(["crab", "--permission-mode", "acceptEdits", "hello"]).unwrap();
         assert_eq!(cli.permission_mode.as_deref(), Some("acceptEdits"));
+    }
+
+    #[test]
+    fn cli_parses_auto_flag() {
+        let cli = Cli::try_parse_from(["crab", "--auto", "hello"]).unwrap();
+        assert!(cli.auto);
+    }
+
+    #[test]
+    fn cli_auto_defaults_to_false() {
+        let cli = Cli::try_parse_from(["crab", "hello"]).unwrap();
+        assert!(!cli.auto);
     }
 
     #[test]

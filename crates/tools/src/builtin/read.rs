@@ -192,6 +192,10 @@ impl Tool for ReadTool {
     fn display_color(&self) -> ToolDisplayStyle {
         ToolDisplayStyle::Muted
     }
+
+    fn max_result_chars(&self) -> usize {
+        usize::MAX
+    }
 }
 
 /// Maximum pages allowed per PDF read request.

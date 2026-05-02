@@ -151,6 +151,25 @@ pub enum ChatMessage {
         /// matching `ToolUse` so grouping can work from either side.
         is_read_only: bool,
     },
+    /// Live tool execution progress — replaced in-place as more output
+    /// arrives, then swapped for [`ChatMessage::ToolResult`] when the
+    /// tool finishes. Distinct from `ActiveToolInfo` (which is keyed by
+    /// id and lives in `App::active_tools`); this variant is what the
+    /// renderer iterates so progress shows up in the transcript itself.
+    ToolProgress {
+        tool_use_id: String,
+        tool_name: String,
+        /// Last few raw output lines, rebuilt on every delta. Caps at
+        /// roughly 20 lines so a chatty tool can't blow up the transcript.
+        tail_output: String,
+        /// Total number of newline-separated chunks observed; used in the
+        /// header line so a 100k-line bash output is summarized as
+        /// "100000 lines" instead of being scrolled past.
+        total_lines: usize,
+        /// Wall-clock seconds since the tool started, refreshed on each
+        /// delta. The renderer uses this for the `{elapsed:.1}s` field.
+        elapsed_secs: f64,
+    },
     /// System/informational message — rendered in dim gray.
     System { text: String },
     /// Compact boundary — visual separator after context compaction.

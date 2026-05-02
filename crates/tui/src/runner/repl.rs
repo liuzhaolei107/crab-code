@@ -38,6 +38,7 @@ pub(super) async fn run_loop(
     watch_rx: &mut mpsc::UnboundedReceiver<crate::watcher::WatchEvent>,
     backend: Arc<LlmBackend>,
     event_tx: mpsc::Sender<Event>,
+    tagged_tx: mpsc::UnboundedSender<(u64, Event)>,
     perm_resp_tx: mpsc::UnboundedSender<(String, bool)>,
     session_id: &str,
     event_broker: Arc<EventBroker>,
@@ -52,6 +53,12 @@ pub(super) async fn run_loop(
     let mut conv_return: Option<tokio::sync::oneshot::Receiver<crab_agents::QueryTaskResult>> =
         None;
     let mut cancel = tokio_util::sync::CancellationToken::new();
+    // Monotonically incremented for every spawned query. The REPL discards
+    // any `TuiEvent::Agent` whose tagged epoch does not match. This guards
+    // the main loop against stale events from a query that was cancelled
+    // (Ctrl+C) but is still draining its event channel before its task
+    // notices the cancellation token.
+    let mut query_epoch: u64 = 0;
 
     let mut frame_rx = frame_requester.subscribe();
 
@@ -164,9 +171,12 @@ pub(super) async fn run_loop(
                                 let user_msg = rt.expand_input(&prompt);
                                 rt.conversation_mut().push(user_msg);
 
+                                query_epoch = query_epoch.wrapping_add(1);
+                                let engine_tx =
+                                    spawn_query_event_forwarder(query_epoch, &tagged_tx);
                                 conv_return = Some(rt.spawn_query(
                                     &backend,
-                                    event_tx.clone(),
+                                    engine_tx,
                                     cancel.clone(),
                                 ));
                             }
@@ -250,6 +260,16 @@ pub(super) async fn run_loop(
         };
 
         let Some(event) = event else { break };
+        // Drop agent events tagged with a stale epoch — they belong to a
+        // query the user already cancelled. The sentinel
+        // `ALWAYS_CURRENT_EPOCH` bypasses the filter for events that are
+        // not tied to a single query.
+        if let crate::event::TuiEvent::Agent { epoch, .. } = &event
+            && *epoch != query_epoch
+            && *epoch != crate::event::ALWAYS_CURRENT_EPOCH
+        {
+            continue;
+        }
         let action = app.handle_event(event);
 
         match action {
@@ -289,8 +309,9 @@ pub(super) async fn run_loop(
                         let user_msg = rt.expand_input(&prompt);
                         rt.conversation_mut().push(user_msg);
 
-                        conv_return =
-                            Some(rt.spawn_query(&backend, event_tx.clone(), cancel.clone()));
+                        query_epoch = query_epoch.wrapping_add(1);
+                        let engine_tx = spawn_query_event_forwarder(query_epoch, &tagged_tx);
+                        conv_return = Some(rt.spawn_query(&backend, engine_tx, cancel.clone()));
                     }
                     SubmitOutcome::Handled => {
                         app.state = crate::app::AppState::Idle;
@@ -594,19 +615,27 @@ async fn run_external_editor(
     result
 }
 
-/// Spawn a task that forwards agent events from a bounded `mpsc::Receiver`
-/// to the TUI's unbounded channel.
-pub(super) fn spawn_event_forwarder(
-    mut rx: mpsc::Receiver<Event>,
-    tx: mpsc::UnboundedSender<Event>,
-) {
+/// Spawn a per-query forwarder task that stamps every engine `Event` with
+/// the query's `epoch` and pushes the tagged pair into the TUI's long-lived
+/// tagged channel.
+///
+/// Returns the bounded `Sender<Event>` to hand to `AgentRuntime::spawn_query`
+/// — the engine writes plain `Event`s and stays ignorant of epochs. When the
+/// query task drops its sender (or the receiver) the forwarder exits.
+fn spawn_query_event_forwarder(
+    epoch: u64,
+    tagged_tx: &mpsc::UnboundedSender<(u64, Event)>,
+) -> mpsc::Sender<Event> {
+    let (engine_tx, mut engine_rx) = mpsc::channel::<Event>(256);
+    let tagged = tagged_tx.clone();
     tokio::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            if tx.send(event).is_err() {
+        while let Some(event) = engine_rx.recv().await {
+            if tagged.send((epoch, event)).is_err() {
                 break;
             }
         }
     });
+    engine_tx
 }
 
 /// Cross-platform SIGCONT wrapper.

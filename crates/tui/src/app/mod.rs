@@ -570,6 +570,11 @@ mod tests {
             ChatMessage::ToolResult {
                 tool_name, output, ..
             } => tool_name.contains(needle) || output.contains(needle),
+            ChatMessage::ToolProgress {
+                tool_name,
+                tail_output,
+                ..
+            } => tool_name.contains(needle) || tail_output.contains(needle),
             ChatMessage::ToolRejected {
                 tool_name, summary, ..
             } => tool_name.contains(needle) || summary.contains(needle),
@@ -712,14 +717,20 @@ mod tests {
     #[test]
     fn agent_content_delta_appends() {
         let mut app = App::new("test");
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::ContentDelta {
-            index: 0,
-            delta: "Hello ".into(),
-        }));
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::ContentDelta {
-            index: 0,
-            delta: "world".into(),
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::ContentDelta {
+                index: 0,
+                delta: "Hello ".into(),
+            },
+        });
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::ContentDelta {
+                index: 0,
+                delta: "world".into(),
+            },
+        });
         assert!(messages_contain(&app.messages, "Hello world"));
         assert_eq!(app.content_scroll, 0); // auto-scrolled
     }
@@ -730,9 +741,12 @@ mod tests {
         app.state = AppState::Processing;
         app.spinner.start("Thinking...");
 
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::MessageEnd {
-            usage: crab_core::model::TokenUsage::default(),
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::MessageEnd {
+                usage: crab_core::model::TokenUsage::default(),
+            },
+        });
 
         assert!(!app.spinner.is_active());
         assert_eq!(app.state, AppState::Idle);
@@ -748,9 +762,10 @@ mod tests {
             output_tokens: 50,
             ..Default::default()
         };
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::MessageEnd {
-            usage,
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::MessageEnd { usage },
+        });
 
         assert_eq!(app.total_input_tokens, 100);
         assert_eq!(app.total_output_tokens, 50);
@@ -762,9 +777,10 @@ mod tests {
             output_tokens: 80,
             ..Default::default()
         };
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::MessageEnd {
-            usage: usage2,
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::MessageEnd { usage: usage2 },
+        });
 
         assert_eq!(app.total_input_tokens, 300);
         assert_eq!(app.total_output_tokens, 130);
@@ -776,11 +792,14 @@ mod tests {
         app.state = AppState::Processing;
         app.spinner.start("Thinking...");
 
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::ToolUseStart {
-            id: "tu_1".into(),
-            name: "bash".into(),
-            input: serde_json::json!({"command": "ls"}),
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::ToolUseStart {
+                id: "tu_1".into(),
+                name: "bash".into(),
+                input: serde_json::json!({"command": "ls"}),
+            },
+        });
 
         assert!(app.spinner.message().contains("bash"));
     }
@@ -790,13 +809,14 @@ mod tests {
         let mut app = App::new("test");
         app.state = AppState::Processing;
 
-        app.handle_event(TuiEvent::Agent(
-            crab_core::event::Event::PermissionRequest {
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::PermissionRequest {
                 tool_name: "bash".into(),
                 input_summary: "rm -rf /tmp".into(),
                 request_id: "req_1".into(),
             },
-        ));
+        });
 
         assert_eq!(app.state, AppState::Confirming);
     }
@@ -895,9 +915,12 @@ mod tests {
         app.state = AppState::Processing;
         app.spinner.start("Working");
 
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::Error {
-            message: "rate limit".into(),
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::Error {
+                message: "rate limit".into(),
+            },
+        });
 
         assert_eq!(app.state, AppState::Idle);
         assert!(!app.spinner.is_active());
@@ -945,10 +968,13 @@ mod tests {
             },
         );
 
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::ToolResult {
-            id: "tu_1".into(),
-            output: crab_core::tool::ToolOutput::success("file1.txt\nfile2.txt"),
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::ToolResult {
+                id: "tu_1".into(),
+                output: crab_core::tool::ToolOutput::success("file1.txt\nfile2.txt"),
+            },
+        });
 
         assert!(messages_contain(&app.messages, "file1.txt"));
         assert!(messages_contain(&app.messages, "bash"));
@@ -967,10 +993,13 @@ mod tests {
             },
         );
 
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::ToolResult {
-            id: "tu_1".into(),
-            output: crab_core::tool::ToolOutput::error("command not found"),
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::ToolResult {
+                id: "tu_1".into(),
+                output: crab_core::tool::ToolOutput::error("command not found"),
+            },
+        });
 
         assert!(messages_contain(&app.messages, "command not found"));
         // Verify it's marked as an error
@@ -987,11 +1016,14 @@ mod tests {
         app.state = AppState::Processing;
         app.spinner.start("Thinking...");
 
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::ToolUseStart {
-            id: "tu_1".into(),
-            name: "read".into(),
-            input: serde_json::json!({"file_path": "test.rs"}),
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::ToolUseStart {
+                id: "tu_1".into(),
+                name: "read".into(),
+                input: serde_json::json!({"file_path": "test.rs"}),
+            },
+        });
 
         assert!(messages_contain(&app.messages, "read"));
         assert!(
@@ -1047,20 +1079,26 @@ mod tests {
     #[test]
     fn session_saved_event_shown() {
         let mut app = App::new("test");
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::SessionSaved {
-            session_id: "sess_abc".into(),
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::SessionSaved {
+                session_id: "sess_abc".into(),
+            },
+        });
         assert!(messages_contain(&app.messages, "sess_abc"));
     }
 
     #[test]
     fn token_warning_shown() {
         let mut app = App::new("test");
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::TokenWarning {
-            usage_pct: 0.90,
-            used: 90000,
-            limit: 100_000,
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::TokenWarning {
+                usage_pct: 0.90,
+                used: 90000,
+                limit: 100_000,
+            },
+        });
         assert!(messages_contain(&app.messages, "90%"));
     }
 
@@ -1193,10 +1231,13 @@ mod tests {
         let mut app = App::new("test");
         app.content_scroll = 15;
 
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::ContentDelta {
-            index: 0,
-            delta: "new text".into(),
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::ContentDelta {
+                index: 0,
+                delta: "new text".into(),
+            },
+        });
         assert_eq!(app.content_scroll, 0);
     }
 
@@ -1479,10 +1520,13 @@ mod tests {
         app.scroll_anchor = Some(10);
         app.content_scroll = 10;
 
-        app.handle_event(TuiEvent::Agent(crab_core::event::Event::ContentDelta {
-            index: 0,
-            delta: "line1\nline2\n".into(),
-        }));
+        app.handle_event(TuiEvent::Agent {
+            epoch: 0,
+            event: crab_core::event::Event::ContentDelta {
+                index: 0,
+                delta: "line1\nline2\n".into(),
+            },
+        });
 
         // Should count newlines (2) as unseen
         assert!(app.unseen_message_count >= 2);

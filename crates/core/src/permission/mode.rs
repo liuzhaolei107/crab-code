@@ -18,6 +18,8 @@ pub enum PermissionMode {
     Dangerously,
     /// Planning-only mode: the agent may read but not mutate.
     Plan,
+    /// Heuristic classifier: Safe = auto-allow, Risky = prompt, Dangerous = deny.
+    Auto,
 }
 
 impl fmt::Display for PermissionMode {
@@ -29,6 +31,7 @@ impl fmt::Display for PermissionMode {
             Self::DontAsk => f.write_str("dontAsk"),
             Self::Dangerously => f.write_str("dangerously"),
             Self::Plan => f.write_str("plan"),
+            Self::Auto => f.write_str("auto"),
         }
     }
 }
@@ -46,6 +49,7 @@ impl FromStr for PermissionMode {
                 Ok(Self::Dangerously)
             }
             "plan" => Ok(Self::Plan),
+            "auto" => Ok(Self::Auto),
             other => Err(format!("unknown permission mode: {other}")),
         }
     }
@@ -63,6 +67,7 @@ mod tests {
         assert_eq!(PermissionMode::DontAsk.to_string(), "dontAsk");
         assert_eq!(PermissionMode::Dangerously.to_string(), "dangerously");
         assert_eq!(PermissionMode::Plan.to_string(), "plan");
+        assert_eq!(PermissionMode::Auto.to_string(), "auto");
     }
 
     #[test]
@@ -103,6 +108,10 @@ mod tests {
             "plan".parse::<PermissionMode>().unwrap(),
             PermissionMode::Plan
         );
+        assert_eq!(
+            "auto".parse::<PermissionMode>().unwrap(),
+            PermissionMode::Auto
+        );
         assert!("unknown".parse::<PermissionMode>().is_err());
     }
 
@@ -123,6 +132,7 @@ mod tests {
             PermissionMode::DontAsk,
             PermissionMode::Dangerously,
             PermissionMode::Plan,
+            PermissionMode::Auto,
         ] {
             let json = serde_json::to_string(&mode).unwrap();
             let parsed: PermissionMode = serde_json::from_str(&json).unwrap();

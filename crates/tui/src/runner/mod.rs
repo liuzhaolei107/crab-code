@@ -55,6 +55,7 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
         &mut prepared.watch_rx,
         prepared.backend,
         prepared.event_tx,
+        prepared.tagged_tx,
         prepared.perm_resp_tx,
         &prepared.session_id,
         Arc::clone(&prepared.event_broker),

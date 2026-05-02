@@ -4,6 +4,7 @@ use crate::builtin::bash::BASH_TOOL_NAME;
 use crate::builtin::edit::EDIT_TOOL_NAME;
 use crate::builtin::notebook::NOTEBOOK_EDIT_TOOL_NAME;
 use crate::builtin::write::WRITE_TOOL_NAME;
+use crab_core::permission::auto_mode::{AutoModeClassifier, RiskLevel};
 use crab_core::permission::{PermissionDecision, PermissionMode, PermissionPolicy};
 use crab_core::tool::ToolSource;
 
@@ -73,13 +74,28 @@ pub fn check_permission(
         return PermissionDecision::Allow;
     }
 
-    // 5. Explicitly allowed tools skip normal Prompt, but NOT dangerous check
+    // 5. Auto mode — heuristic classifier decides Allow / AskUser / Deny.
+    //    Runs after deny/whitelist/Dangerously/read-only so the classifier
+    //    only sees ambiguous, non-read-only tool calls.
+    if policy.mode == PermissionMode::Auto {
+        return match AutoModeClassifier::classify(tool_name, is_read_only, input) {
+            RiskLevel::Safe => PermissionDecision::Allow,
+            RiskLevel::Risky => {
+                PermissionDecision::AskUser(format!("Auto-mode: '{tool_name}' classified as risky"))
+            }
+            RiskLevel::Dangerous => PermissionDecision::Deny(format!(
+                "Auto-mode: '{tool_name}' classified as dangerous and blocked"
+            )),
+        };
+    }
+
+    // 6. Explicitly allowed tools skip normal Prompt, but NOT dangerous check
     let explicitly_allowed = policy.is_explicitly_allowed(tool_name);
     if explicitly_allowed && !is_dangerous_command(input) {
         return PermissionDecision::Allow;
     }
 
-    // 5. Source-specific checks
+    // 7. Source-specific checks
     match source {
         // MCP external: Default and TrustProject both require Prompt (untrusted source)
         ToolSource::McpExternal { .. } => {
@@ -97,7 +113,7 @@ pub fn check_permission(
             PermissionMode::Plan => {
                 PermissionDecision::Deny("plan mode: mutations are not allowed".into())
             }
-            PermissionMode::Dangerously => unreachable!(),
+            PermissionMode::Dangerously | PermissionMode::Auto => unreachable!(),
         },
 
         // Built-in tools: follow the full matrix
@@ -155,7 +171,7 @@ fn check_builtin_permission(
             PermissionDecision::Deny("plan mode: mutations are not allowed".into())
         }
 
-        PermissionMode::Dangerously => unreachable!(),
+        PermissionMode::Dangerously | PermissionMode::Auto => unreachable!(),
     }
 }
 
@@ -681,6 +697,52 @@ mod tests {
             &json!({}),
             cwd(),
         );
+        assert!(matches!(result, PermissionDecision::Deny(_)));
+    }
+
+    // ─── Auto mode tests ───
+
+    #[test]
+    fn auto_mode_allows_read_only_via_early_return() {
+        // Read-only short-circuits before the Auto branch — but the result
+        // is the same: Allow.
+        let p = policy(PermissionMode::Auto);
+        let result = check_permission(&p, "read", &ToolSource::BuiltIn, true, &json!({}), cwd());
+        assert_eq!(result, PermissionDecision::Allow);
+    }
+
+    #[test]
+    fn auto_mode_prompts_for_risky_write() {
+        let p = policy(PermissionMode::Auto);
+        let result = check_permission(
+            &p,
+            "write",
+            &ToolSource::BuiltIn,
+            false,
+            &json!({"file_path": "/tmp/foo.rs"}),
+            cwd(),
+        );
+        assert!(matches!(result, PermissionDecision::AskUser(_)));
+    }
+
+    #[test]
+    fn auto_mode_denies_dangerous_command() {
+        let p = policy(PermissionMode::Auto);
+        let result = check_permission(
+            &p,
+            "bash",
+            &ToolSource::BuiltIn,
+            false,
+            &json!({"command": "rm -rf /"}),
+            cwd(),
+        );
+        assert!(matches!(result, PermissionDecision::Deny(_)));
+    }
+
+    #[test]
+    fn auto_mode_respects_deny_list() {
+        let p = policy_with_denied(PermissionMode::Auto, vec!["bash".into()]);
+        let result = check_permission(&p, "bash", &ToolSource::BuiltIn, false, &json!({}), cwd());
         assert!(matches!(result, PermissionDecision::Deny(_)));
     }
 

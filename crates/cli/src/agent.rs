@@ -285,6 +285,8 @@ pub async fn run(cli: &Cli, resume_session_id: Option<String>) -> anyhow::Result
             .map_err(|e| anyhow::anyhow!(e))?
     } else if cli.dangerously_skip_permissions {
         PermissionMode::Dangerously
+    } else if cli.auto {
+        PermissionMode::Auto
     } else if cli.trust_project {
         PermissionMode::TrustProject
     } else {

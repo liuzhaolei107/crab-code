@@ -161,6 +161,12 @@ pub trait Tool: Send + Sync {
     fn display_color(&self) -> ToolDisplayStyle {
         ToolDisplayStyle::Normal
     }
+
+    /// Maximum result size in characters before disk persistence kicks in.
+    /// Override for tools that need larger results (e.g. `Read` returns `usize::MAX`).
+    fn max_result_chars(&self) -> usize {
+        100_000
+    }
 }
 
 /// Tool-customized rendering output for TUI display.

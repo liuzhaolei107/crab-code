@@ -9,6 +9,45 @@ use tokio::task::JoinHandle;
 
 use crate::permission::check_permission;
 use crate::registry::ToolRegistry;
+use crate::str_utils::truncate_with_preview;
+
+/// Subdirectory under `std::env::temp_dir()` where oversized tool outputs are spilled.
+pub const TOOL_RESULT_STORAGE_SUBDIR: &str = "crab-tool-results";
+
+/// Number of characters preserved in the in-band preview when a tool output
+/// is spilled to disk.
+const RESULT_PREVIEW_CHARS: usize = 2_000;
+
+/// If a tool output exceeds the tool's `max_chars` budget, persist the full
+/// text to a temp file and return a truncated preview that points at it.
+///
+/// The preview format is `truncate_with_preview(text, 2000)` followed by a
+/// reference line telling the model how to retrieve the full content via
+/// the `Read` tool. Errors writing to disk are swallowed: the spill is a
+/// soft-fail enrichment, not load-bearing for the result itself, so we
+/// still return the in-memory preview.
+#[must_use]
+pub fn apply_result_budget(output: ToolOutput, max_chars: usize, tool_use_id: &str) -> ToolOutput {
+    if output.is_error {
+        return output;
+    }
+    let text = output.text();
+    if text.chars().count() <= max_chars {
+        return output;
+    }
+
+    let storage_dir = std::env::temp_dir().join(TOOL_RESULT_STORAGE_SUBDIR);
+    let _ = std::fs::create_dir_all(&storage_dir);
+    let path = storage_dir.join(format!("{tool_use_id}.txt"));
+    let _ = std::fs::write(&path, &text);
+
+    let preview = truncate_with_preview(&text, RESULT_PREVIEW_CHARS);
+    let reference = format!(
+        "\n\n[Full output saved to {}, use Read tool to access]",
+        path.display()
+    );
+    ToolOutput::success(format!("{preview}{reference}"))
+}
 
 /// Canonical reject text. Fixed phrasing primes the model to stop and wait for instructions.
 const REJECT_MESSAGE: &str = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
@@ -459,6 +498,54 @@ mod tests {
 
         assert!(output.is_error);
         assert_eq!(output.text(), REJECT_MESSAGE);
+    }
+
+    // ─── apply_result_budget tests ───
+
+    #[test]
+    fn budget_passes_small_output_through() {
+        let out = ToolOutput::success("short");
+        let result = apply_result_budget(out, 1_000, "tu_test");
+        assert_eq!(result.text(), "short");
+        assert!(!result.is_error);
+    }
+
+    #[test]
+    fn budget_does_not_touch_error_outputs() {
+        let big = "x".repeat(100_000);
+        let out = ToolOutput::error(big.clone());
+        let result = apply_result_budget(out, 100, "tu_err");
+        assert!(result.is_error);
+        assert_eq!(result.text(), big);
+    }
+
+    #[test]
+    fn budget_persists_oversized_output_and_returns_preview() {
+        // Use a unique id so this test doesn't collide with others.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let id = format!("tu_budget_{}_{nanos}", std::process::id());
+        let big: String = "y".repeat(50_000);
+        let out = ToolOutput::success(big.clone());
+        let result = apply_result_budget(out, 1_000, &id);
+
+        assert!(!result.is_error);
+        let text = result.text();
+        // Reference line should point at a temp file
+        assert!(text.contains("[Full output saved to"));
+        assert!(text.contains("use Read tool to access]"));
+        // Truncation marker present
+        assert!(text.contains("characters omitted"));
+        // Original full content should be on disk
+        let path = std::env::temp_dir()
+            .join(super::TOOL_RESULT_STORAGE_SUBDIR)
+            .join(format!("{id}.txt"));
+        assert!(path.exists(), "expected spill file at {}", path.display());
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(on_disk, big);
+        // Cleanup
+        let _ = std::fs::remove_file(&path);
     }
 
     #[tokio::test]

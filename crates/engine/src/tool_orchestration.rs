@@ -3,13 +3,15 @@
 //! Extracted from `query_loop.rs` for separation of concerns.
 //! Corresponds to CC's `toolOrchestration.ts` + `toolExecution.ts`.
 
+use std::collections::HashSet;
+
 use crab_core::event::Event;
 use crab_core::message::{ContentBlock, Message, Role};
 use crab_core::tool::{ToolContext, ToolOutput};
 use crab_hooks::{HookAction, HookContext, HookExecutor, HookTrigger};
 use crab_tools::builtin::bash::BASH_TOOL_NAME;
 use crab_tools::builtin::plan_mode::EXIT_PLAN_MODE_TOOL_NAME;
-use crab_tools::executor::{StreamingOutput, ToolExecutor};
+use crab_tools::executor::{StreamingOutput, ToolExecutor, apply_result_budget};
 use futures::stream::{self, StreamExt};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -50,7 +52,7 @@ pub fn partition_tool_calls<'a>(
 ///
 /// Read-only tools run concurrently; write tools run sequentially with
 /// pre/post hook support. Plan mode blocks write tools except `ExitPlanMode`.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::implicit_hasher)]
 pub async fn execute_tool_calls(
     assistant_msg: &Message,
     executor: &ToolExecutor,
@@ -60,11 +62,20 @@ pub async fn execute_tool_calls(
     hook_executor: Option<&HookExecutor>,
     session_id: Option<&str>,
     plan_mode: bool,
+    skip_ids: &HashSet<String>,
 ) -> crab_core::Result<Vec<(String, Result<ToolOutput, crab_core::Error>)>> {
     let registry = executor.registry();
     let mut results = Vec::new();
 
     let (reads, writes) = partition_tool_calls(&assistant_msg.content, registry);
+    let reads: Vec<_> = reads
+        .into_iter()
+        .filter(|c| !skip_ids.contains(c.id))
+        .collect();
+    let writes: Vec<_> = writes
+        .into_iter()
+        .filter(|c| !skip_ids.contains(c.id))
+        .collect();
 
     // Execute read-only tools concurrently under a batch child token.
     // Cancelling the parent (query-level) token cascades to all reads.
@@ -78,6 +89,9 @@ pub async fn execute_tool_calls(
                 let input = call.input.clone();
                 let event_tx = event_tx.clone();
                 let token = batch_token.clone();
+                let max_chars = registry
+                    .get(&name)
+                    .map_or(100_000, |t| t.max_result_chars());
                 async move {
                     let _ = event_tx
                         .send(Event::ToolUseStart {
@@ -92,6 +106,7 @@ pub async fn execute_tool_calls(
                             Err(crab_core::Error::Other("tool cancelled".into()))
                         }
                     };
+                    let result = result.map(|o| apply_result_budget(o, max_chars, &id));
                     let _ = event_tx
                         .send(Event::ToolResult {
                             id: id.clone(),
@@ -256,6 +271,11 @@ pub async fn execute_tool_calls(
         } else {
             executor.execute(&name, input.clone(), ctx).await
         };
+
+        let max_chars = registry
+            .get(&name)
+            .map_or(100_000, |t| t.max_result_chars());
+        let result = result.map(|o| apply_result_budget(o, max_chars, &id));
 
         let _ = event_tx
             .send(Event::ToolResult {
@@ -430,6 +450,7 @@ mod tests {
             None,
             None,
             false,
+            &HashSet::new(),
         )
         .await
         .unwrap();

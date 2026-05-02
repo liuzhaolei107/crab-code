@@ -20,6 +20,16 @@ use crate::event::TuiEvent;
 use crate::keybindings::{Action, KeyContext, ResolveOutcome};
 use crate::vim::VimAction;
 
+/// Keep at most the last `n` lines of `s` so an arbitrarily long stream
+/// of tool output can never grow the in-progress cell unboundedly.
+fn trim_to_last_lines(s: &str, n: usize) -> String {
+    let lines: Vec<&str> = s.lines().collect();
+    if lines.len() <= n {
+        return s.to_string();
+    }
+    lines[lines.len() - n..].join("\n")
+}
+
 impl App {
     /// Best-effort text extractor used by the `Message*` actions so Copy /
     /// Edit grab something meaningful regardless of the message variant.
@@ -763,7 +773,9 @@ impl App {
                 // For now, key events go through the existing handle_key path.
                 Vec::new()
             }
-            TuiEvent::Agent(agent_event) => match agent_event {
+            TuiEvent::Agent {
+                event: agent_event, ..
+            } => match agent_event {
                 Event::ContentDelta { index, delta } => {
                     // Skip tool-argument content blocks (indices >= TOOL_ARG_INDEX_BASE)
                     // to avoid leaking raw tool-call JSON into the assistant message.
@@ -791,6 +803,12 @@ impl App {
                     vec![AppEvent::ToolProgress {
                         id: id.clone(),
                         progress: progress.clone(),
+                    }]
+                }
+                Event::ToolOutputDelta { id, delta } => {
+                    vec![AppEvent::ToolOutputDelta {
+                        id: id.clone(),
+                        delta: delta.clone(),
                     }]
                 }
                 Event::ToolResult { id, output } => {
@@ -858,7 +876,7 @@ impl App {
                 // Events with no TUI representation today — dropped silently.
                 // Candidates for future AppEvent variants:
                 //   TurnStart, MessageStart,
-                //   ToolUseInput, ToolOutputDelta, PermissionResponse,
+                //   ToolUseInput, PermissionResponse,
                 //   MemoryLoaded, MemorySaved,
                 //   AgentWorkerStarted, AgentWorkerCompleted
                 _ => Vec::new(),
@@ -967,6 +985,38 @@ impl App {
                 }
                 AppAction::None
             }
+            AppEvent::ToolOutputDelta { id, delta } => {
+                let info = self.active_tools.get(&id);
+                let tool_name = info.map_or_else(|| "tool".to_string(), |i| i.name.clone());
+                let started_at = self.processing_start;
+                let added_lines = delta.matches('\n').count().max(1);
+
+                if let Some(ChatMessage::ToolProgress {
+                    tool_use_id,
+                    tail_output,
+                    total_lines,
+                    elapsed_secs,
+                    ..
+                }) = self.messages.last_mut()
+                    && tool_use_id == &id
+                {
+                    tail_output.push_str(&delta);
+                    *tail_output = trim_to_last_lines(tail_output, 20);
+                    *total_lines = total_lines.saturating_add(added_lines);
+                    *elapsed_secs = started_at.map_or(*elapsed_secs, |t| t.elapsed().as_secs_f64());
+                    self.virtual_list.invalidate();
+                    return AppAction::None;
+                }
+
+                self.messages.push(ChatMessage::ToolProgress {
+                    tool_use_id: id,
+                    tool_name,
+                    tail_output: trim_to_last_lines(&delta, 20),
+                    total_lines: added_lines,
+                    elapsed_secs: started_at.map_or(0.0, |t| t.elapsed().as_secs_f64()),
+                });
+                AppAction::None
+            }
             AppEvent::ToolFinished { id, output } => {
                 let removed = self.active_tools.remove(&id);
                 let tool_name = removed
@@ -991,14 +1041,29 @@ impl App {
                 let is_error = output.is_error;
                 let collapsed = tool_ref.is_some_and(|t| t.is_result_collapsible(&output));
                 let is_read_only = tool_ref.is_some_and(|t| t.is_read_only());
-                self.messages.push(ChatMessage::ToolResult {
+                let result_msg = ChatMessage::ToolResult {
                     tool_name: tool_name.clone(),
                     output: text.clone(),
                     is_error,
                     display,
                     collapsed,
                     is_read_only,
-                });
+                };
+                // If a `ToolProgress` cell for this tool is still showing,
+                // swap it for the final result so the progress line doesn't
+                // persist alongside the completed output.
+                let replaced = matches!(
+                    self.messages.last(),
+                    Some(ChatMessage::ToolProgress { tool_use_id, .. }) if tool_use_id == &id,
+                );
+                if replaced {
+                    if let Some(last) = self.messages.last_mut() {
+                        *last = result_msg;
+                    }
+                    self.virtual_list.invalidate();
+                } else {
+                    self.messages.push(result_msg);
+                }
                 self.tool_outputs
                     .push(ToolOutputEntry::new(&tool_name, text.clone(), is_error));
                 if is_error {
