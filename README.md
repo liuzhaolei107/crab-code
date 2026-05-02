@@ -53,7 +53,7 @@ Example `config.toml`:
 
 ```toml
 api_provider = "deepseek"
-base_url = "https://api.deepseek.com"
+base_url = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 api_key = "sk-..."           # optional; env wins if both set
 

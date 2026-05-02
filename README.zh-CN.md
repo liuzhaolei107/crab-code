@@ -53,7 +53,7 @@ defaults  <  plugin  <  user  <  project  <  local  <  --config <file>     (file
 
 ```toml
 api_provider = "deepseek"
-base_url = "https://api.deepseek.com"
+base_url = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 api_key = "sk-..."           # 可选；env 同时设置时 env 赢
 

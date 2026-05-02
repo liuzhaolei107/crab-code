@@ -1322,6 +1322,7 @@ name = "crab-commands"
 version = "0.1.0"
 dependencies = [
  "crab-core",
+ "serde_json",
 ]
 
 [[package]]

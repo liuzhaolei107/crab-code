@@ -9,6 +9,7 @@ description = "Slash command infrastructure — trait, registry, and built-in ha
 
 [dependencies]
 crab-core.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

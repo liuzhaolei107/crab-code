@@ -161,11 +161,12 @@ impl LlmBackend {
 #[must_use]
 pub fn create_backend(settings: &crab_config::Config) -> LlmBackend {
     match settings.api_provider.as_deref() {
-        Some("openai" | "deepseek") => {
-            let base_url = settings
-                .base_url
-                .as_deref()
-                .unwrap_or("https://api.openai.com/v1");
+        Some(provider @ ("openai" | "deepseek")) => {
+            let default_url = match provider {
+                "deepseek" => "https://api.deepseek.com/v1",
+                _ => "https://api.openai.com/v1",
+            };
+            let base_url = settings.base_url.as_deref().unwrap_or(default_url);
             let api_key = crab_auth::resolve_auth_key(settings);
             LlmBackend::OpenAi(openai::OpenAiClient::new(base_url, api_key))
         }
