@@ -102,8 +102,7 @@ impl Renderable for BottomBar<'_> {
                 width: stats_width,
                 height: 1,
             };
-            let stats_line =
-                Line::from(Span::styled(stats, Style::default().fg(Color::DarkGray)));
+            let stats_line = Line::from(Span::styled(stats, Style::default().fg(Color::DarkGray)));
             Widget::render(stats_line, stats_area, buf);
         }
     }

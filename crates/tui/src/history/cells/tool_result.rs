@@ -211,7 +211,12 @@ mod tests {
         assert!(pager.contains("more lines"));
         let hint: String = lines[11].spans.iter().map(|s| &*s.content).collect();
         assert!(hint.contains("Ctrl+O to expand"));
-        assert!(lines[11].spans[0].style.add_modifier.contains(Modifier::ITALIC));
+        assert!(
+            lines[11].spans[0]
+                .style
+                .add_modifier
+                .contains(Modifier::ITALIC)
+        );
     }
 
     #[test]

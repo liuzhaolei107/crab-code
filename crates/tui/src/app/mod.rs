@@ -290,8 +290,7 @@ impl App {
             self.virtual_list.invalidate();
             self.last_render_width = layout.content.width;
         }
-        let is_streaming =
-            matches!(self.state, AppState::Processing | AppState::Confirming);
+        let is_streaming = matches!(self.state, AppState::Processing | AppState::Confirming);
         let vm: Vec<VirtualMessage> = self
             .messages
             .iter()

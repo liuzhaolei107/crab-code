@@ -38,10 +38,7 @@ impl ThinkingCell {
         if self.collapsed {
             Line::from(vec![
                 Span::styled(label, label_style),
-                Span::styled(
-                    "  Ctrl+O to expand",
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled("  Ctrl+O to expand", Style::default().fg(Color::DarkGray)),
             ])
         } else {
             Line::from(Span::styled(label, label_style))

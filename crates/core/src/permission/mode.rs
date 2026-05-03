@@ -175,7 +175,10 @@ mod tests {
             PermissionMode::Plan,
             PermissionMode::Auto,
         ] {
-            assert_eq!(PermissionMode::Plan.restrict_to(ceiling), PermissionMode::Plan);
+            assert_eq!(
+                PermissionMode::Plan.restrict_to(ceiling),
+                PermissionMode::Plan
+            );
         }
     }
 

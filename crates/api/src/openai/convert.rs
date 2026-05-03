@@ -724,10 +724,7 @@ mod tests {
         let chat_req = to_chat_completion_request(&req, false);
         let m = &chat_req.messages[0];
         assert_eq!(m.content.as_deref(), Some("visible answer"));
-        assert_eq!(
-            m.reasoning_content.as_deref(),
-            Some("internal reasoning")
-        );
+        assert_eq!(m.reasoning_content.as_deref(), Some("internal reasoning"));
         assert!(m.tool_calls.is_none());
     }
 }

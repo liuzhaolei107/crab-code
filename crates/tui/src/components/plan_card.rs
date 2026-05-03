@@ -94,10 +94,7 @@ pub fn render_step(index: usize, title: &str, status: PlanStepStatus) -> Line<'s
     };
 
     Line::from(vec![
-        Span::styled(
-            format!("  {index}. "),
-            Style::default().fg(Color::DarkGray),
-        ),
+        Span::styled(format!("  {index}. "), Style::default().fg(Color::DarkGray)),
         Span::styled(format!("{glyph} "), Style::default().fg(color)),
         Span::styled(title.to_string(), text_style),
     ])

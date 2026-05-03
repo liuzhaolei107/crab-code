@@ -742,6 +742,7 @@ async fn dispatch_slash_command(
             api_calls: summary.api_calls,
         },
         estimated_tokens: 0,
+        context_window: session.conversation.context_window,
         message_count: session.conversation.len(),
         memory_dir: session
             .memory_store

@@ -83,7 +83,12 @@ pub fn cell_from_chat_message(msg: &crate::app::ChatMessage) -> Box<dyn HistoryC
             color,
             status,
             ..
-        } => Box::new(ToolCallCell::new(name.clone(), summary.clone(), *color, *status)),
+        } => Box::new(ToolCallCell::new(
+            name.clone(),
+            summary.clone(),
+            *color,
+            *status,
+        )),
         ChatMessage::ToolResult {
             tool_name,
             output,

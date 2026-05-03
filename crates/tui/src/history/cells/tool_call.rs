@@ -193,7 +193,12 @@ mod tests {
 
     #[test]
     fn summary_parsed_into_name_and_detail() {
-        let cell = ToolCallCell::new("bash", Some("Run (ls -la)".into()), None, ToolCallStatus::Running);
+        let cell = ToolCallCell::new(
+            "bash",
+            Some("Run (ls -la)".into()),
+            None,
+            ToolCallStatus::Running,
+        );
         let (name, detail) = cell.parse_summary();
         assert_eq!(name, "Run");
         assert_eq!(detail, Some("ls -la"));
@@ -201,7 +206,12 @@ mod tests {
 
     #[test]
     fn summary_without_parens_stays_whole() {
-        let cell = ToolCallCell::new("bash", Some("Run command".into()), None, ToolCallStatus::Running);
+        let cell = ToolCallCell::new(
+            "bash",
+            Some("Run command".into()),
+            None,
+            ToolCallStatus::Running,
+        );
         let (name, detail) = cell.parse_summary();
         assert_eq!(name, "Run command");
         assert_eq!(detail, None);
