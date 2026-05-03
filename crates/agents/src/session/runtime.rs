@@ -488,12 +488,22 @@ impl AgentSession {
         let system_prompt =
             format!("You are a sub-agent worker. Complete the assigned task.\n\n{parent_prompt}");
 
+        let mut worker_tool_ctx = self.tool_ctx.clone();
+        if let Some(parent_mode) = spawn_request
+            .get("parent_permission_mode")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<crab_core::permission::PermissionMode>().ok())
+        {
+            worker_tool_ctx.permission_mode =
+                worker_tool_ctx.permission_mode.restrict_to(parent_mode);
+        }
+
         let worker_id = coordinator.spawn_worker(
             task,
             system_prompt,
             self.backend.clone(),
             worker_executor,
-            self.tool_ctx.clone(),
+            worker_tool_ctx,
             self.config.clone(),
             self.event_tx.clone(),
             max_turns,

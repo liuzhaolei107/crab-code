@@ -61,6 +61,8 @@ pub struct ViewportState {
 pub struct VirtualMessageList {
     cache: LruCache<(u64, u16), Arc<Vec<Line<'static>>>>,
     last_total_lines: usize,
+    streaming_active: bool,
+    streaming_ratchet: Option<usize>,
 }
 
 impl VirtualMessageList {
@@ -70,6 +72,8 @@ impl VirtualMessageList {
         Self {
             cache: LruCache::new(cap),
             last_total_lines: 0,
+            streaming_active: false,
+            streaming_ratchet: None,
         }
     }
 
@@ -79,7 +83,14 @@ impl VirtualMessageList {
         Self {
             cache: LruCache::new(cap),
             last_total_lines: 0,
+            streaming_active: false,
+            streaming_ratchet: None,
         }
+    }
+
+    pub fn set_streaming(&mut self, active: bool) {
+        self.streaming_active = active;
+        self.streaming_ratchet = None;
     }
 
     /// Total number of cached `Line` rows from the last render pass.
@@ -107,18 +118,29 @@ impl VirtualMessageList {
         width: u16,
     ) -> Vec<Arc<Vec<Line<'static>>>> {
         let mut out = Vec::with_capacity(messages.len());
-        for msg in messages {
-            if msg.streaming {
-                out.push(Arc::clone(&msg.lines));
-                continue;
-            }
-            let key = (msg.id, width);
-            let entry = if let Some(cached) = self.cache.get(&key) {
-                Arc::clone(cached)
-            } else {
-                self.cache.put(key, Arc::clone(&msg.lines));
+        let last_idx = messages.len().saturating_sub(1);
+        for (i, msg) in messages.iter().enumerate() {
+            let mut entry = if msg.streaming {
                 Arc::clone(&msg.lines)
+            } else {
+                let key = (msg.id, width);
+                if let Some(cached) = self.cache.get(&key) {
+                    Arc::clone(cached)
+                } else {
+                    self.cache.put(key, Arc::clone(&msg.lines));
+                    Arc::clone(&msg.lines)
+                }
             };
+            if self.streaming_active && i == last_idx {
+                let raw = entry.len();
+                let target = raw.max(self.streaming_ratchet.unwrap_or(0));
+                self.streaming_ratchet = Some(target);
+                if target > raw {
+                    let mut padded: Vec<Line<'static>> = (*entry).clone();
+                    padded.resize(target, Line::raw(""));
+                    entry = Arc::new(padded);
+                }
+            }
             out.push(entry);
         }
         out
@@ -246,6 +268,41 @@ mod tests {
         assert_eq!(list.cache_len(), 1);
         list.invalidate();
         assert_eq!(list.cache_len(), 0);
+    }
+
+    #[test]
+    fn streaming_ratchet_holds_minimum_height() {
+        let mut list = VirtualMessageList::new();
+        let area = Rect::new(0, 0, 20, 10);
+        let mut buf = Buffer::empty(area);
+
+        list.set_streaming(true);
+
+        let tall = vec![VirtualMessage {
+            id: 1,
+            lines: Arc::new(vec![
+                Line::raw("a"),
+                Line::raw("b"),
+                Line::raw("c"),
+                Line::raw("d"),
+                Line::raw("e"),
+            ]),
+            streaming: true,
+        }];
+        list.render(&tall, ViewportState::default(), area, &mut buf);
+        assert_eq!(list.last_total_lines(), 5);
+
+        let short = vec![VirtualMessage {
+            id: 1,
+            lines: Arc::new(vec![Line::raw("a"), Line::raw("b"), Line::raw("c")]),
+            streaming: true,
+        }];
+        list.render(&short, ViewportState::default(), area, &mut buf);
+        assert_eq!(list.last_total_lines(), 5);
+
+        list.set_streaming(false);
+        list.render(&short, ViewportState::default(), area, &mut buf);
+        assert_eq!(list.last_total_lines(), 3);
     }
 
     #[test]

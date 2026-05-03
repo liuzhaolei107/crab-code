@@ -6,7 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crab_core::Result;
-use crab_core::tool::{Tool, ToolContext, ToolDisplayResult, ToolOutput};
+use crab_core::tool::{CollapsedGroupLabel, Tool, ToolContext, ToolDisplayResult, ToolOutput};
 use serde_json::Value;
 
 /// LSP operations tool — stub for Phase 1.
@@ -134,7 +134,6 @@ impl Tool for LspTool {
         if text.is_empty() {
             return None;
         }
-        // "Found N references" / "Found N symbols" etc.
         let line_count = text.lines().count();
         Some(ToolDisplayResult {
             lines: vec![ToolDisplayLine::new(
@@ -142,6 +141,15 @@ impl Tool for LspTool {
                 ToolDisplayStyle::Muted,
             )],
             preview_lines: 1,
+        })
+    }
+
+    fn collapsed_group_label(&self) -> Option<CollapsedGroupLabel> {
+        Some(CollapsedGroupLabel {
+            active_verb: "Querying",
+            past_verb: "Queried",
+            noun_singular: "symbol",
+            noun_plural: "symbols",
         })
     }
 }

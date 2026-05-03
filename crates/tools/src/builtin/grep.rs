@@ -1,5 +1,7 @@
 use crab_core::Result;
-use crab_core::tool::{Tool, ToolContext, ToolDisplayResult, ToolDisplayStyle, ToolOutput};
+use crab_core::tool::{
+    CollapsedGroupLabel, Tool, ToolContext, ToolDisplayResult, ToolDisplayStyle, ToolOutput,
+};
 use crab_fs::grep::{GrepMatch, GrepOptions, search};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -189,6 +191,15 @@ impl Tool for GrepTool {
 
     fn display_color(&self) -> ToolDisplayStyle {
         ToolDisplayStyle::Highlight
+    }
+
+    fn collapsed_group_label(&self) -> Option<CollapsedGroupLabel> {
+        Some(CollapsedGroupLabel {
+            active_verb: "Searching for",
+            past_verb: "Searched for",
+            noun_singular: "pattern",
+            noun_plural: "patterns",
+        })
     }
 }
 

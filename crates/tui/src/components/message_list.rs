@@ -117,6 +117,8 @@ mod tests {
                 summary: Some("src/lib.rs".into()),
                 color: None,
                 is_read_only: true,
+                status: crate::app::ToolCallStatus::Running,
+                collapsed_label: None,
             },
             ChatMessage::ToolResult {
                 tool_name: "read".into(),

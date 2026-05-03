@@ -1,5 +1,7 @@
 use crab_core::Result;
-use crab_core::tool::{Tool, ToolContext, ToolDisplayResult, ToolDisplayStyle, ToolOutput};
+use crab_core::tool::{
+    CollapsedGroupLabel, Tool, ToolContext, ToolDisplayResult, ToolDisplayStyle, ToolOutput,
+};
 use crab_fs::glob::{GlobOptions, find_files};
 use serde_json::Value;
 use std::fmt::Write as _;
@@ -137,6 +139,15 @@ impl Tool for GlobTool {
 
     fn display_color(&self) -> ToolDisplayStyle {
         ToolDisplayStyle::Highlight
+    }
+
+    fn collapsed_group_label(&self) -> Option<CollapsedGroupLabel> {
+        Some(CollapsedGroupLabel {
+            active_verb: "Globbing",
+            past_verb: "Globbed",
+            noun_singular: "pattern",
+            noun_plural: "patterns",
+        })
     }
 }
 

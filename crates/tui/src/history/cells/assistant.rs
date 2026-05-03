@@ -1,16 +1,19 @@
-//! Assistant reply cell — renders markdown body prefixed with `● `.
+//! Assistant reply cell — renders markdown body with a `⎿` corner prefix on
+//! the first line and matching padding on continuation lines.
 
 use std::cell::RefCell;
 
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 
 use crate::components::syntax::SyntaxHighlighter;
 use crate::components::text_utils::strip_trailing_tool_json;
 use crate::history::HistoryCell;
 use crate::markdown::CachedMarkdownRenderer;
-use crate::theme::accents::CLAUDE_DARK;
-use crate::theme::{self};
+use crate::theme;
+
+const FIRST_LINE_PREFIX: &str = "  ⎿  ";
+const CONT_LINE_PREFIX: &str = "     ";
 
 thread_local! {
     /// Shared per-render-thread markdown cache. Keeps expensive
@@ -61,12 +64,14 @@ impl HistoryCell for AssistantCell {
             (*cache.render(&clean, &theme, &highlighter, width)).clone()
         });
 
+        let prefix_style = Style::default().fg(Color::DarkGray);
         let mut out: Vec<Line<'static>> = Vec::with_capacity(md_lines.len() + 1);
-        if let Some(first) = md_lines.first() {
-            let mut spans = vec![Span::styled("● ", Style::default().fg(CLAUDE_DARK))];
-            spans.extend(first.spans.iter().cloned());
+        for (idx, line) in md_lines.into_iter().enumerate() {
+            let prefix = if idx == 0 { FIRST_LINE_PREFIX } else { CONT_LINE_PREFIX };
+            let mut spans: Vec<Span<'static>> = Vec::with_capacity(line.spans.len() + 1);
+            spans.push(Span::styled(prefix, prefix_style));
+            spans.extend(line.spans);
             out.push(Line::from(spans));
-            out.extend(md_lines.into_iter().skip(1));
         }
         out.push(Line::default());
         out
@@ -88,12 +93,38 @@ mod tests {
     }
 
     #[test]
-    fn non_empty_text_renders_bullet_prefix() {
+    fn non_empty_text_renders_without_bullet_prefix() {
         let cell = AssistantCell::new("hello");
         let lines = cell.display_lines(80);
         assert!(!lines.is_empty());
         let first: String = lines[0].spans.iter().map(|s| &*s.content).collect();
-        assert!(first.starts_with("● "));
+        assert!(!first.contains("● "), "assistant text should not have bullet prefix");
+    }
+
+    #[test]
+    fn first_line_has_corner_prefix_continuations_padded() {
+        let cell = AssistantCell::new("line one\n\nline two\n\nline three");
+        let lines = cell.display_lines(80);
+        // Markdown paragraphs produce multiple lines; last is trailing blank.
+        let content_lines: Vec<_> = lines
+            .iter()
+            .filter(|l| !l.spans.is_empty())
+            .collect();
+        assert!(content_lines.len() >= 2, "expected multiple content lines, got {}", content_lines.len());
+
+        let first: String = content_lines[0].spans.iter().map(|s| &*s.content).collect();
+        assert!(
+            first.starts_with(FIRST_LINE_PREFIX),
+            "first line should start with corner prefix, got {first:?}"
+        );
+
+        for line in content_lines.iter().skip(1) {
+            let rendered: String = line.spans.iter().map(|s| &*s.content).collect();
+            assert!(
+                rendered.starts_with(CONT_LINE_PREFIX),
+                "continuation line should start with padded prefix, got {rendered:?}"
+            );
+        }
     }
 
     #[test]

@@ -50,6 +50,7 @@ pub fn to_chat_completion_request(req: &MessageRequest<'_>, stream: bool) -> Cha
         messages.push(ChatMessage {
             role: "system".to_string(),
             content: Some(system.clone()),
+            reasoning_content: None,
             tool_calls: None,
             tool_call_id: None,
             name: None,
@@ -137,6 +138,17 @@ fn messages_to_openai(msg: &Message) -> Vec<ChatMessage> {
         .collect::<Vec<_>>()
         .join("");
 
+    // Collect thinking/reasoning content for round-trip with reasoning models
+    let thinking: String = msg
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Thinking { thinking } => Some(thinking.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
     // Collect tool results as separate messages
     let tool_result_messages: Vec<ChatMessage> = msg
         .content
@@ -149,6 +161,7 @@ fn messages_to_openai(msg: &Message) -> Vec<ChatMessage> {
             } => Some(ChatMessage {
                 role: "tool".to_string(),
                 content: Some(content.clone()),
+                reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: Some(tool_use_id.clone()),
                 name: None,
@@ -164,6 +177,11 @@ fn messages_to_openai(msg: &Message) -> Vec<ChatMessage> {
     let main_message = ChatMessage {
         role: role_str.to_string(),
         content: if text.is_empty() { None } else { Some(text) },
+        reasoning_content: if thinking.is_empty() {
+            None
+        } else {
+            Some(thinking)
+        },
         tool_calls: if tool_calls.is_empty() {
             None
         } else {
@@ -213,6 +231,14 @@ pub fn from_chat_completion_response(resp: ChatCompletionResponse) -> Result<Mes
 fn chat_message_to_content_blocks(msg: &ChatMessage) -> Vec<ContentBlock> {
     let mut blocks = Vec::new();
 
+    if let Some(reasoning) = &msg.reasoning_content
+        && !reasoning.is_empty()
+    {
+        blocks.push(ContentBlock::Thinking {
+            thinking: reasoning.clone(),
+        });
+    }
+
     if let Some(text) = &msg.content
         && !text.is_empty()
     {
@@ -255,12 +281,6 @@ pub fn chunk_to_stream_event(chunk: &ChatCompletionChunk) -> Vec<StreamEvent> {
             .as_ref()
             .is_some_and(|tc| !tc.is_empty());
 
-        // Reasoning trace (deepseek-reasoner / DeepSeek-R1): emit as
-        // ThinkingDelta so downstream consumers render the same Thinking
-        // cell they use for Anthropic extended-thinking. Must stream
-        // through as it arrives — reasoning can run for tens of seconds
-        // before any `content` appears and the UI would otherwise look
-        // frozen.
         if let Some(reasoning) = &choice.delta.reasoning_content
             && !reasoning.is_empty()
         {
@@ -462,6 +482,7 @@ mod tests {
                 message: ChatMessage {
                     role: "assistant".into(),
                     content: Some("Hello!".into()),
+                    reasoning_content: None,
                     tool_calls: None,
                     tool_call_id: None,
                     name: None,
@@ -504,6 +525,7 @@ mod tests {
                 message: ChatMessage {
                     role: "assistant".into(),
                     content: None,
+                    reasoning_content: None,
                     tool_calls: Some(vec![ToolCall {
                         id: "call_1".into(),
                         call_type: "function".into(),
@@ -582,10 +604,6 @@ mod tests {
 
     #[test]
     fn chunk_to_events_reasoning_content_becomes_thinking_delta() {
-        // DeepSeek-reasoner streams `reasoning_content` before normal
-        // content; we translate it into StreamEvent::ThinkingDelta so the
-        // TUI can show "∴ Thinking…" instead of looking frozen while the
-        // model reasons.
         let chunk = ChatCompletionChunk {
             id: "chatcmpl-reason".into(),
             object: "chat.completion.chunk".into(),
@@ -681,8 +699,7 @@ mod tests {
     }
 
     #[test]
-    fn openai_ignores_thinking_content_block() {
-        // Thinking blocks in messages should be silently dropped
+    fn thinking_block_round_trips_as_reasoning_content() {
         let msg = Message::new(
             crab_core::message::Role::Assistant,
             vec![
@@ -693,7 +710,7 @@ mod tests {
             ],
         );
         let req = MessageRequest {
-            model: ModelId::from("gpt-4o"),
+            model: ModelId::from("deepseek-reasoner"),
             messages: std::borrow::Cow::Owned(vec![msg]),
             system: None,
             max_tokens: 1024,
@@ -706,8 +723,11 @@ mod tests {
         };
         let chat_req = to_chat_completion_request(&req, false);
         let m = &chat_req.messages[0];
-        // Only the text content should survive, thinking is filtered out
         assert_eq!(m.content.as_deref(), Some("visible answer"));
+        assert_eq!(
+            m.reasoning_content.as_deref(),
+            Some("internal reasoning")
+        );
         assert!(m.tool_calls.is_none());
     }
 }

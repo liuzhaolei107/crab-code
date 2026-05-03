@@ -73,6 +73,7 @@ mod tests {
             .iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.to_string()))
             .collect();
-        assert!(all_text.contains("Approve"));
+        assert!(all_text.contains("y: approve"));
+        assert!(all_text.contains("Esc: skip"));
     }
 }

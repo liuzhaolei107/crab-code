@@ -58,6 +58,7 @@ impl Tool for AgentTool {
         // Clone ctx fields into owned values so the async block holds no borrows on `ctx`.
         let default_working_dir = ctx.working_dir.display().to_string();
         let session_id = ctx.session_id.clone();
+        let parent_mode_str = ctx.permission_mode.to_string();
 
         Box::pin(async move {
             let task = input.get("task").and_then(|v| v.as_str()).ok_or_else(|| {
@@ -100,6 +101,7 @@ impl Tool for AgentTool {
                 "working_dir": working_dir.unwrap_or(default_working_dir),
                 "max_turns": max_turns,
                 "session_id": session_id,
+                "parent_permission_mode": parent_mode_str,
             });
 
             Ok(ToolOutput::with_content(

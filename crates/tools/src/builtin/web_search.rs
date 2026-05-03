@@ -6,7 +6,7 @@
 //! Google Custom Search) is deferred to Phase 2.
 
 use crab_core::Result;
-use crab_core::tool::{Tool, ToolContext, ToolOutput};
+use crab_core::tool::{CollapsedGroupLabel, Tool, ToolContext, ToolOutput};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
@@ -348,9 +348,17 @@ impl Tool for WebSearchTool {
     }
 
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // message = "query text"
         let query = input["query"].as_str()?;
         Some(format!("WebSearch (\"{query}\")"))
+    }
+
+    fn collapsed_group_label(&self) -> Option<CollapsedGroupLabel> {
+        Some(CollapsedGroupLabel {
+            active_verb: "Searching",
+            past_verb: "Searched",
+            noun_singular: "query",
+            noun_plural: "queries",
+        })
     }
 }
 

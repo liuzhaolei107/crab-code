@@ -6,7 +6,8 @@ use std::pin::Pin;
 use base64::Engine as _;
 use crab_core::Result;
 use crab_core::tool::{
-    Tool, ToolContext, ToolDisplayResult, ToolDisplayStyle, ToolOutput, ToolOutputContent,
+    CollapsedGroupLabel, Tool, ToolContext, ToolDisplayResult, ToolDisplayStyle, ToolOutput,
+    ToolOutputContent,
 };
 use serde_json::Value;
 
@@ -342,6 +343,15 @@ impl Tool for ReadTool {
 
     fn max_result_chars(&self) -> usize {
         usize::MAX
+    }
+
+    fn collapsed_group_label(&self) -> Option<CollapsedGroupLabel> {
+        Some(CollapsedGroupLabel {
+            active_verb: "Reading",
+            past_verb: "Read",
+            noun_singular: "file",
+            noun_plural: "files",
+        })
     }
 }
 

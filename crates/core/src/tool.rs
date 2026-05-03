@@ -30,6 +30,26 @@ pub enum ToolSource {
     AgentSpawn,
 }
 
+/// Label used when multiple read-only tool calls are collapsed into a
+/// single summary line (e.g. "Read 3 files, searched 2 patterns").
+///
+/// Tools override `Tool::collapsed_group_label()` to provide this.
+/// The TUI groups calls by label and renders counts per group — it never
+/// matches on tool names directly.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CollapsedGroupLabel {
+    /// Active-tense verb shown when results are still pending, capitalized
+    /// for sentence start (e.g. "Reading", "Searching for").
+    pub active_verb: &'static str,
+    /// Past-tense verb shown after all results arrive, capitalized
+    /// (e.g. "Read", "Searched for").
+    pub past_verb: &'static str,
+    /// Singular noun (e.g. "file", "pattern", "notebook").
+    pub noun_singular: &'static str,
+    /// Plural noun (e.g. "files", "patterns", "notebooks").
+    pub noun_plural: &'static str,
+}
+
 /// How a tool responds to an interrupt (Ctrl+C / cancel signal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterruptBehavior {
@@ -167,6 +187,16 @@ pub trait Tool: Send + Sync {
     /// Override for tools that need larger results (e.g. `Read` returns `usize::MAX`).
     fn max_result_chars(&self) -> usize {
         100_000
+    }
+
+    /// Label for collapsed read-only run summaries.
+    ///
+    /// When multiple read-only tools fire in parallel, the TUI collapses
+    /// them into a single line like "Read 3 files, searched 2 patterns".
+    /// This method provides the verb/noun forms for the summary. Return
+    /// `None` to fall into a generic "N other calls" bucket.
+    fn collapsed_group_label(&self) -> Option<CollapsedGroupLabel> {
+        None
     }
 }
 

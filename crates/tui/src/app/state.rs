@@ -122,6 +122,18 @@ impl ExitKey {
     }
 }
 
+/// Lifecycle status of a tool invocation — determines the `●` dot color.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ToolCallStatus {
+    /// Tool is currently executing (animated/default color).
+    #[default]
+    Running,
+    /// Tool completed successfully (green dot).
+    Success,
+    /// Tool returned an error (red dot).
+    Error,
+}
+
 /// A single message in the conversation, structurally typed for rendering.
 ///
 /// Replaces the flat `content_buffer: String` with a typed message list.
@@ -143,6 +155,11 @@ pub enum ChatMessage {
         /// Cached at push time from `Tool::is_read_only()`. Read-only calls
         /// participate in the collapsed-run grouping in `history::grouping`.
         is_read_only: bool,
+        /// Lifecycle status — Running while executing, Success/Error once finished.
+        status: ToolCallStatus,
+        /// Cached at push time from `Tool::collapsed_group_label()`.
+        /// Used by the collapsed-run cell for tool-agnostic summary rendering.
+        collapsed_label: Option<crab_core::tool::CollapsedGroupLabel>,
     },
     /// Tool execution result — collapsible, rendered as output text.
     ToolResult {
@@ -215,12 +232,8 @@ pub enum ChatMessage {
     /// Recent activity lives in the session sidebar, not here — duplicating
     /// it made the old three-column layout overflow on short terminals.
     Welcome {
-        /// Binary version this welcome was generated for — shown in the header.
         version: String,
-        /// Release-note bullets pulled from the CHANGELOG for the current
-        /// version. Up to 3 are rendered.
-        whats_new: Vec<String>,
-        /// When true, the hint row suggests creating `AGENTS.md`.
+        whats_new: String,
         show_project_hint: bool,
     },
 }

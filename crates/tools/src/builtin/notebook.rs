@@ -6,7 +6,8 @@ use std::pin::Pin;
 
 use crab_core::Result;
 use crab_core::tool::{
-    Tool, ToolContext, ToolDisplayLine, ToolDisplayResult, ToolDisplayStyle, ToolOutput,
+    CollapsedGroupLabel, Tool, ToolContext, ToolDisplayLine, ToolDisplayResult, ToolDisplayStyle,
+    ToolOutput,
 };
 use serde_json::Value;
 
@@ -156,6 +157,15 @@ impl Tool for NotebookReadTool {
                 ToolDisplayStyle::Muted,
             )],
             preview_lines: 1,
+        })
+    }
+
+    fn collapsed_group_label(&self) -> Option<CollapsedGroupLabel> {
+        Some(CollapsedGroupLabel {
+            active_verb: "Reading",
+            past_verb: "Read",
+            noun_singular: "notebook",
+            noun_plural: "notebooks",
         })
     }
 }

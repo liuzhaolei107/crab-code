@@ -22,6 +22,31 @@ pub enum PermissionMode {
     Auto,
 }
 
+impl PermissionMode {
+    fn restrictiveness(self) -> u8 {
+        match self {
+            Self::Plan => 0,
+            Self::Default => 1,
+            Self::Auto => 2,
+            Self::AcceptEdits => 3,
+            Self::TrustProject => 4,
+            Self::DontAsk => 5,
+            Self::Dangerously => 6,
+        }
+    }
+
+    /// Return the more restrictive of `self` and `ceiling`.
+    /// Sub-agents use this to ensure they never exceed their parent's mode.
+    #[must_use]
+    pub fn restrict_to(self, ceiling: Self) -> Self {
+        if self.restrictiveness() <= ceiling.restrictiveness() {
+            self
+        } else {
+            ceiling
+        }
+    }
+}
+
 impl fmt::Display for PermissionMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -121,6 +146,45 @@ mod tests {
         let json = serde_json::to_string(&mode).unwrap();
         let parsed: PermissionMode = serde_json::from_str(&json).unwrap();
         assert_eq!(mode, parsed);
+    }
+
+    #[test]
+    fn restrict_to_caps_at_ceiling() {
+        assert_eq!(
+            PermissionMode::Dangerously.restrict_to(PermissionMode::Default),
+            PermissionMode::Default
+        );
+    }
+
+    #[test]
+    fn restrict_to_keeps_lower_when_self_is_more_restrictive() {
+        assert_eq!(
+            PermissionMode::Default.restrict_to(PermissionMode::Dangerously),
+            PermissionMode::Default
+        );
+    }
+
+    #[test]
+    fn restrict_to_plan_always_wins() {
+        for ceiling in [
+            PermissionMode::Default,
+            PermissionMode::AcceptEdits,
+            PermissionMode::TrustProject,
+            PermissionMode::DontAsk,
+            PermissionMode::Dangerously,
+            PermissionMode::Plan,
+            PermissionMode::Auto,
+        ] {
+            assert_eq!(PermissionMode::Plan.restrict_to(ceiling), PermissionMode::Plan);
+        }
+    }
+
+    #[test]
+    fn restrict_to_equal_modes() {
+        assert_eq!(
+            PermissionMode::AcceptEdits.restrict_to(PermissionMode::AcceptEdits),
+            PermissionMode::AcceptEdits
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Tool result cell — truncated output, optional tool-customized styling.
 
 use crab_core::tool::{ToolDisplayResult, ToolDisplayStyle as DS};
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::history::HistoryCell;
@@ -61,6 +61,7 @@ impl ToolResultCell {
 impl HistoryCell for ToolResultCell {
     fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
         let mut out: Vec<Line<'static>> = Vec::new();
+        let glyph_style = Style::default().fg(Color::DarkGray);
 
         if let Some(display) = &self.display {
             let total = display.lines.len();
@@ -69,14 +70,27 @@ impl HistoryCell for ToolResultCell {
             } else {
                 total
             };
-            for dl in &display.lines[..limit] {
+            for (i, dl) in display.lines[..limit].iter().enumerate() {
                 let style = Self::style_for(dl.style);
-                out.push(Line::from(Span::styled(format!("  {}", dl.text), style)));
+                if i == 0 {
+                    out.push(Line::from(vec![
+                        Span::styled("  \u{23bf}  ", glyph_style),
+                        Span::styled(dl.text.clone(), style),
+                    ]));
+                } else {
+                    out.push(Line::from(Span::styled(format!("     {}", dl.text), style)));
+                }
             }
             if limit < total {
                 out.push(Line::from(Span::styled(
-                    format!("  ... ({} more lines, Enter to expand)", total - limit),
+                    format!("     ... ({} more lines, Enter to expand)", total - limit),
                     Style::default().fg(Color::DarkGray),
+                )));
+                out.push(Line::from(Span::styled(
+                    "  Ctrl+O to expand",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
                 )));
             }
         } else {
@@ -91,13 +105,26 @@ impl HistoryCell for ToolResultCell {
             } else {
                 lines.len()
             };
-            for line in &lines[..limit] {
-                out.push(Line::from(Span::styled(format!("  {line}"), style)));
+            for (i, line) in lines[..limit].iter().enumerate() {
+                if i == 0 {
+                    out.push(Line::from(vec![
+                        Span::styled("  \u{23bf}  ", glyph_style),
+                        Span::styled(line.to_string(), style),
+                    ]));
+                } else {
+                    out.push(Line::from(Span::styled(format!("     {line}"), style)));
+                }
             }
             if lines.len() > limit {
                 out.push(Line::from(Span::styled(
-                    format!("  ... ({} more lines)", lines.len() - limit),
+                    format!("     ... ({} more lines)", lines.len() - limit),
                     Style::default().fg(Color::DarkGray),
+                )));
+                out.push(Line::from(Span::styled(
+                    "  Ctrl+O to expand",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
                 )));
             }
         }
@@ -108,13 +135,22 @@ impl HistoryCell for ToolResultCell {
     /// Transcript view shows the full output with no truncation, since
     /// the overlay exists specifically to inspect long outputs.
     fn transcript_lines(&self, _width: u16) -> Vec<Line<'static>> {
+        let glyph_style = Style::default().fg(Color::DarkGray);
         if let Some(display) = &self.display {
             let mut out: Vec<Line<'static>> = display
                 .lines
                 .iter()
-                .map(|dl| {
+                .enumerate()
+                .map(|(i, dl)| {
                     let style = Self::style_for(dl.style);
-                    Line::from(Span::styled(format!("  {}", dl.text), style))
+                    if i == 0 {
+                        Line::from(vec![
+                            Span::styled("  \u{23bf}  ", glyph_style),
+                            Span::styled(dl.text.clone(), style),
+                        ])
+                    } else {
+                        Line::from(Span::styled(format!("     {}", dl.text), style))
+                    }
                 })
                 .collect();
             out.push(Line::default());
@@ -128,7 +164,17 @@ impl HistoryCell for ToolResultCell {
         let mut out: Vec<Line<'static>> = self
             .output
             .lines()
-            .map(|line| Line::from(Span::styled(format!("  {line}"), style)))
+            .enumerate()
+            .map(|(i, line)| {
+                if i == 0 {
+                    Line::from(vec![
+                        Span::styled("  \u{23bf}  ", glyph_style),
+                        Span::styled(line.to_string(), style),
+                    ])
+                } else {
+                    Line::from(Span::styled(format!("     {line}"), style))
+                }
+            })
             .collect();
         out.push(Line::default());
         out
@@ -159,10 +205,13 @@ mod tests {
             .join("\n");
         let cell = ToolResultCell::new("bash", body, false, None, true);
         let lines = cell.display_lines(80);
-        // 10 body + 1 pager + 1 blank
-        assert_eq!(lines.len(), 12);
-        let last_visible: String = lines[10].spans.iter().map(|s| &*s.content).collect();
-        assert!(last_visible.contains("more lines"));
+        // 10 body + 1 pager + 1 hint + 1 blank
+        assert_eq!(lines.len(), 13);
+        let pager: String = lines[10].spans.iter().map(|s| &*s.content).collect();
+        assert!(pager.contains("more lines"));
+        let hint: String = lines[11].spans.iter().map(|s| &*s.content).collect();
+        assert!(hint.contains("Ctrl+O to expand"));
+        assert!(lines[11].spans[0].style.add_modifier.contains(Modifier::ITALIC));
     }
 
     #[test]
@@ -181,7 +230,8 @@ mod tests {
     fn error_gets_red_styling() {
         let cell = ToolResultCell::new("bash", "bad", true, None, true);
         let lines = cell.display_lines(80);
-        assert_eq!(lines[0].spans[0].style.fg, Some(Color::Red));
+        // spans[0] is the glyph "  ⎿  ", spans[1] is the error text
+        assert_eq!(lines[0].spans[1].style.fg, Some(Color::Red));
     }
 
     #[test]
@@ -195,10 +245,50 @@ mod tests {
         };
         let cell = ToolResultCell::new("bash", "", false, Some(display), true);
         let lines = cell.display_lines(80);
-        // 3 preview + 1 "... more" + 1 blank
-        assert_eq!(lines.len(), 5);
+        // 3 preview + 1 pager + 1 hint + 1 blank
+        assert_eq!(lines.len(), 6);
         let pager: String = lines[3].spans.iter().map(|s| &*s.content).collect();
         assert!(pager.contains("7 more lines"));
+        let hint: String = lines[4].spans.iter().map(|s| &*s.content).collect();
+        assert!(hint.contains("Ctrl+O to expand"));
+    }
+
+    #[test]
+    fn hint_absent_when_output_fits() {
+        let cell = ToolResultCell::new("read", "one\ntwo", false, None, true);
+        let lines = cell.display_lines(80);
+        for line in &lines {
+            let text: String = line.spans.iter().map(|s| &*s.content).collect();
+            assert!(!text.contains("Ctrl+O"));
+        }
+    }
+
+    #[test]
+    fn hint_absent_when_not_collapsed() {
+        let body = (0..20)
+            .map(|i| format!("line-{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cell = ToolResultCell::new("bash", body, false, None, false);
+        let lines = cell.display_lines(80);
+        for line in &lines {
+            let text: String = line.spans.iter().map(|s| &*s.content).collect();
+            assert!(!text.contains("Ctrl+O"));
+        }
+    }
+
+    #[test]
+    fn hint_absent_in_transcript_view() {
+        let body = (0..20)
+            .map(|i| format!("line-{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cell = ToolResultCell::new("bash", body, false, None, true);
+        let lines = cell.transcript_lines(80);
+        for line in &lines {
+            let text: String = line.spans.iter().map(|s| &*s.content).collect();
+            assert!(!text.contains("Ctrl+O"));
+        }
     }
 
     #[test]

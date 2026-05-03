@@ -1,11 +1,8 @@
-//! Compact boundary cell — visual separator for context compaction events.
-
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 
 use crate::history::HistoryCell;
 
-/// Renders a full-width horizontal line with a centered compaction summary label.
 #[derive(Debug, Clone)]
 pub struct CompactBoundaryCell {
     strategy: String,
@@ -25,33 +22,29 @@ impl CompactBoundaryCell {
 }
 
 impl HistoryCell for CompactBoundaryCell {
-    #[allow(clippy::cast_possible_truncation)]
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let w = width as usize;
         let tokens_k = self.after_tokens / 1000;
         let label = format!(
-            " compacted ({}) \u{2014} removed {} msgs, {}k tokens remaining ",
+            " context compacted ({}): {} messages removed, ~{}k tokens remaining ",
             self.strategy, self.removed_messages, tokens_k
         );
 
-        let dim = Style::default().fg(Color::DarkGray);
-        let label_style = Style::default().fg(Color::DarkGray);
+        let style = Style::default().fg(Color::DarkGray);
 
-        let label_len = label.len();
+        let label_len = label.chars().count();
         let remaining = w.saturating_sub(label_len);
         let left = remaining / 2;
         let right = remaining.saturating_sub(left);
 
-        let left_dashes = "\u{2500}".repeat(left);
-        let right_dashes = "\u{2500}".repeat(right);
+        let mut content = String::with_capacity(w);
+        content.push_str(&"\u{2500}".repeat(left));
+        content.push_str(&label);
+        content.push_str(&"\u{2500}".repeat(right));
 
         vec![
             Line::default(),
-            Line::from(vec![
-                Span::styled(left_dashes, dim),
-                Span::styled(label, label_style),
-                Span::styled(right_dashes, dim),
-            ]),
+            Line::from(Span::styled(content, style)),
             Line::default(),
         ]
     }
@@ -73,7 +66,15 @@ mod tests {
     }
 
     #[test]
-    fn boundary_contains_label() {
+    fn boundary_first_and_last_lines_are_blank() {
+        let cell = CompactBoundaryCell::new("summary".into(), 50000, 12);
+        let lines = cell.display_lines(80);
+        assert!(lines[0].spans.is_empty());
+        assert!(lines[2].spans.is_empty());
+    }
+
+    #[test]
+    fn boundary_contains_label_text() {
         let cell = CompactBoundaryCell::new("summary".into(), 50000, 12);
         let lines = cell.display_lines(80);
         let text: String = lines[1]
@@ -81,13 +82,13 @@ mod tests {
             .iter()
             .map(|s| s.content.to_string())
             .collect();
-        assert!(text.contains("compacted"));
-        assert!(text.contains("12 msgs"));
-        assert!(text.contains("50k tokens"));
+        assert!(text.contains("context compacted (summary)"));
+        assert!(text.contains("12 messages removed"));
+        assert!(text.contains("~50k tokens remaining"));
     }
 
     #[test]
-    fn boundary_contains_dashes() {
+    fn boundary_uses_box_drawing_rule() {
         let cell = CompactBoundaryCell::new("trim".into(), 100_000, 5);
         let lines = cell.display_lines(80);
         let text: String = lines[1]
@@ -99,7 +100,16 @@ mod tests {
     }
 
     #[test]
-    fn boundary_narrow_width() {
+    fn boundary_line_uses_dark_gray() {
+        let cell = CompactBoundaryCell::new("summary".into(), 50000, 12);
+        let lines = cell.display_lines(80);
+        for span in &lines[1].spans {
+            assert_eq!(span.style.fg, Some(Color::DarkGray));
+        }
+    }
+
+    #[test]
+    fn boundary_narrow_width_does_not_panic() {
         let cell = CompactBoundaryCell::new("trim".into(), 1000, 1);
         let lines = cell.display_lines(20);
         assert_eq!(lines.len(), 3);

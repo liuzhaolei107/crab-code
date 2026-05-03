@@ -1,7 +1,7 @@
 //! Web page fetching tool — fetches a URL and extracts text content.
 
 use crab_core::Result;
-use crab_core::tool::{Tool, ToolContext, ToolDisplayResult, ToolOutput};
+use crab_core::tool::{CollapsedGroupLabel, Tool, ToolContext, ToolDisplayResult, ToolOutput};
 use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
@@ -161,6 +161,15 @@ impl Tool for WebFetchTool {
         Some(ToolDisplayResult {
             lines: vec![ToolDisplayLine::new(summary, ToolDisplayStyle::Muted)],
             preview_lines: 1,
+        })
+    }
+
+    fn collapsed_group_label(&self) -> Option<CollapsedGroupLabel> {
+        Some(CollapsedGroupLabel {
+            active_verb: "Fetching",
+            past_verb: "Fetched",
+            noun_singular: "page",
+            noun_plural: "pages",
         })
     }
 }

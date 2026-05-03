@@ -7,8 +7,8 @@ use ratatui::text::{Line, Span};
 
 use crate::history::HistoryCell;
 
-/// Header glyph for the in-progress line. Matches Codex's idiom (`⟳`).
-const HEADER_GLYPH: &str = "\u{27f3}";
+/// Header glyph for the in-progress line. Uses the CCB spinner frame `✶`.
+const HEADER_GLYPH: &str = "\u{2736}";
 
 /// How many tail-output lines to render under the header.
 const TAIL_LINES: usize = 5;
@@ -55,27 +55,42 @@ impl ToolProgressCell {
 
 impl HistoryCell for ToolProgressCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let mut lines = Vec::with_capacity(TAIL_LINES + 1);
+        let mut lines = Vec::with_capacity(TAIL_LINES + 2);
         lines.push(self.header_line());
 
         if self.tail_output.is_empty() {
             return lines;
         }
 
-        let inner_width = width.saturating_sub(2) as usize;
+        let inner_width = width.saturating_sub(5) as usize;
         let raw_lines: Vec<&str> = self.tail_output.lines().collect();
         let start = raw_lines.len().saturating_sub(TAIL_LINES);
         let dim = Style::default()
             .fg(Color::DarkGray)
             .add_modifier(Modifier::DIM);
+        let glyph_style = Style::default().fg(Color::DarkGray);
 
-        for raw in &raw_lines[start..] {
+        for (i, raw) in raw_lines[start..].iter().enumerate() {
             if inner_width == 0 || raw.len() <= inner_width {
-                lines.push(Line::from(Span::styled(format!("  {raw}"), dim)));
+                if i == 0 {
+                    lines.push(Line::from(vec![
+                        Span::styled("  \u{23bf}  ", glyph_style),
+                        Span::styled(raw.to_string(), dim),
+                    ]));
+                } else {
+                    lines.push(Line::from(Span::styled(format!("     {raw}"), dim)));
+                }
             } else {
-                for chunk in raw.as_bytes().chunks(inner_width) {
+                for (ci, chunk) in raw.as_bytes().chunks(inner_width).enumerate() {
                     let s = String::from_utf8_lossy(chunk).into_owned();
-                    lines.push(Line::from(Span::styled(format!("  {s}"), dim)));
+                    if i == 0 && ci == 0 {
+                        lines.push(Line::from(vec![
+                            Span::styled("  \u{23bf}  ", glyph_style),
+                            Span::styled(s, dim),
+                        ]));
+                    } else {
+                        lines.push(Line::from(Span::styled(format!("     {s}"), dim)));
+                    }
                 }
             }
         }

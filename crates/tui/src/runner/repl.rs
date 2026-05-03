@@ -88,6 +88,7 @@ pub(super) async fn run_loop(
                 init_rx = None;
                 if let Ok((runtime, meta)) = result {
                     app.tool_registry = Some(meta.tool_registry);
+                    app.context_window_size = runtime.conversation().context_window;
                     app.session_sidebar.set_sessions(to_sidebar_entries(&meta.sidebar_entries));
                     for name in &meta.mcp_failures {
                         app.notifications.warn(format!("MCP server '{name}' failed to connect"));
@@ -140,6 +141,7 @@ pub(super) async fn run_loop(
                         Ok(agent_result) => {
                             rt.restore_conversation(agent_result.conversation);
                             rt.merge_cost(&agent_result.cost);
+                            app.total_cost_usd = rt.cost().total_cost_usd;
                             if let Err(e) = agent_result.result {
                                 let _ = event_tx.send(Event::Error {
                                     message: e.to_string(),
@@ -458,8 +460,8 @@ fn push_welcome_if_needed(app: &mut App) {
         return;
     }
 
-    // What's new — top bullets from docs/CHANGELOG.md's most recent entry.
-    let whats_new = crate::changelog::whats_new(3);
+    let bullets = crate::changelog::whats_new(1);
+    let whats_new = bullets.into_iter().next().unwrap_or_default();
 
     let msg = crate::app::ChatMessage::Welcome {
         version: env!("CARGO_PKG_VERSION").to_owned(),

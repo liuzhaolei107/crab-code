@@ -28,7 +28,7 @@ impl SlashCommand for FeedbackCommand {
                 "issue",
                 "create",
                 "--repo",
-                "anthropics/claude-code",
+                "crabforge/crab-code",
                 "--title",
                 title,
                 "--body",

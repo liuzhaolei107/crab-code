@@ -11,7 +11,7 @@ use ratatui::widgets::Widget;
 
 // ── Spinner animation frames ──────────────────────────────────────────
 
-const FRAMES: &[&str] = &["*"];
+const FRAMES: &[&str] = &["\u{00b7}", "\u{2722}", "\u{2733}", "\u{2736}", "\u{273b}", "\u{273d}"];
 
 // ── Spinner verbs ─────────────────────────────────────────────────────
 
@@ -554,9 +554,7 @@ mod tests {
         spinner.start_with_random_verb();
         assert_eq!(spinner.frame, 0);
         spinner.tick();
-        // With single-frame spinner (*), frame wraps back to 0
-        assert_eq!(spinner.frame, 0);
-        // But tick counter still advances
+        assert_eq!(spinner.frame, 1);
         assert_eq!(spinner.tick, 1);
     }
 

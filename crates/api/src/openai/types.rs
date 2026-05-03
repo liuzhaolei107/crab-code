@@ -29,6 +29,8 @@ pub struct ChatMessage {
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "reasoning")]
+    pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,11 +111,6 @@ pub struct ChunkDelta {
     pub content: Option<String>,
     #[serde(default)]
     pub tool_calls: Option<Vec<ToolCallDelta>>,
-    /// Reasoning trace emitted by reasoning models (`deepseek-reasoner`,
-    /// DeepSeek-R1, etc.). Arrives before the normal `content` stream and
-    /// can span tens of seconds; surfacing it as thinking keeps the UI
-    /// from looking frozen. Aliased so we also accept providers that name
-    /// the field `reasoning` (without the `_content` suffix).
     #[serde(default, alias = "reasoning")]
     pub reasoning_content: Option<String>,
 }
@@ -356,6 +353,7 @@ mod tests {
             messages: vec![ChatMessage {
                 role: "user".into(),
                 content: Some("What's the weather?".into()),
+                reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
                 name: None,

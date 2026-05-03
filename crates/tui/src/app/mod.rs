@@ -6,6 +6,7 @@ mod update;
 
 pub use state::{
     ActiveToolInfo, AppAction, AppState, ChatMessage, ExitKey, PromptInputMode, ThinkingState,
+    ToolCallStatus,
 };
 
 use std::collections::HashMap;
@@ -71,6 +72,10 @@ pub struct App {
     pub total_input_tokens: u64,
     /// Cumulative output token usage.
     pub total_output_tokens: u64,
+    /// Cumulative cost in USD (refreshed from runtime's `CostAccumulator`).
+    pub total_cost_usd: f64,
+    /// Model context window size in tokens. Set once at session init.
+    pub context_window_size: u64,
     /// Content scroll offset (lines from bottom).
     pub(super) content_scroll: usize,
     /// Tool output list with fold/unfold state.
@@ -160,6 +165,8 @@ impl App {
             keybindings: Keybindings::defaults(),
             total_input_tokens: 0,
             total_output_tokens: 0,
+            total_cost_usd: 0.0,
+            context_window_size: 0,
             content_scroll: 0,
             tool_outputs: ToolOutputList::new(),
             code_blocks: CodeBlockTracker::new(),
@@ -224,10 +231,12 @@ impl App {
         self.session_grants.clear();
         self.total_input_tokens = 0;
         self.total_output_tokens = 0;
+        self.total_cost_usd = 0.0;
         self.content_scroll = 0;
         self.scroll_anchor = None;
         self.unseen_message_count = 0;
         self.command_queue.clear();
+        self.virtual_list.set_streaming(false);
         self.virtual_list.invalidate();
         self.next_msg_id = 0;
     }
@@ -281,7 +290,8 @@ impl App {
             self.virtual_list.invalidate();
             self.last_render_width = layout.content.width;
         }
-        let is_streaming = self.state == AppState::Processing;
+        let is_streaming =
+            matches!(self.state, AppState::Processing | AppState::Confirming);
         let vm: Vec<VirtualMessage> = self
             .messages
             .iter()
@@ -368,6 +378,16 @@ impl App {
             chord_prefix: self.keybindings.pending_chord(),
             vim_mode: vim_label,
             exit_pending,
+            model_name: Some(self.model_name.as_str()),
+            context_used_pct: compute_context_pct(
+                self.total_input_tokens,
+                self.total_output_tokens,
+                self.context_window_size,
+            ),
+            context_window_size: self.context_window_size,
+            total_cost_usd: self.total_cost_usd,
+            total_input_tokens: self.total_input_tokens,
+            total_output_tokens: self.total_output_tokens,
         };
         bottom_bar.render(layout.bottom_bar, buf);
 
@@ -433,6 +453,16 @@ impl App {
             self.overlay_stack.render(area, buf);
         }
     }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn compute_context_pct(input: u64, output: u64, window: u64) -> u8 {
+    if window == 0 {
+        return 0;
+    }
+    let used = input.saturating_add(output);
+    let pct = (used * 100) / window;
+    pct.min(100) as u8
 }
 
 /// Render the unseen message divider when the user is scrolled up.
@@ -1847,7 +1877,7 @@ mod tests {
         let mut app = App::new("test");
         app.messages.push(ChatMessage::Welcome {
             version: "0.1.0".into(),
-            whats_new: Vec::new(),
+            whats_new: String::new(),
             show_project_hint: false,
         });
         app.messages.push(ChatMessage::User { text: "hi".into() });

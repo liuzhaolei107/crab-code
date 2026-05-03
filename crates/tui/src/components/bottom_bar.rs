@@ -15,7 +15,7 @@ use crate::app::{AppState, ExitKey};
 use crate::keybindings::KeyChord;
 use crate::traits::Renderable;
 
-/// Bottom bar showing contextual key hints.
+/// Bottom bar showing contextual key hints + right-aligned status line.
 pub struct BottomBar<'a> {
     pub state: AppState,
     pub search_active: bool,
@@ -29,6 +29,17 @@ pub struct BottomBar<'a> {
     /// normal state hint. The key identifies which of Ctrl-C or Ctrl-D
     /// started the double-press window.
     pub exit_pending: Option<ExitKey>,
+    /// Short model name shown in the status line (e.g. "Opus 4.6").
+    pub model_name: Option<&'a str>,
+    /// Context window usage as percentage 0-100.
+    pub context_used_pct: u8,
+    /// Total context window size in tokens.
+    pub context_window_size: u64,
+    /// Cumulative cost in USD.
+    pub total_cost_usd: f64,
+    /// Cumulative token usage for the right-aligned stats.
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
 }
 
 impl Renderable for BottomBar<'_> {
@@ -45,9 +56,25 @@ impl Renderable for BottomBar<'_> {
             return;
         }
 
+        // Right-aligned status line (model | context | cost | tokens)
+        let stats = format_status_right(
+            self.model_name,
+            self.context_used_pct,
+            self.context_window_size,
+            self.total_cost_usd,
+            self.total_input_tokens,
+            self.total_output_tokens,
+        );
+        let stats_width = stats.chars().count() as u16;
+        let left_budget = area.width.saturating_sub(stats_width + 1);
+
+        let left_area = Rect {
+            width: left_budget,
+            ..area
+        };
+
         if let Some(vim_label) = self.vim_mode {
-            let (label_style, rest_area) = render_vim_badge(vim_label, area, buf);
-            let _ = label_style;
+            let (_, rest_area) = render_vim_badge(vim_label, left_area, buf);
             if rest_area.width > 0 {
                 render_bottom_bar(
                     self.state,
@@ -57,16 +84,28 @@ impl Renderable for BottomBar<'_> {
                     buf,
                 );
             }
-            return;
+        } else {
+            render_bottom_bar(
+                self.state,
+                self.search_active,
+                self.permission_mode,
+                left_area,
+                buf,
+            );
         }
 
-        render_bottom_bar(
-            self.state,
-            self.search_active,
-            self.permission_mode,
-            area,
-            buf,
-        );
+        // Render token stats on the right
+        if !stats.is_empty() && stats_width < area.width {
+            let stats_area = Rect {
+                x: area.x + area.width - stats_width,
+                y: area.y,
+                width: stats_width,
+                height: 1,
+            };
+            let stats_line =
+                Line::from(Span::styled(stats, Style::default().fg(Color::DarkGray)));
+            Widget::render(stats_line, stats_area, buf);
+        }
     }
 
     fn desired_height(&self, _width: u16) -> u16 {
@@ -161,6 +200,70 @@ fn format_chord(chord: &KeyChord) -> String {
     parts.join("+")
 }
 
+fn format_tokens_short(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.0}k", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
+}
+
+fn format_cost(usd: f64) -> Option<String> {
+    if usd <= 0.0 {
+        None
+    } else {
+        Some(format!("${usd:.2}"))
+    }
+}
+
+fn format_status_right(
+    model: Option<&str>,
+    ctx_pct: u8,
+    ctx_window: u64,
+    cost: f64,
+    input: u64,
+    output: u64,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
+    if let Some(name) = model
+        && !name.is_empty()
+    {
+        parts.push(name.to_string());
+    }
+
+    if ctx_window > 0 && ctx_pct > 0 {
+        #[allow(clippy::cast_sign_loss)]
+        let used_tokens = (ctx_window as f64 * (f64::from(ctx_pct) / 100.0)) as u64;
+        parts.push(format!(
+            "Context {}% ({}/{})",
+            ctx_pct,
+            format_tokens_short(used_tokens),
+            format_tokens_short(ctx_window),
+        ));
+    }
+
+    if let Some(cost_str) = format_cost(cost) {
+        parts.push(cost_str);
+    }
+
+    if input > 0 || output > 0 {
+        parts.push(format!(
+            "{}↑ {}↓",
+            format_tokens_short(input),
+            format_tokens_short(output),
+        ));
+    }
+
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("{} ", parts.join(" \u{2502} "))
+    }
+}
+
 fn render_bottom_bar(
     state: AppState,
     search_active: bool,
@@ -223,6 +326,12 @@ mod tests {
             chord_prefix: None,
             vim_mode: None,
             exit_pending: None,
+            model_name: None,
+            context_used_pct: 0,
+            context_window_size: 0,
+            total_cost_usd: 0.0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         };
         assert_eq!(bb.desired_height(80), 1);
     }
@@ -236,6 +345,12 @@ mod tests {
             chord_prefix: None,
             vim_mode: None,
             exit_pending: None,
+            model_name: None,
+            context_used_pct: 0,
+            context_window_size: 0,
+            total_cost_usd: 0.0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         };
         let area = Rect::new(0, 0, 80, 1);
         let mut buf = Buffer::empty(area);
@@ -288,6 +403,12 @@ mod tests {
             chord_prefix: None,
             vim_mode: None,
             exit_pending: Some(ExitKey::CtrlC),
+            model_name: None,
+            context_used_pct: 0,
+            context_window_size: 0,
+            total_cost_usd: 0.0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         };
         assert!(rendered_line(&bb).contains("Press Ctrl-C again to exit"));
     }
@@ -301,6 +422,12 @@ mod tests {
             chord_prefix: None,
             vim_mode: None,
             exit_pending: Some(ExitKey::CtrlD),
+            model_name: None,
+            context_used_pct: 0,
+            context_window_size: 0,
+            total_cost_usd: 0.0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         };
         assert!(rendered_line(&bb).contains("Press Ctrl-D again to exit"));
     }
@@ -315,6 +442,12 @@ mod tests {
             chord_prefix: Some(&prefix),
             vim_mode: None,
             exit_pending: None,
+            model_name: None,
+            context_used_pct: 0,
+            context_window_size: 0,
+            total_cost_usd: 0.0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         };
         let area = Rect::new(0, 0, 80, 1);
         let mut buf = Buffer::empty(area);

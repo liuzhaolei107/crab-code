@@ -1,7 +1,7 @@
 //! Thinking cell — collapsible extended-thinking block.
 //!
-//! Renders with a `∴` glyph and dim purple styling. Default collapsed,
-//! showing only a summary line. When expanded, shows the full reasoning.
+//! Renders with a `∴` glyph in dim italic. Default collapsed, showing only
+//! the summary line with a Ctrl+O hint. When expanded, shows the full reasoning.
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -32,16 +32,20 @@ impl ThinkingCell {
         } else {
             "∴ Thinking…".to_string()
         };
-        let arrow = if self.collapsed { " ▸" } else { " ▾" };
-        Line::from(vec![
-            Span::styled(
-                label,
-                Style::default()
-                    .fg(Color::Magenta)
-                    .add_modifier(Modifier::DIM),
-            ),
-            Span::styled(arrow, Style::default().fg(Color::DarkGray)),
-        ])
+        let label_style = Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::ITALIC);
+        if self.collapsed {
+            Line::from(vec![
+                Span::styled(label, label_style),
+                Span::styled(
+                    "  Ctrl+O to expand",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])
+        } else {
+            Line::from(Span::styled(label, label_style))
+        }
     }
 }
 
@@ -93,8 +97,9 @@ mod tests {
         let lines = cell.display_lines(80);
         assert_eq!(lines.len(), 1);
         let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(text.contains("Thinking"));
-        assert!(text.contains('▸'));
+        assert!(text.contains("∴ Thinking"));
+        assert!(text.contains("Ctrl+O to expand"));
+        assert!(!text.contains('▸'));
     }
 
     #[test]
@@ -102,6 +107,10 @@ mod tests {
         let cell = ThinkingCell::new("line one\nline two".into(), false, None);
         let lines = cell.display_lines(80);
         assert!(lines.len() >= 3);
+        let header: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(header.contains("∴ Thinking"));
+        assert!(!header.contains("Ctrl+O"));
+        assert!(!header.contains('▾'));
         let text: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text.contains("line one"));
     }

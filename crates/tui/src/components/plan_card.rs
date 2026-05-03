@@ -12,6 +12,7 @@ pub enum PlanStepStatus {
     Pending,
     InProgress,
     Done,
+    Failed,
     Skipped,
 }
 
@@ -19,10 +20,10 @@ impl PlanStepStatus {
     #[must_use]
     pub fn glyph(self) -> &'static str {
         match self {
-            Self::Pending => "[ ]",
-            Self::InProgress => "[~]",
-            Self::Done => "[x]",
-            Self::Skipped => "[-]",
+            Self::Pending | Self::Skipped => "☐",
+            Self::InProgress => "◐",
+            Self::Done => "☑",
+            Self::Failed => "☒",
         }
     }
 
@@ -31,6 +32,7 @@ impl PlanStepStatus {
         match self {
             Self::InProgress => Color::Yellow,
             Self::Done => Color::Green,
+            Self::Failed => Color::Red,
             Self::Pending | Self::Skipped => Color::DarkGray,
         }
     }
@@ -75,14 +77,13 @@ pub fn render_progress_bar(done: usize, total: usize, width: usize) -> Line<'sta
 }
 
 #[must_use]
-pub fn render_step(title: &str, status: PlanStepStatus) -> Line<'static> {
+pub fn render_step(index: usize, title: &str, status: PlanStepStatus) -> Line<'static> {
     let glyph = status.glyph();
     let color = status.color();
 
     let text_style = match status {
-        PlanStepStatus::Done => Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::DIM),
+        PlanStepStatus::Done => Style::default().fg(Color::Green),
+        PlanStepStatus::Failed => Style::default().fg(Color::Red),
         PlanStepStatus::Skipped => Style::default()
             .fg(Color::DarkGray)
             .add_modifier(Modifier::DIM),
@@ -93,7 +94,11 @@ pub fn render_step(title: &str, status: PlanStepStatus) -> Line<'static> {
     };
 
     Line::from(vec![
-        Span::styled(format!("  {glyph} "), Style::default().fg(color)),
+        Span::styled(
+            format!("  {index}. "),
+            Style::default().fg(Color::DarkGray),
+        ),
+        Span::styled(format!("{glyph} "), Style::default().fg(color)),
         Span::styled(title.to_string(), text_style),
     ])
 }
@@ -110,7 +115,7 @@ pub fn render_plan_checklist(
     let title_line = Line::from(Span::styled(
         format!("  {title}"),
         Style::default()
-            .fg(Color::Cyan)
+            .fg(Color::White)
             .add_modifier(Modifier::BOLD),
     ));
     lines.push(title_line);
@@ -123,27 +128,16 @@ pub fn render_plan_checklist(
 
     lines.push(Line::default());
 
-    for (step_title, status) in steps {
-        lines.push(render_step(step_title, *status));
+    for (i, (step_title, status)) in steps.iter().enumerate() {
+        lines.push(render_step(i + 1, step_title, *status));
     }
 
     if awaiting_approval {
         lines.push(Line::default());
-        lines.push(Line::from(vec![
-            Span::styled("  (", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                "y",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(") Approve  (", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                "n",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(") Reject", Style::default().fg(Color::DarkGray)),
-        ]));
+        lines.push(Line::from(Span::styled(
+            "  y: approve │ n: reject │ Esc: skip",
+            Style::default().fg(Color::DarkGray),
+        )));
     }
 
     lines
@@ -159,10 +153,11 @@ mod tests {
 
     #[test]
     fn status_glyphs() {
-        assert_eq!(PlanStepStatus::Pending.glyph(), "[ ]");
-        assert_eq!(PlanStepStatus::InProgress.glyph(), "[~]");
-        assert_eq!(PlanStepStatus::Done.glyph(), "[x]");
-        assert_eq!(PlanStepStatus::Skipped.glyph(), "[-]");
+        assert_eq!(PlanStepStatus::Pending.glyph(), "☐");
+        assert_eq!(PlanStepStatus::InProgress.glyph(), "◐");
+        assert_eq!(PlanStepStatus::Done.glyph(), "☑");
+        assert_eq!(PlanStepStatus::Failed.glyph(), "☒");
+        assert_eq!(PlanStepStatus::Skipped.glyph(), "☐");
     }
 
     #[test]
@@ -202,17 +197,26 @@ mod tests {
 
     #[test]
     fn render_step_done() {
-        let line = render_step("Setup environment", PlanStepStatus::Done);
+        let line = render_step(1, "Setup environment", PlanStepStatus::Done);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(text.contains("[x]"));
+        assert!(text.contains("☑"));
+        assert!(text.contains("1."));
         assert!(text.contains("Setup environment"));
     }
 
     #[test]
     fn render_step_in_progress() {
-        let line = render_step("Build server", PlanStepStatus::InProgress);
+        let line = render_step(2, "Build server", PlanStepStatus::InProgress);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(text.contains("[~]"));
+        assert!(text.contains("◐"));
+        assert!(text.contains("2."));
+    }
+
+    #[test]
+    fn render_step_failed() {
+        let line = render_step(3, "Deploy", PlanStepStatus::Failed);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains("☒"));
     }
 
     #[test]
@@ -234,8 +238,9 @@ mod tests {
             .iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
-        assert!(all_text.contains("Approve"));
-        assert!(all_text.contains("Reject"));
+        assert!(all_text.contains("y: approve"));
+        assert!(all_text.contains("n: reject"));
+        assert!(all_text.contains("Esc: skip"));
     }
 
     #[test]
@@ -246,7 +251,7 @@ mod tests {
             .iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
-        assert!(!all_text.contains("Approve"));
+        assert!(!all_text.contains("approve"));
     }
 
     #[test]

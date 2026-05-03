@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::App;
-use super::state::{ActiveToolInfo, AppAction, AppState, ChatMessage, ExitKey, ThinkingState};
+use super::state::{
+    ActiveToolInfo, AppAction, AppState, ChatMessage, ExitKey, ThinkingState, ToolCallStatus,
+};
 use crate::components::autocomplete::AutoComplete;
 use crate::components::context_collapse::CollapsibleSection;
 use crate::components::permission::{PermissionCard, PermissionResponse};
@@ -72,6 +74,7 @@ impl App {
         let text = self.command_queue.pop()?;
         self.messages.push(ChatMessage::User { text: text.clone() });
         self.state = AppState::Processing;
+        self.virtual_list.set_streaming(true);
         self.spinner.start_with_random_verb();
         Some(text)
     }
@@ -218,12 +221,14 @@ impl App {
                         let rejected_ids = self.approval_queue.reject_all();
                         self.spinner.stop();
                         self.state = AppState::Idle;
+                        self.virtual_list.set_streaming(false);
                         let _ = writeln!(self.content_buffer, "\n[interrupted]");
                         return AppAction::InterruptPermissions { rejected_ids };
                     }
                     if self.state == AppState::Processing {
                         self.spinner.stop();
                         self.state = AppState::Idle;
+                        self.virtual_list.set_streaming(false);
                         let _ = writeln!(self.content_buffer, "\n[interrupted]");
                         return AppAction::InterruptProcessing;
                     }
@@ -341,6 +346,7 @@ impl App {
                     if self.state == AppState::Processing {
                         self.spinner.stop();
                         self.state = AppState::Idle;
+                        self.virtual_list.set_streaming(false);
                         self.messages.push(ChatMessage::System {
                             text: "[agents killed]".into(),
                         });
@@ -591,6 +597,7 @@ impl App {
                         self.input_history_list.push(text.clone());
                         self.messages.push(ChatMessage::User { text: text.clone() });
                         self.state = AppState::Processing;
+                        self.virtual_list.set_streaming(true);
                         self.spinner.start_with_random_verb();
                         return AppAction::Submit(text);
                     }
@@ -606,6 +613,7 @@ impl App {
                                 self.input_history_list.push(text.clone());
                                 self.messages.push(ChatMessage::User { text: text.clone() });
                                 self.state = AppState::Processing;
+                                self.virtual_list.set_streaming(true);
                                 self.spinner.start_with_random_verb();
                                 return AppAction::Submit(text);
                             }
@@ -754,9 +762,7 @@ impl App {
             }
             if self.approval_queue.is_empty() {
                 self.state = AppState::Processing;
-                if allowed {
-                    self.spinner.start_with_random_verb();
-                }
+                self.virtual_list.set_streaming(true);
             }
             return AppAction::PermissionResponse {
                 request_id,
@@ -989,11 +995,14 @@ impl App {
                     },
                 );
                 let is_read_only = tool_ref.is_some_and(|t| t.is_read_only());
+                let collapsed_label = tool_ref.and_then(|t| t.collapsed_group_label());
                 self.messages.push(ChatMessage::ToolUse {
                     name: name.clone(),
                     summary,
                     color,
                     is_read_only,
+                    status: ToolCallStatus::Running,
+                    collapsed_label,
                 });
                 self.spinner.set_message(format!("Running {name}…"));
                 if self.processing_start.is_none() {
@@ -1086,6 +1095,24 @@ impl App {
                 } else {
                     self.messages.push(result_msg);
                 }
+                // Update the matching ToolUse message's status dot color.
+                let final_status = if is_error {
+                    ToolCallStatus::Error
+                } else {
+                    ToolCallStatus::Success
+                };
+                for msg in self.messages.iter_mut().rev() {
+                    if let ChatMessage::ToolUse {
+                        name: n,
+                        status,
+                        ..
+                    } = msg
+                        && *n == tool_name
+                    {
+                        *status = final_status;
+                        break;
+                    }
+                }
                 self.tool_outputs
                     .push(ToolOutputEntry::new(&tool_name, text.clone(), is_error));
                 if is_error {
@@ -1108,6 +1135,7 @@ impl App {
                 self.spinner.stop();
                 self.active_tools.clear();
                 self.state = AppState::Idle;
+                self.virtual_list.set_streaming(false);
                 self.total_input_tokens += input_tokens;
                 self.total_output_tokens += output_tokens;
                 if let Some(start) = self.processing_start.take()
@@ -1121,6 +1149,7 @@ impl App {
                 self.spinner.stop();
                 self.active_tools.clear();
                 self.state = AppState::Idle;
+                self.virtual_list.set_streaming(false);
                 self.processing_start = None;
                 self.messages.push(ChatMessage::System {
                     text: format!("Error: {message}"),
@@ -1149,7 +1178,6 @@ impl App {
                         feedback: None,
                     }
                 } else {
-                    self.spinner.pause();
                     self.state = AppState::Confirming;
                     self.approval_queue.push(PermissionCard::from_event(
                         &tool_name,

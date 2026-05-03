@@ -1,46 +1,41 @@
 //! Collapsed cell for runs of read-only tool calls.
 //!
-//! When the model fires multiple `Read` / `Grep` / `Glob` / `NotebookRead`
-//! calls in parallel, the default transcript would show every `tool_use` on
-//! its own line followed by every `tool_result` on its own line, leaving
-//! calls and results visually orphaned. This cell replaces such runs with a
-//! single summary like:
+//! When the model fires multiple read-only tools in parallel, the default
+//! transcript would show every `tool_use` on its own line followed by every
+//! `tool_result` on its own line, leaving calls and results visually orphaned.
+//! This cell replaces such runs with a single summary like:
 //!
 //! ```text
 //! ● Read 3 files, searched 2 patterns
 //! ```
 //!
-//! Mirrors Claude Code's non-verbose `CollapsedReadSearchContent`. Only
-//! read-only tools are collapsed; any mutating tool (`Bash`, `Edit`, etc.)
-//! breaks the run and is rendered normally.
+//! The cell is fully tool-agnostic: it groups calls by the
+//! `CollapsedGroupLabel` each tool provides via `Tool::collapsed_group_label()`.
+//! Adding a new read-only tool requires zero changes here.
 
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
+
+use crab_core::tool::CollapsedGroupLabel;
 
 use crate::app::ChatMessage;
 use crate::history::HistoryCell;
 use crate::history::cell_from_chat_message;
 
-/// Aggregate counts for a collapsed run.
-///
-/// Grouping is decided upstream from `ChatMessage::is_read_only`; this cell
-/// only decides how to *display* the counts. Known tool names get dedicated
-/// verbs ("Read 3 files", "searched for 2 patterns"); anything else
-/// contributes to a generic "N other read-only calls" bucket so the summary
-/// still reflects the true workload.
-#[derive(Debug, Clone, Default)]
+/// Per-group count accumulated during construction.
+#[derive(Debug, Clone)]
+struct GroupCount {
+    label: CollapsedGroupLabel,
+    count: usize,
+}
+
+/// Aggregate counts for a collapsed run of read-only tool calls.
+#[derive(Debug, Clone)]
 pub struct CollapsedReadSearchCell {
-    read_count: usize,
-    grep_count: usize,
-    glob_count: usize,
-    notebook_read_count: usize,
-    /// Read-only tools with no dedicated verb in this cell.
+    groups: Vec<GroupCount>,
     other_count: usize,
-    /// Tool uses whose matching result has not arrived yet.
     pending_count: usize,
-    /// Any tool in the run reported an error.
     any_error: bool,
-    /// Original messages, retained for transcript-mode expansion.
     messages: Vec<ChatMessage>,
 }
 
@@ -48,116 +43,90 @@ impl CollapsedReadSearchCell {
     /// Build from a slice of consecutive read-only `ToolUse` / `ToolResult` messages.
     #[must_use]
     pub fn from_messages(messages: &[ChatMessage]) -> Self {
-        let mut this = Self {
-            messages: messages.to_vec(),
-            ..Self::default()
-        };
-
+        let mut groups: Vec<GroupCount> = Vec::new();
+        let mut other_count = 0usize;
         let mut call_count = 0usize;
         let mut result_count = 0usize;
+        let mut any_error = false;
+
         for msg in messages {
             match msg {
-                ChatMessage::ToolUse { name, .. } => {
+                ChatMessage::ToolUse {
+                    collapsed_label, ..
+                } => {
                     call_count += 1;
-                    match name.as_str() {
-                        "Read" => this.read_count += 1,
-                        "Grep" => this.grep_count += 1,
-                        "Glob" => this.glob_count += 1,
-                        "NotebookRead" => this.notebook_read_count += 1,
-                        _ => this.other_count += 1,
+                    if let Some(label) = collapsed_label {
+                        if let Some(g) = groups.iter_mut().find(|g| g.label == *label) {
+                            g.count += 1;
+                        } else {
+                            groups.push(GroupCount {
+                                label: label.clone(),
+                                count: 1,
+                            });
+                        }
+                    } else {
+                        other_count += 1;
                     }
                 }
                 ChatMessage::ToolResult { is_error, .. } => {
                     result_count += 1;
                     if *is_error {
-                        this.any_error = true;
+                        any_error = true;
                     }
                 }
                 _ => {}
             }
         }
-        this.pending_count = call_count.saturating_sub(result_count);
-        this
+
+        Self {
+            groups,
+            other_count,
+            pending_count: call_count.saturating_sub(result_count),
+            any_error,
+            messages: messages.to_vec(),
+        }
     }
 
-    /// Whether any call is still waiting for its result.
     #[must_use]
     pub fn is_active(&self) -> bool {
         self.pending_count > 0
     }
 
-    /// Plain-english one-line summary. Uses present-tense verbs while active,
-    /// past-tense once all results have arrived.
+    #[must_use]
+    pub fn read_count(&self) -> usize {
+        self.groups.iter().map(|g| g.count).sum::<usize>() + self.other_count
+    }
+
+    #[must_use]
+    pub fn pending_count(&self) -> usize {
+        self.pending_count
+    }
+
     fn summary(&self) -> String {
         let active = self.is_active();
         let mut parts: Vec<String> = Vec::new();
 
-        if self.read_count > 0 {
+        for g in &self.groups {
+            let base = if active {
+                g.label.active_verb
+            } else {
+                g.label.past_verb
+            };
             let verb = if parts.is_empty() {
-                if active { "Reading" } else { "Read" }
-            } else if active {
-                "reading"
+                base.to_string()
             } else {
-                "read"
+                to_lowercase_start(base)
             };
-            let noun = if self.read_count == 1 {
-                "file"
+            let noun = if g.count == 1 {
+                g.label.noun_singular
             } else {
-                "files"
+                g.label.noun_plural
             };
-            parts.push(format!("{verb} {} {noun}", self.read_count));
+            parts.push(format!("{verb} {} {noun}", g.count));
         }
-        if self.grep_count > 0 {
-            let verb = if parts.is_empty() {
-                if active {
-                    "Searching for"
-                } else {
-                    "Searched for"
-                }
-            } else if active {
-                "searching for"
-            } else {
-                "searched for"
-            };
-            let noun = if self.grep_count == 1 {
-                "pattern"
-            } else {
-                "patterns"
-            };
-            parts.push(format!("{verb} {} {noun}", self.grep_count));
-        }
-        if self.glob_count > 0 {
-            let verb = if parts.is_empty() {
-                if active { "Globbing" } else { "Globbed" }
-            } else if active {
-                "globbing"
-            } else {
-                "globbed"
-            };
-            let noun = if self.glob_count == 1 {
-                "pattern"
-            } else {
-                "patterns"
-            };
-            parts.push(format!("{verb} {} {noun}", self.glob_count));
-        }
-        if self.notebook_read_count > 0 {
-            let verb = if parts.is_empty() {
-                if active { "Reading" } else { "Read" }
-            } else if active {
-                "reading"
-            } else {
-                "read"
-            };
-            let noun = if self.notebook_read_count == 1 {
-                "notebook"
-            } else {
-                "notebooks"
-            };
-            parts.push(format!("{verb} {} {noun}", self.notebook_read_count));
-        }
+
         if self.other_count > 0 {
-            let verb = if parts.is_empty() {
+            let verb: &str = if parts.is_empty() {
                 if active { "Running" } else { "Ran" }
             } else if active {
                 "running"
@@ -173,6 +142,14 @@ impl CollapsedReadSearchCell {
         }
 
         parts.join(", ")
+    }
+}
+
+fn to_lowercase_start(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) => c.to_lowercase().to_string() + chars.as_str(),
+        None => String::new(),
     }
 }
 
@@ -198,8 +175,6 @@ impl HistoryCell for CollapsedReadSearchCell {
         vec![Line::from(spans), Line::default()]
     }
 
-    /// Transcript mode expands the group: render every original message
-    /// through its normal cell so users can inspect individual calls.
     fn transcript_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut out = Vec::new();
         for msg in &self.messages {
@@ -224,6 +199,13 @@ mod tests {
             summary: Some(format!("Read ({path})")),
             color: None,
             is_read_only: true,
+            status: crate::app::ToolCallStatus::Running,
+            collapsed_label: Some(crab_core::tool::CollapsedGroupLabel {
+                active_verb: "Reading",
+                past_verb: "Read",
+                noun_singular: "file",
+                noun_plural: "files",
+            }),
         }
     }
 
@@ -249,8 +231,8 @@ mod tests {
             read_result("1\n2\n3"),
         ];
         let cell = CollapsedReadSearchCell::from_messages(&msgs);
-        assert_eq!(cell.read_count, 3);
-        assert_eq!(cell.pending_count, 0);
+        assert_eq!(cell.read_count(), 3);
+        assert_eq!(cell.pending_count(), 0);
         assert!(!cell.is_active());
     }
 
@@ -258,8 +240,8 @@ mod tests {
     fn pending_counted_before_results_arrive() {
         let msgs = vec![read_use("a.rs"), read_use("b.rs")];
         let cell = CollapsedReadSearchCell::from_messages(&msgs);
-        assert_eq!(cell.read_count, 2);
-        assert_eq!(cell.pending_count, 2);
+        assert_eq!(cell.read_count(), 2);
+        assert_eq!(cell.pending_count(), 2);
         assert!(cell.is_active());
     }
 
@@ -291,6 +273,13 @@ mod tests {
                 summary: None,
                 color: None,
                 is_read_only: true,
+                status: crate::app::ToolCallStatus::Running,
+                collapsed_label: Some(crab_core::tool::CollapsedGroupLabel {
+                    active_verb: "Searching for",
+                    past_verb: "Searched for",
+                    noun_singular: "pattern",
+                    noun_plural: "patterns",
+                }),
             },
             read_result(""),
             ChatMessage::ToolResult {

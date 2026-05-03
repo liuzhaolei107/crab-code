@@ -79,6 +79,13 @@ mod tests {
             summary: Some("Read (a.rs)".into()),
             color: None,
             is_read_only: true,
+            status: crate::app::ToolCallStatus::Running,
+            collapsed_label: Some(crab_core::tool::CollapsedGroupLabel {
+                active_verb: "Reading",
+                past_verb: "Read",
+                noun_singular: "file",
+                noun_plural: "files",
+            }),
         }
     }
 
@@ -99,6 +106,8 @@ mod tests {
             summary: Some("Run (ls)".into()),
             color: None,
             is_read_only: false,
+            status: crate::app::ToolCallStatus::Running,
+            collapsed_label: None,
         }
     }
 
