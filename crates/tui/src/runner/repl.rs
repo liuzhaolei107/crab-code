@@ -46,8 +46,6 @@ pub(super) async fn run_loop(
     event_broker: Arc<EventBroker>,
     frame_requester: FrameRequester,
 ) -> anyhow::Result<()> {
-    // Suppress until Phase C wires it through to insert_history flush.
-    let _ = insert_mode;
     // `state` starts as None (Initializing) and is populated by InitComplete.
     let mut state: Option<AgentRuntime> = None;
     let slash_registry = CommandRegistry::new();
@@ -71,6 +69,13 @@ pub(super) async fn run_loop(
     loop {
         let viewport = compute_inline_viewport(terminal, app)?;
         terminal.set_viewport_area(viewport);
+        // Drain any newly-finalized cells into the pending-history queue
+        // and flush them above the viewport before drawing this frame.
+        app.drain_finalized_into_pending(viewport.width);
+        if !app.pending_history.is_empty() {
+            let lines = app.pending_history.take();
+            crate::insert_history::insert_history_lines_with_mode(terminal, &lines, insert_mode)?;
+        }
         terminal.draw(|frame| {
             app.render(frame.area(), frame.buffer_mut());
         })?;

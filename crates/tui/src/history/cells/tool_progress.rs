@@ -101,6 +101,10 @@ impl HistoryCell for ToolProgressCell {
         self.tail_output.clone()
     }
 
+    fn is_finalized(&self) -> bool {
+        false
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

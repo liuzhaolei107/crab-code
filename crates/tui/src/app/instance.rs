@@ -140,6 +140,9 @@ pub struct App {
     pub(super) next_msg_id: u64,
     /// Last render width — used to invalidate the virtual list cache on resize.
     pub(super) last_render_width: u16,
+    /// Lines drained from finalized cells, waiting to be flushed into the
+    /// terminal's native scrollback by the next render pass.
+    pub pending_history: crate::history::PendingHistory,
 }
 
 impl App {
@@ -195,7 +198,45 @@ impl App {
             virtual_list: VirtualMessageList::new(),
             next_msg_id: 0,
             last_render_width: 0,
+            pending_history: crate::history::PendingHistory::new(),
         }
+    }
+
+    /// Drain finalized prefix messages into `pending_history` so the next
+    /// render pass can flush them above the inline viewport. Stops at the
+    /// first non-finalized cell to keep streaming output anchored to the
+    /// viewport. The streaming-tail check (cell is the last AND state is
+    /// Processing) prevents draining the assistant turn that's still
+    /// receiving `content_delta` events.
+    pub fn drain_finalized_into_pending(&mut self, width: u16) {
+        if width == 0 {
+            return;
+        }
+        let streaming_tail = matches!(self.state, AppState::Processing | AppState::Confirming);
+        let total = self.messages.len();
+        let mut drain_count = 0usize;
+        for (idx, msg) in self.messages.iter().enumerate() {
+            // Keep the very last cell anchored in the viewport while the
+            // agent is still producing tokens.
+            if streaming_tail && idx + 1 == total {
+                break;
+            }
+            let cell = crate::history::cell_from_chat_message(msg);
+            if !cell.is_finalized() {
+                break;
+            }
+            drain_count += 1;
+        }
+        if drain_count == 0 {
+            return;
+        }
+        for msg in self.messages.drain(..drain_count) {
+            let cell = crate::history::cell_from_chat_message(&msg);
+            self.pending_history.extend(cell.display_lines(width));
+        }
+        // Re-render of remaining messages must invalidate any cached layout
+        // bound to the prior message indices.
+        self.virtual_list.invalidate();
     }
 
     /// Set the working directory (displayed in header).

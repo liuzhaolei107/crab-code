@@ -133,6 +133,10 @@ impl HistoryCell for ToolCallCell {
         }
     }
 
+    fn is_finalized(&self) -> bool {
+        !matches!(self.status, ToolCallStatus::Running)
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

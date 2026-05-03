@@ -47,4 +47,16 @@ pub trait HistoryCell: Send + Sync + std::fmt::Debug {
     }
 
     fn as_any(&self) -> &dyn Any;
+
+    /// Whether this cell is finalized — i.e. its content will not change
+    /// further on subsequent frames. Finalized cells are eligible to be
+    /// drained out of the inline viewport into the terminal's native
+    /// scrollback, freeing viewport rows for active rendering.
+    ///
+    /// Default `true` covers everything except streaming assistant turns
+    /// and in-progress tool calls; those override to return `false` until
+    /// they reach a terminal state.
+    fn is_finalized(&self) -> bool {
+        true
+    }
 }
