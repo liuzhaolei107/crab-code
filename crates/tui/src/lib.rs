@@ -24,5 +24,6 @@ pub mod theme;
 pub mod traits;
 pub mod vim;
 pub mod watcher;
+pub mod wrapping;
 
 pub use runner::{ExitInfo, TuiConfig, run};

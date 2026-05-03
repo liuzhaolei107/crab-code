@@ -35,6 +35,8 @@ chrono.workspace = true
 arboard.workspace = true
 notify.workspace = true
 similar.workspace = true
+textwrap.workspace = true
+url.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
