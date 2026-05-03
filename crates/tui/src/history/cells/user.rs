@@ -51,7 +51,13 @@ impl HistoryCell for UserCell {
                 .chars()
                 .skip(total.saturating_sub(HEAD_TAIL_CHARS))
                 .collect();
-            let marker = format!("...[truncated, {total} chars total]...");
+            // Count lines hidden between head and tail to display as
+            // "+N lines" — readers track lines, not characters.
+            let head_lines = head.lines().count();
+            let tail_lines = tail.lines().count();
+            let total_lines = self.text.lines().count();
+            let hidden_lines = total_lines.saturating_sub(head_lines + tail_lines);
+            let marker = format!("\u{2026} +{hidden_lines} lines \u{2026}");
 
             push_wrapped(&mut lines, &head, width, prompt_style, body_style, true);
             push_wrapped(&mut lines, &marker, width, trunc_style, trunc_style, false);
@@ -155,16 +161,24 @@ mod tests {
 
     #[test]
     fn long_message_truncates_with_marker() {
-        let body = "x".repeat(15_000);
+        // Build a 15k-char message with line breaks every 100 chars so the
+        // hidden-line counter has something to count.
+        let body: String = (0..150)
+            .map(|i| format!("line-{i}-{}", "x".repeat(90)))
+            .collect::<Vec<_>>()
+            .join("\n");
         let cell = UserCell::new(body);
         let lines = cell.display_lines(200);
         let joined: String = lines
             .iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
-        assert!(joined.contains("...[truncated, 15000 chars total]..."));
-        let x_count = joined.chars().filter(|c| *c == 'x').count();
-        assert_eq!(x_count, HEAD_TAIL_CHARS * 2);
+        // Expect "… +N lines …" form (line count, not char count).
+        assert!(
+            joined.contains(" lines "),
+            "marker should mention lines, got: {joined:?}"
+        );
+        assert!(joined.contains('+'));
     }
 
     #[test]

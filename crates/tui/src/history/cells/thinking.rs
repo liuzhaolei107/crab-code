@@ -27,8 +27,12 @@ impl ThinkingCell {
     }
 
     fn summary_line(&self) -> Line<'static> {
+        // Collapsed: no ellipsis after "Thinking" so the hint reads cleanly.
+        // Expanded / fixed-duration variants keep their own forms.
         let label = if let Some(dur) = self.duration {
             format!("∴ Thinking ({}s)", dur.as_secs())
+        } else if self.collapsed {
+            "∴ Thinking".to_string()
         } else {
             "∴ Thinking…".to_string()
         };

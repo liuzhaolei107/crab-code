@@ -37,12 +37,20 @@ impl HistoryCell for WelcomeCell {
             .map(|row| Line::from(Span::styled(row.to_string(), art_style)))
             .collect();
 
-        out.push(Line::from(Span::styled(
-            format!("Crab Code v{}", self.version),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )));
+        out.push(Line::from(vec![
+            Span::styled(
+                "Crab Code ",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("v{}", self.version),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::DIM),
+            ),
+        ]));
         if !self.whats_new.is_empty() {
             out.push(Line::from(vec![
                 Span::styled(

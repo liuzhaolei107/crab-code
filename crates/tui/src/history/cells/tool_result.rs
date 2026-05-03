@@ -119,14 +119,11 @@ impl HistoryCell for ToolResultCell {
             }
             if limit < total {
                 out.push(Line::from(Span::styled(
-                    format!("     ... ({} more lines, Enter to expand)", total - limit),
+                    format!(
+                        "     ... ({} more lines) \u{00b7} Ctrl+O to expand",
+                        total - limit
+                    ),
                     Style::default().fg(Color::DarkGray),
-                )));
-                out.push(Line::from(Span::styled(
-                    "  Ctrl+O to expand",
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
                 )));
             }
         } else {
@@ -153,14 +150,11 @@ impl HistoryCell for ToolResultCell {
             }
             if lines.len() > limit {
                 out.push(Line::from(Span::styled(
-                    format!("     ... ({} more lines)", lines.len() - limit),
+                    format!(
+                        "     ... ({} more lines) \u{00b7} Ctrl+O to expand",
+                        lines.len() - limit
+                    ),
                     Style::default().fg(Color::DarkGray),
-                )));
-                out.push(Line::from(Span::styled(
-                    "  Ctrl+O to expand",
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
                 )));
             }
         }
@@ -241,18 +235,12 @@ mod tests {
             .join("\n");
         let cell = ToolResultCell::new("bash", body, false, None, true);
         let lines = cell.display_lines(80);
-        // 10 body + 1 pager + 1 hint + 1 blank
-        assert_eq!(lines.len(), 13);
+        // 10 body + 1 pager (now combined with hint on the same line) + 1 blank
+        assert_eq!(lines.len(), 12);
         let pager: String = lines[10].spans.iter().map(|s| &*s.content).collect();
         assert!(pager.contains("more lines"));
-        let hint: String = lines[11].spans.iter().map(|s| &*s.content).collect();
-        assert!(hint.contains("Ctrl+O to expand"));
-        assert!(
-            lines[11].spans[0]
-                .style
-                .add_modifier
-                .contains(Modifier::ITALIC)
-        );
+        assert!(pager.contains("Ctrl+O to expand"));
+        assert_eq!(lines[10].spans[0].style.fg, Some(Color::DarkGray));
     }
 
     #[test]
@@ -286,12 +274,11 @@ mod tests {
         };
         let cell = ToolResultCell::new("bash", "", false, Some(display), true);
         let lines = cell.display_lines(80);
-        // 3 preview + 1 pager + 1 hint + 1 blank
-        assert_eq!(lines.len(), 6);
+        // 3 preview + 1 pager (with inline Ctrl+O hint) + 1 blank
+        assert_eq!(lines.len(), 5);
         let pager: String = lines[3].spans.iter().map(|s| &*s.content).collect();
         assert!(pager.contains("7 more lines"));
-        let hint: String = lines[4].spans.iter().map(|s| &*s.content).collect();
-        assert!(hint.contains("Ctrl+O to expand"));
+        assert!(pager.contains("Ctrl+O to expand"));
     }
 
     #[test]
