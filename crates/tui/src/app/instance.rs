@@ -22,7 +22,6 @@ use crate::components::autocomplete::AutoComplete;
 use crate::components::bottom_bar::BottomBar;
 use crate::components::code_block::{CodeBlockTracker, ImagePlaceholder};
 use crate::components::context_collapse::ContextCollapse;
-use crate::components::header::HeaderBar;
 use crate::components::input::InputBox;
 use crate::components::input_area::InputArea;
 use crate::components::notification::NotificationManager;
@@ -313,13 +312,6 @@ impl App {
             self.sidebar_visible,
             crate::layout::DEFAULT_SIDEBAR_WIDTH,
         );
-
-        // Header — delegated to HeaderBar Renderable
-        let header = HeaderBar {
-            model_name: &self.model_name,
-            working_dir: &self.working_dir,
-        };
-        header.render(layout.header, buf);
 
         // Session sidebar
         if let Some(sidebar_area) = layout.sidebar {

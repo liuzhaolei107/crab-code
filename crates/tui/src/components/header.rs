@@ -1,136 +1,18 @@
-//! Header bar component — crab art + model/path info + separator.
+//! Thin horizontal separator used between layout regions.
+//!
+//! The persistent header bar was retired when the TUI moved to inline
+//! viewport rendering — model name and cwd now live in the welcome
+//! cell at session start. This module keeps `render_separator`, which
+//! is still used between the status line and the input box and between
+//! the input box and the bottom bar.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Widget;
 
-use crate::theme::accents::CLAUDE_DARK as CRAB_COLOR;
-use crate::traits::Renderable;
-
-/// Crab art loaded at compile time; 3 lines, 8 visual cols.
-const LOGO_ART: &str = include_str!("../../assets/header-logo.txt");
-
-/// Art column width + trailing padding before info text.
-const ART_WIDTH: u16 = 10;
-
-/// Header bar: crab art (left) + info text (right) + separator.
-///
-/// Layout (4 lines):
-/// ```text
-///  ╭◉───◉╮  Crab Code v0.1.0
-///  ╰█████╯  claude-sonnet-4-6
-///   ╵╵╵╵╵   C:\path\to\project
-/// ────────────────────────────────
-/// ```
-pub struct HeaderBar<'a> {
-    pub model_name: &'a str,
-    pub working_dir: &'a str,
-}
-
-impl Renderable for HeaderBar<'_> {
-    fn render(&self, area: Rect, buf: &mut Buffer) {
-        render_header(self.model_name, self.working_dir, area, buf);
-    }
-
-    fn desired_height(&self, _width: u16) -> u16 {
-        4 // 3 art lines + 1 separator
-    }
-}
-
-/// Render the header: crab art (left) + info text (right) + separator.
-#[allow(clippy::cast_possible_truncation)]
-fn render_header(model_name: &str, working_dir: &str, area: Rect, buf: &mut Buffer) {
-    if area.height == 0 || area.width < 10 {
-        return;
-    }
-
-    let fg = Style::default().fg(CRAB_COLOR);
-
-    let art_lines: Vec<Line<'_>> = LOGO_ART
-        .lines()
-        .take(3)
-        .map(|l| Line::from(Span::styled(l, fg)))
-        .collect();
-
-    let art_width = ART_WIDTH;
-
-    let text_budget = area.width.saturating_sub(art_width) as usize;
-    let info_lines: [Line<'_>; 3] = [
-        Line::from(vec![
-            Span::styled(
-                "Crab Code",
-                Style::default().fg(CRAB_COLOR).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" v0.1.0", Style::default().fg(Color::DarkGray)),
-        ]),
-        Line::from(Span::styled(
-            model_name,
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            shorten_path(working_dir, text_budget),
-            Style::default().fg(Color::DarkGray),
-        )),
-    ];
-
-    for (i, (art_line, info_line)) in art_lines.iter().zip(info_lines.iter()).enumerate() {
-        let y = area.y + i as u16;
-        if y >= area.y + area.height {
-            break;
-        }
-
-        let art_area = Rect {
-            x: area.x,
-            y,
-            width: art_width.min(area.width),
-            height: 1,
-        };
-        Widget::render(art_line.clone(), art_area, buf);
-
-        if area.width > art_width {
-            let info_area = Rect {
-                x: area.x + art_width,
-                y,
-                width: area.width.saturating_sub(art_width),
-                height: 1,
-            };
-            Widget::render(info_line.clone(), info_area, buf);
-        }
-    }
-
-    // Row 4: thin separator
-    if area.height >= 4 {
-        render_separator(
-            Rect {
-                x: area.x,
-                y: area.y + 3,
-                width: area.width,
-                height: 1,
-            },
-            buf,
-        );
-    }
-}
-
-/// Shorten a path to fit within `max_chars`.
-fn shorten_path(path: &str, max_chars: usize) -> String {
-    if path.len() <= max_chars || max_chars < 6 {
-        return path.to_string();
-    }
-    let suffix_budget = max_chars.saturating_sub(4);
-    if let Some(pos) = path[path.len().saturating_sub(suffix_budget)..].find(['/', '\\']) {
-        format!(
-            "...{}",
-            &path[path.len().saturating_sub(suffix_budget) + pos..]
-        )
-    } else {
-        format!("...{}", &path[path.len().saturating_sub(suffix_budget)..])
-    }
-}
-
-/// Render a thin horizontal separator line.
+/// Render a thin horizontal separator line spanning `area.width`.
 #[allow(clippy::cast_possible_truncation)]
 pub fn render_separator(area: Rect, buf: &mut Buffer) {
     if area.height == 0 || area.width == 0 {
@@ -149,31 +31,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn header_desired_height() {
-        let h = HeaderBar {
-            model_name: "test",
-            working_dir: "/tmp",
-        };
-        assert_eq!(h.desired_height(80), 4);
+    fn render_separator_does_not_panic_on_empty_area() {
+        let mut buf = Buffer::empty(Rect::new(0, 0, 0, 0));
+        render_separator(Rect::new(0, 0, 0, 0), &mut buf);
     }
 
     #[test]
-    fn header_render_does_not_panic() {
-        let h = HeaderBar {
-            model_name: "claude-sonnet-4-6",
-            working_dir: "/home/user/project",
-        };
-        let area = Rect::new(0, 0, 80, 4);
+    fn render_separator_fills_width() {
+        let area = Rect::new(0, 0, 5, 1);
         let mut buf = Buffer::empty(area);
-        h.render(area, &mut buf);
-    }
-
-    #[test]
-    fn shorten_path_basic() {
-        assert_eq!(shorten_path("short", 20), "short");
-        let long = "/very/long/path/to/some/deeply/nested/directory";
-        let shortened = shorten_path(long, 20);
-        assert!(shortened.len() <= 20 + 3); // ...prefix
-        assert!(shortened.starts_with("..."));
+        render_separator(area, &mut buf);
+        let row: String = (0..area.width)
+            .map(|x| buf.cell((x, 0)).unwrap().symbol().to_string())
+            .collect();
+        assert_eq!(row, "─────");
     }
 }
