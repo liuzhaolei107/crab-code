@@ -223,6 +223,9 @@ impl App {
                         self.state = AppState::Idle;
                         self.virtual_list.set_streaming(false);
                         let _ = writeln!(self.content_buffer, "\n[interrupted]");
+                        self.messages.push(ChatMessage::System {
+                            text: "Interrupted \u{00b7} What should Claude do instead?".into(),
+                        });
                         return AppAction::InterruptPermissions { rejected_ids };
                     }
                     if self.state == AppState::Processing {
@@ -230,6 +233,9 @@ impl App {
                         self.state = AppState::Idle;
                         self.virtual_list.set_streaming(false);
                         let _ = writeln!(self.content_buffer, "\n[interrupted]");
+                        self.messages.push(ChatMessage::System {
+                            text: "Interrupted \u{00b7} What should Claude do instead?".into(),
+                        });
                         return AppAction::InterruptProcessing;
                     }
                     return AppAction::None;

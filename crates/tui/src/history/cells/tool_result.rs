@@ -9,12 +9,22 @@ use crate::history::HistoryCell;
 /// Default row limit before showing the "... N more lines" pager row.
 const DEFAULT_LIMIT: usize = 10;
 
+/// Distinguishes result sub-types for rendering purposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ToolResultKind {
+    #[default]
+    Success,
+    Error,
+    Canceled,
+}
+
 /// A tool execution result.
 #[derive(Debug, Clone)]
 pub struct ToolResultCell {
     tool_name: String,
     output: String,
     is_error: bool,
+    kind: ToolResultKind,
     display: Option<ToolDisplayResult>,
     collapsed: bool,
 }
@@ -28,13 +38,25 @@ impl ToolResultCell {
         display: Option<ToolDisplayResult>,
         collapsed: bool,
     ) -> Self {
+        let kind = if is_error {
+            ToolResultKind::Error
+        } else {
+            ToolResultKind::Success
+        };
         Self {
             tool_name: tool_name.into(),
             output: output.into(),
             is_error,
+            kind,
             display,
             collapsed,
         }
+    }
+
+    #[must_use]
+    pub fn with_kind(mut self, kind: ToolResultKind) -> Self {
+        self.kind = kind;
+        self
     }
 
     #[must_use]
@@ -62,6 +84,20 @@ impl HistoryCell for ToolResultCell {
     fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
         let mut out: Vec<Line<'static>> = Vec::new();
         let glyph_style = Style::default().fg(Color::DarkGray);
+
+        if self.kind == ToolResultKind::Canceled {
+            out.push(Line::from(vec![
+                Span::styled("  \u{23bf}  ", glyph_style),
+                Span::styled(
+                    "Canceled",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ]));
+            out.push(Line::default());
+            return out;
+        }
 
         if let Some(display) = &self.display {
             let total = display.lines.len();

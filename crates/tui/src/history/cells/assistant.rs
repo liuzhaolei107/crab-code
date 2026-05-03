@@ -12,8 +12,8 @@ use crate::history::HistoryCell;
 use crate::markdown::CachedMarkdownRenderer;
 use crate::theme;
 
-const FIRST_LINE_PREFIX: &str = "  ⎿  ";
-const CONT_LINE_PREFIX: &str = "     ";
+const BULLET_PREFIX: &str = "● ";
+const CONT_LINE_PREFIX: &str = "  ";
 
 thread_local! {
     /// Shared per-render-thread markdown cache. Keeps expensive
@@ -58,7 +58,7 @@ impl HistoryCell for AssistantCell {
 
         let theme = theme::current();
         let highlighter = SyntaxHighlighter::new();
-        let prefix_width = FIRST_LINE_PREFIX.chars().count() as u16;
+        let prefix_width = BULLET_PREFIX.chars().count() as u16;
         let inner_width = width.saturating_sub(prefix_width).max(1);
 
         let md_lines: Vec<Line<'static>> = SHARED_MD_CACHE.with(|cache| {
@@ -66,16 +66,16 @@ impl HistoryCell for AssistantCell {
             (*cache.render(&clean, &theme, &highlighter, inner_width)).clone()
         });
 
-        let prefix_style = Style::default().fg(Color::DarkGray);
+        let bullet_style = Style::default().fg(Color::DarkGray);
+        let cont_style = Style::default().fg(Color::DarkGray);
         let mut out: Vec<Line<'static>> = Vec::with_capacity(md_lines.len() + 1);
         for (idx, line) in md_lines.into_iter().enumerate() {
-            let prefix = if idx == 0 {
-                FIRST_LINE_PREFIX
-            } else {
-                CONT_LINE_PREFIX
-            };
             let mut spans: Vec<Span<'static>> = Vec::with_capacity(line.spans.len() + 1);
-            spans.push(Span::styled(prefix, prefix_style));
+            if idx == 0 {
+                spans.push(Span::styled(BULLET_PREFIX, bullet_style));
+            } else {
+                spans.push(Span::styled(CONT_LINE_PREFIX, cont_style));
+            }
             spans.extend(line.spans);
             out.push(Line::from(spans));
         }
@@ -99,19 +99,19 @@ mod tests {
     }
 
     #[test]
-    fn non_empty_text_renders_without_bullet_prefix() {
+    fn non_empty_text_renders_with_bullet_prefix() {
         let cell = AssistantCell::new("hello");
         let lines = cell.display_lines(80);
         assert!(!lines.is_empty());
         let first: String = lines[0].spans.iter().map(|s| &*s.content).collect();
         assert!(
-            !first.contains("● "),
-            "assistant text should not have bullet prefix"
+            first.starts_with(BULLET_PREFIX),
+            "assistant text should start with bullet prefix, got {first:?}"
         );
     }
 
     #[test]
-    fn first_line_has_corner_prefix_continuations_padded() {
+    fn first_line_has_bullet_prefix_continuations_padded() {
         let cell = AssistantCell::new("line one\n\nline two\n\nline three");
         let lines = cell.display_lines(80);
         // Markdown paragraphs produce multiple lines; last is trailing blank.
@@ -124,8 +124,8 @@ mod tests {
 
         let first: String = content_lines[0].spans.iter().map(|s| &*s.content).collect();
         assert!(
-            first.starts_with(FIRST_LINE_PREFIX),
-            "first line should start with corner prefix, got {first:?}"
+            first.starts_with(BULLET_PREFIX),
+            "first line should start with bullet prefix, got {first:?}"
         );
 
         for line in content_lines.iter().skip(1) {

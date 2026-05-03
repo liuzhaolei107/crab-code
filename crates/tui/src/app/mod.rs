@@ -384,6 +384,9 @@ impl App {
                 self.context_window_size,
             ),
             context_window_size: self.context_window_size,
+            used_tokens: self
+                .total_input_tokens
+                .saturating_add(self.total_output_tokens),
             total_cost_usd: self.total_cost_usd,
             total_input_tokens: self.total_input_tokens,
             total_output_tokens: self.total_output_tokens,

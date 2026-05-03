@@ -3,6 +3,14 @@ use ratatui::text::{Line, Span};
 
 use crate::history::HistoryCell;
 
+const LOGO_ART: &[&str] = &[
+    r"  /\_/\  ",
+    r" ( o.o ) ",
+    r"  > ^ <  ",
+    r" /|   |\ ",
+    r"(_|___|_)",
+];
+
 #[derive(Debug, Clone)]
 pub struct WelcomeCell {
     version: String,
@@ -23,7 +31,12 @@ impl WelcomeCell {
 
 impl HistoryCell for WelcomeCell {
     fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
-        let mut out = Vec::with_capacity(4);
+        let art_style = Style::default().fg(Color::Cyan);
+        let mut out: Vec<Line<'static>> = LOGO_ART
+            .iter()
+            .map(|row| Line::from(Span::styled(row.to_string(), art_style)))
+            .collect();
+
         out.push(Line::from(Span::styled(
             format!("Crab Code v{}", self.version),
             Style::default()
@@ -31,12 +44,18 @@ impl HistoryCell for WelcomeCell {
                 .add_modifier(Modifier::BOLD),
         )));
         if !self.whats_new.is_empty() {
-            out.push(Line::from(Span::styled(
-                self.whats_new.clone(),
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            )));
+            out.push(Line::from(vec![
+                Span::styled(
+                    "\u{2726} What's new: ",
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    self.whats_new.clone(),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ]));
         }
         if self.show_project_hint {
             out.push(Line::from(Span::styled(
@@ -78,7 +97,8 @@ mod tests {
     fn banner_only_when_no_extras() {
         let cell = WelcomeCell::new("0.1.0".into(), String::new(), false);
         let lines = cell.display_lines(120);
-        assert_eq!(lines.len(), 2);
+        // 5 art rows + 1 title + 1 blank
+        assert_eq!(lines.len(), 7);
         let text = flatten(&lines);
         assert!(text.contains("Crab Code v0.1.0"));
     }
@@ -87,7 +107,8 @@ mod tests {
     fn includes_whats_new_when_present() {
         let cell = WelcomeCell::new("0.1.0".into(), "shiny new thing".into(), false);
         let lines = cell.display_lines(120);
-        assert_eq!(lines.len(), 3);
+        // 5 art rows + 1 title + 1 whats_new + 1 blank
+        assert_eq!(lines.len(), 8);
         let text = flatten(&lines);
         assert!(text.contains("Crab Code v0.1.0"));
         assert!(text.contains("shiny new thing"));
@@ -97,7 +118,8 @@ mod tests {
     fn includes_project_hint_when_enabled() {
         let cell = WelcomeCell::new("0.1.0".into(), String::new(), true);
         let lines = cell.display_lines(120);
-        assert_eq!(lines.len(), 3);
+        // 5 art rows + 1 title + 1 hint + 1 blank
+        assert_eq!(lines.len(), 8);
         let text = flatten(&lines);
         assert!(text.contains("Found CLAUDE.md"));
     }
@@ -106,7 +128,8 @@ mod tests {
     fn includes_all_when_both_set() {
         let cell = WelcomeCell::new("0.1.0".into(), "release notes".into(), true);
         let lines = cell.display_lines(120);
-        assert_eq!(lines.len(), 4);
+        // 5 art rows + 1 title + 1 whats_new + 1 hint + 1 blank
+        assert_eq!(lines.len(), 9);
         let text = flatten(&lines);
         assert!(text.contains("Crab Code v0.1.0"));
         assert!(text.contains("release notes"));

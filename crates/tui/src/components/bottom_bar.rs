@@ -35,6 +35,8 @@ pub struct BottomBar<'a> {
     pub context_used_pct: u8,
     /// Total context window size in tokens.
     pub context_window_size: u64,
+    /// Tokens already consumed (input + output combined).
+    pub used_tokens: u64,
     /// Cumulative cost in USD.
     pub total_cost_usd: f64,
     /// Cumulative token usage for the right-aligned stats.
@@ -61,6 +63,7 @@ impl Renderable for BottomBar<'_> {
             self.model_name,
             self.context_used_pct,
             self.context_window_size,
+            self.used_tokens,
             self.total_cost_usd,
             self.total_input_tokens,
             self.total_output_tokens,
@@ -221,6 +224,7 @@ fn format_status_right(
     model: Option<&str>,
     ctx_pct: u8,
     ctx_window: u64,
+    used_tokens: u64,
     cost: f64,
     input: u64,
     output: u64,
@@ -233,9 +237,7 @@ fn format_status_right(
         parts.push(name.to_string());
     }
 
-    if ctx_window > 0 && ctx_pct > 0 {
-        #[allow(clippy::cast_sign_loss)]
-        let used_tokens = (ctx_window as f64 * (f64::from(ctx_pct) / 100.0)) as u64;
+    if ctx_window > 0 {
         parts.push(format!(
             "Context {}% ({}/{})",
             ctx_pct,
@@ -300,7 +302,7 @@ fn render_bottom_bar(
                         Span::styled("  ▶▶ ", Style::default().fg(Color::DarkGray)),
                         Span::styled(perm_mode.to_string(), Style::default().fg(Color::DarkGray)),
                         Span::styled(
-                            " (shift+tab to cycle)",
+                            " (shift+tab to cycle) · ? for shortcuts",
                             Style::default().fg(Color::DarkGray),
                         ),
                     ])
@@ -328,6 +330,7 @@ mod tests {
             model_name: None,
             context_used_pct: 0,
             context_window_size: 0,
+            used_tokens: 0,
             total_cost_usd: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
@@ -347,6 +350,7 @@ mod tests {
             model_name: None,
             context_used_pct: 0,
             context_window_size: 0,
+            used_tokens: 0,
             total_cost_usd: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
@@ -405,6 +409,7 @@ mod tests {
             model_name: None,
             context_used_pct: 0,
             context_window_size: 0,
+            used_tokens: 0,
             total_cost_usd: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
@@ -424,11 +429,40 @@ mod tests {
             model_name: None,
             context_used_pct: 0,
             context_window_size: 0,
+            used_tokens: 0,
             total_cost_usd: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
         };
         assert!(rendered_line(&bb).contains("Press Ctrl-D again to exit"));
+    }
+
+    #[test]
+    fn non_default_idle_includes_shortcuts_hint() {
+        let bb = BottomBar {
+            state: AppState::Idle,
+            search_active: false,
+            permission_mode: crab_core::permission::PermissionMode::AcceptEdits,
+            chord_prefix: None,
+            vim_mode: None,
+            exit_pending: None,
+            model_name: None,
+            context_used_pct: 0,
+            context_window_size: 0,
+            used_tokens: 0,
+            total_cost_usd: 0.0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+        };
+        let line = rendered_line(&bb);
+        assert!(
+            line.contains("? for shortcuts"),
+            "non-Default idle must show ? for shortcuts; got: {line:?}"
+        );
+        assert!(
+            line.contains("shift+tab to cycle"),
+            "non-Default idle must show shift+tab hint; got: {line:?}"
+        );
     }
 
     #[test]
@@ -444,6 +478,7 @@ mod tests {
             model_name: None,
             context_used_pct: 0,
             context_window_size: 0,
+            used_tokens: 0,
             total_cost_usd: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,

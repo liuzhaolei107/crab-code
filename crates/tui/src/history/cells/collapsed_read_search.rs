@@ -37,6 +37,8 @@ pub struct CollapsedReadSearchCell {
     pending_count: usize,
     any_error: bool,
     messages: Vec<ChatMessage>,
+    /// Latest file or pattern being processed, shown while active.
+    pub latest_hint: Option<String>,
 }
 
 impl CollapsedReadSearchCell {
@@ -84,6 +86,7 @@ impl CollapsedReadSearchCell {
             pending_count: call_count.saturating_sub(result_count),
             any_error,
             messages: messages.to_vec(),
+            latest_hint: None,
         }
     }
 
@@ -163,16 +166,30 @@ impl HistoryCell for CollapsedReadSearchCell {
             Color::Green
         };
         let text_style = Style::default().fg(Color::Gray);
+        let dim_style = Style::default().fg(Color::DarkGray);
 
         let mut spans = vec![
             Span::styled("● ", Style::default().fg(icon_color)),
             Span::styled(self.summary(), text_style),
         ];
         if self.is_active() {
-            spans.push(Span::styled("…", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled("…", dim_style));
+            spans.push(Span::styled("  Ctrl+O", dim_style));
         }
 
-        vec![Line::from(spans), Line::default()]
+        let mut lines = vec![Line::from(spans)];
+
+        if self.is_active()
+            && let Some(hint) = &self.latest_hint
+        {
+            lines.push(Line::from(vec![
+                Span::styled("  \u{23bf}  ", dim_style),
+                Span::styled(hint.clone(), dim_style),
+            ]));
+        }
+
+        lines.push(Line::default());
+        lines
     }
 
     fn transcript_lines(&self, width: u16) -> Vec<Line<'static>> {

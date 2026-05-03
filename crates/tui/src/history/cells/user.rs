@@ -31,12 +31,15 @@ impl UserCell {
 impl HistoryCell for UserCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let total = self.text.chars().count();
+        let user_bg = Color::Rgb(30, 30, 46);
         let prompt_style = Style::default()
             .fg(CLAUDE_DARK)
+            .bg(user_bg)
             .add_modifier(Modifier::BOLD);
-        let body_style = Style::default().fg(Color::White);
+        let body_style = Style::default().fg(Color::White).bg(user_bg);
         let trunc_style = Style::default()
             .fg(Color::DarkGray)
+            .bg(user_bg)
             .add_modifier(Modifier::ITALIC);
 
         let mut lines: Vec<Line<'static>> = Vec::new();

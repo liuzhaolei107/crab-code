@@ -5,8 +5,11 @@ use crate::history::HistoryCell;
 
 #[derive(Debug, Clone)]
 pub struct CompactBoundaryCell {
+    #[allow(dead_code)]
     strategy: String,
+    #[allow(dead_code)]
     after_tokens: u64,
+    #[allow(dead_code)]
     removed_messages: usize,
 }
 
@@ -22,29 +25,14 @@ impl CompactBoundaryCell {
 }
 
 impl HistoryCell for CompactBoundaryCell {
-    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let w = width as usize;
-        let tokens_k = self.after_tokens / 1000;
-        let label = format!(
-            " context compacted ({}): {} messages removed, ~{}k tokens remaining ",
-            self.strategy, self.removed_messages, tokens_k
-        );
-
+    fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
         let style = Style::default().fg(Color::DarkGray);
-
-        let label_len = label.chars().count();
-        let remaining = w.saturating_sub(label_len);
-        let left = remaining / 2;
-        let right = remaining.saturating_sub(left);
-
-        let mut content = String::with_capacity(w);
-        content.push_str(&"\u{2500}".repeat(left));
-        content.push_str(&label);
-        content.push_str(&"\u{2500}".repeat(right));
-
         vec![
             Line::default(),
-            Line::from(Span::styled(content, style)),
+            Line::from(Span::styled(
+                "\u{273b} Conversation compacted (Ctrl+O for history)",
+                style,
+            )),
             Line::default(),
         ]
     }
@@ -74,7 +62,7 @@ mod tests {
     }
 
     #[test]
-    fn boundary_contains_label_text() {
+    fn boundary_contains_compacted_label() {
         let cell = CompactBoundaryCell::new("summary".into(), 50000, 12);
         let lines = cell.display_lines(80);
         let text: String = lines[1]
@@ -82,13 +70,12 @@ mod tests {
             .iter()
             .map(|s| s.content.to_string())
             .collect();
-        assert!(text.contains("context compacted (summary)"));
-        assert!(text.contains("12 messages removed"));
-        assert!(text.contains("~50k tokens remaining"));
+        assert!(text.contains("Conversation compacted"));
+        assert!(text.contains("Ctrl+O"));
     }
 
     #[test]
-    fn boundary_uses_box_drawing_rule() {
+    fn boundary_uses_star_glyph() {
         let cell = CompactBoundaryCell::new("trim".into(), 100_000, 5);
         let lines = cell.display_lines(80);
         let text: String = lines[1]
@@ -96,7 +83,7 @@ mod tests {
             .iter()
             .map(|s| s.content.to_string())
             .collect();
-        assert!(text.contains('\u{2500}'));
+        assert!(text.contains('\u{273b}'));
     }
 
     #[test]
