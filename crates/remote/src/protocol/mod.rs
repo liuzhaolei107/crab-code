@@ -32,25 +32,3 @@ pub use session::{
     SessionAttachParams, SessionAttachResult, SessionCancelParams, SessionCreateParams,
     SessionCreateResult, SessionEventParams, SessionSendInputParams,
 };
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn method_constants_are_distinct() {
-        let all = [
-            method::INITIALIZE,
-            method::INITIALIZED,
-            method::SESSION_ATTACH,
-            method::SESSION_CREATE,
-            method::SESSION_SEND_INPUT,
-            method::SESSION_CANCEL,
-            method::SESSION_EVENT,
-        ];
-        let mut sorted: Vec<_> = all.to_vec();
-        sorted.sort_unstable();
-        sorted.dedup();
-        assert_eq!(sorted.len(), all.len(), "method names must be distinct");
-    }
-}

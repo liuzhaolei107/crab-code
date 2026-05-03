@@ -28,3 +28,25 @@ pub const SESSION_EVENT: &str = "session/event";
 
 // ─── Trigger ───
 // `trigger.fire` / `trigger.list` etc. land in a follow-up phase.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn method_constants_are_distinct() {
+        let all = [
+            INITIALIZE,
+            INITIALIZED,
+            SESSION_ATTACH,
+            SESSION_CREATE,
+            SESSION_SEND_INPUT,
+            SESSION_CANCEL,
+            SESSION_EVENT,
+        ];
+        let mut sorted: Vec<_> = all.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), all.len(), "method names must be distinct");
+    }
+}
