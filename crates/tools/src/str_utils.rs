@@ -24,9 +24,10 @@
 ///
 /// assert_eq!(truncate_chars("hello", 10, "…"), "hello");
 /// assert_eq!(truncate_chars("hello world", 5, "…"), "hello…");
-/// // Multi-byte: each Chinese character is 3 bytes but 1 char.
-/// assert_eq!(truncate_chars("你好世界", 2, "…"), "你好…");
 /// ```
+///
+/// Multi-byte input is counted by characters, not bytes — the unit tests
+/// in `multibyte_counts_by_chars_not_bytes` cover this.
 #[must_use]
 pub fn truncate_chars(s: &str, max_chars: usize, ellipsis: &str) -> String {
     // Fast path: count up to max_chars+1 to decide if we need to truncate.
@@ -97,8 +98,8 @@ mod tests {
 
     #[test]
     fn multibyte_counts_by_chars_not_bytes() {
-        // "你好世界" is 4 chars, 12 bytes. Byte-slicing at [..3] would panic;
-        // char-based truncation at 2 yields "你好…".
+        // 4-char CJK input occupies 12 bytes. Byte-slicing at [..3] would
+        // panic; char-based truncation at 2 keeps the first 2 characters.
         assert_eq!(truncate_chars("你好世界", 2, "…"), "你好…");
     }
 
@@ -109,7 +110,8 @@ mod tests {
 
     #[test]
     fn mixed_ascii_and_multibyte() {
-        // 6 chars: "a", "b", "c", "你", "好", "d"
+        // 6 characters total: 3 ASCII, 2 CJK, 1 ASCII. Truncating to 4
+        // characters keeps "abc" plus the first CJK char before the ellipsis.
         assert_eq!(truncate_chars("abc你好d", 4, "…"), "abc你…");
     }
 

@@ -88,8 +88,9 @@ mod tests {
 
     #[test]
     fn truncate_cjk_boundary() {
-        // "你好世界" = 8 columns (each char is 2)
-        // max_width=5 can fit "你好" (4) but not "你好世" (6)
+        // 4 CJK characters at 2 columns each = 8 total columns. With
+        // max_width=5, the first 2 chars (4 cols) fit but adding a third
+        // would overflow to 6, so truncation stops after 2.
         assert_eq!(truncate_to_width("你好世界", 5), "你好");
     }
 
@@ -100,7 +101,8 @@ mod tests {
 
     #[test]
     fn truncate_mixed_ascii_cjk() {
-        // "a你b" = 1 + 2 + 1 = 4 columns
+        // ASCII (1 col) + CJK (2 cols) + ASCII (1 col) = 4 total columns.
+        // max_width=3 truncates after the CJK char; max_width=4 fits all.
         assert_eq!(truncate_to_width("a你b", 3), "a你");
         assert_eq!(truncate_to_width("a你b", 4), "a你b");
     }
