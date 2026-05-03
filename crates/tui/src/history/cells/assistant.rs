@@ -58,16 +58,22 @@ impl HistoryCell for AssistantCell {
 
         let theme = theme::current();
         let highlighter = SyntaxHighlighter::new();
+        let prefix_width = FIRST_LINE_PREFIX.chars().count() as u16;
+        let inner_width = width.saturating_sub(prefix_width).max(1);
 
         let md_lines: Vec<Line<'static>> = SHARED_MD_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
-            (*cache.render(&clean, &theme, &highlighter, width)).clone()
+            (*cache.render(&clean, &theme, &highlighter, inner_width)).clone()
         });
 
         let prefix_style = Style::default().fg(Color::DarkGray);
         let mut out: Vec<Line<'static>> = Vec::with_capacity(md_lines.len() + 1);
         for (idx, line) in md_lines.into_iter().enumerate() {
-            let prefix = if idx == 0 { FIRST_LINE_PREFIX } else { CONT_LINE_PREFIX };
+            let prefix = if idx == 0 {
+                FIRST_LINE_PREFIX
+            } else {
+                CONT_LINE_PREFIX
+            };
             let mut spans: Vec<Span<'static>> = Vec::with_capacity(line.spans.len() + 1);
             spans.push(Span::styled(prefix, prefix_style));
             spans.extend(line.spans);
@@ -98,7 +104,10 @@ mod tests {
         let lines = cell.display_lines(80);
         assert!(!lines.is_empty());
         let first: String = lines[0].spans.iter().map(|s| &*s.content).collect();
-        assert!(!first.contains("● "), "assistant text should not have bullet prefix");
+        assert!(
+            !first.contains("● "),
+            "assistant text should not have bullet prefix"
+        );
     }
 
     #[test]
@@ -106,11 +115,12 @@ mod tests {
         let cell = AssistantCell::new("line one\n\nline two\n\nline three");
         let lines = cell.display_lines(80);
         // Markdown paragraphs produce multiple lines; last is trailing blank.
-        let content_lines: Vec<_> = lines
-            .iter()
-            .filter(|l| !l.spans.is_empty())
-            .collect();
-        assert!(content_lines.len() >= 2, "expected multiple content lines, got {}", content_lines.len());
+        let content_lines: Vec<_> = lines.iter().filter(|l| !l.spans.is_empty()).collect();
+        assert!(
+            content_lines.len() >= 2,
+            "expected multiple content lines, got {}",
+            content_lines.len()
+        );
 
         let first: String = content_lines[0].spans.iter().map(|s| &*s.content).collect();
         assert!(

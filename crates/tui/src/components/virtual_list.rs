@@ -62,7 +62,7 @@ pub struct VirtualMessageList {
     cache: LruCache<(u64, u16), Arc<Vec<Line<'static>>>>,
     last_total_lines: usize,
     streaming_active: bool,
-    streaming_ratchet: Option<usize>,
+    streaming_ratchet: Option<(u64, usize)>,
 }
 
 impl VirtualMessageList {
@@ -73,7 +73,7 @@ impl VirtualMessageList {
             cache: LruCache::new(cap),
             last_total_lines: 0,
             streaming_active: false,
-            streaming_ratchet: None,
+            streaming_ratchet: None::<(u64, usize)>,
         }
     }
 
@@ -84,7 +84,7 @@ impl VirtualMessageList {
             cache: LruCache::new(cap),
             last_total_lines: 0,
             streaming_active: false,
-            streaming_ratchet: None,
+            streaming_ratchet: None::<(u64, usize)>,
         }
     }
 
@@ -133,8 +133,12 @@ impl VirtualMessageList {
             };
             if self.streaming_active && i == last_idx {
                 let raw = entry.len();
-                let target = raw.max(self.streaming_ratchet.unwrap_or(0));
-                self.streaming_ratchet = Some(target);
+                let prev = self
+                    .streaming_ratchet
+                    .filter(|(id, _)| *id == msg.id)
+                    .map_or(0, |(_, h)| h);
+                let target = raw.max(prev);
+                self.streaming_ratchet = Some((msg.id, target));
                 if target > raw {
                     let mut padded: Vec<Line<'static>> = (*entry).clone();
                     padded.resize(target, Line::raw(""));
@@ -302,6 +306,40 @@ mod tests {
 
         list.set_streaming(false);
         list.render(&short, ViewportState::default(), area, &mut buf);
+        assert_eq!(list.last_total_lines(), 3);
+    }
+
+    #[test]
+    fn streaming_ratchet_resets_on_message_id_change() {
+        let mut list = VirtualMessageList::new();
+        let area = Rect::new(0, 0, 20, 20);
+        let mut buf = Buffer::empty(area);
+
+        list.set_streaming(true);
+
+        let tall = vec![VirtualMessage {
+            id: 1,
+            lines: Arc::new(vec![
+                Line::raw("a"),
+                Line::raw("b"),
+                Line::raw("c"),
+                Line::raw("d"),
+                Line::raw("e"),
+            ]),
+            streaming: true,
+        }];
+        list.render(&tall, ViewportState::default(), area, &mut buf);
+        assert_eq!(list.last_total_lines(), 5);
+
+        let new_msg = vec![
+            VirtualMessage::new(1, vec![Line::raw("a"), Line::raw("b")]),
+            VirtualMessage {
+                id: 2,
+                lines: Arc::new(vec![Line::raw("x")]),
+                streaming: true,
+            },
+        ];
+        list.render(&new_msg, ViewportState::default(), area, &mut buf);
         assert_eq!(list.last_total_lines(), 3);
     }
 
