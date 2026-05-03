@@ -51,7 +51,9 @@ pub fn cell_from_chat_message(msg: &crate::app::ChatMessage) -> Box<dyn HistoryC
             *total_lines,
             *elapsed_secs,
         )),
-        ChatMessage::System { text } => Box::new(SystemCell::new(text.clone())),
+        ChatMessage::System { text, kind } => {
+            Box::new(SystemCell::new(text.clone()).with_kind(*kind))
+        }
         ChatMessage::CompactBoundary {
             strategy,
             after_tokens,
@@ -123,7 +125,10 @@ mod tests {
                 collapsed: false,
                 is_read_only: true,
             },
-            ChatMessage::System { text: "s".into() },
+            ChatMessage::System {
+                text: "s".into(),
+                kind: super::cells::SystemKind::Info,
+            },
             ChatMessage::CompactBoundary {
                 strategy: "summary".into(),
                 after_tokens: 50000,
@@ -152,7 +157,10 @@ mod tests {
 
     #[test]
     fn transcript_lines_defaults_to_display() {
-        let cell = cell_from_chat_message(&ChatMessage::System { text: "hi".into() });
+        let cell = cell_from_chat_message(&ChatMessage::System {
+            text: "hi".into(),
+            kind: super::cells::SystemKind::Info,
+        });
         let display = cell.display_lines(40);
         let transcript = cell.transcript_lines(40);
         assert_eq!(display.len(), transcript.len());

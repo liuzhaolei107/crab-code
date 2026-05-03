@@ -20,6 +20,7 @@ use crate::components::context_collapse::CollapsibleSection;
 use crate::components::permission::{PermissionCard, PermissionResponse};
 use crate::components::tool_output::ToolOutputEntry;
 use crate::event::TuiEvent;
+use crate::history::cells::SystemKind;
 use crate::keybindings::{Action, KeyContext, ResolveOutcome};
 use crate::vim::VimAction;
 
@@ -41,7 +42,7 @@ impl App {
         match msg {
             ChatMessage::User { text }
             | ChatMessage::Assistant { text }
-            | ChatMessage::System { text }
+            | ChatMessage::System { text, .. }
             | ChatMessage::Thinking { text, .. } => Some(text.clone()),
             ChatMessage::ToolResult { output, .. } => Some(output.clone()),
             _ => None,
@@ -225,6 +226,7 @@ impl App {
                         let _ = writeln!(self.content_buffer, "\n[interrupted]");
                         self.messages.push(ChatMessage::System {
                             text: "Interrupted \u{00b7} What should Claude do instead?".into(),
+                            kind: SystemKind::Info,
                         });
                         return AppAction::InterruptPermissions { rejected_ids };
                     }
@@ -235,6 +237,7 @@ impl App {
                         let _ = writeln!(self.content_buffer, "\n[interrupted]");
                         self.messages.push(ChatMessage::System {
                             text: "Interrupted \u{00b7} What should Claude do instead?".into(),
+                            kind: SystemKind::Info,
                         });
                         return AppAction::InterruptProcessing;
                     }
@@ -355,6 +358,7 @@ impl App {
                         self.virtual_list.set_streaming(false);
                         self.messages.push(ChatMessage::System {
                             text: "[agents killed]".into(),
+                            kind: SystemKind::Info,
                         });
                     }
                     return AppAction::None;
@@ -449,6 +453,7 @@ impl App {
                     // Toggle todos: show as system message for now
                     self.messages.push(ChatMessage::System {
                         text: "[todos panel toggled]".into(),
+                        kind: SystemKind::Info,
                     });
                     return AppAction::None;
                 }
@@ -476,12 +481,14 @@ impl App {
                     let label = if self.vim.is_enabled() { "ON" } else { "OFF" };
                     self.messages.push(ChatMessage::System {
                         text: format!("[vim mode {label}]"),
+                        kind: SystemKind::Info,
                     });
                     return AppAction::None;
                 }
                 Action::ImagePaste if self.state != AppState::Confirming => {
                     self.messages.push(ChatMessage::System {
                         text: "[image paste: clipboard image not available]".into(),
+                        kind: SystemKind::Info,
                     });
                     return AppAction::None;
                 }
@@ -1157,9 +1164,8 @@ impl App {
                 self.state = AppState::Idle;
                 self.virtual_list.set_streaming(false);
                 self.processing_start = None;
-                self.messages.push(ChatMessage::System {
-                    text: format!("Error: {message}"),
-                });
+                let (text, kind) = crate::error_messages::classify_error(&message);
+                self.messages.push(ChatMessage::System { text, kind });
                 self.notifications.error(&message);
                 crate::terminal_notify::notify("Crab Code", "Agent error");
                 AppAction::None
@@ -1246,6 +1252,7 @@ impl App {
             AppEvent::SwitchModel(model) => {
                 self.messages.push(ChatMessage::System {
                     text: format!("[model switched to {model}]"),
+            kind: SystemKind::Info,
                 });
                 self.model_name = model;
                 AppAction::None
@@ -1276,12 +1283,14 @@ impl App {
             } => {
                 self.messages.push(ChatMessage::System {
                     text: format!("Token usage {:.0}% ({used}/{limit})", usage_pct * 100.0),
+            kind: SystemKind::Info,
                 });
                 AppAction::None
             }
             AppEvent::SessionSaved { session_id } => {
                 self.messages.push(ChatMessage::System {
                     text: format!("Session saved: {session_id}"),
+            kind: SystemKind::Info,
                 });
                 AppAction::None
             }
@@ -1291,6 +1300,7 @@ impl App {
             } => {
                 self.messages.push(ChatMessage::System {
                     text: format!("Resumed {session_id} ({message_count} messages)"),
+            kind: SystemKind::Info,
                 });
                 AppAction::None
             }

@@ -57,7 +57,7 @@ impl GlobalSearchOverlay {
         match msg {
             ChatMessage::User { text }
             | ChatMessage::Assistant { text }
-            | ChatMessage::System { text }
+            | ChatMessage::System { text, .. }
             | ChatMessage::Thinking { text, .. } => text.clone(),
             ChatMessage::ToolUse { name, .. } => name.clone(),
             ChatMessage::ToolResult {
@@ -338,6 +338,7 @@ mod tests {
             },
             ChatMessage::System {
                 text: "unrelated warning about theme".into(),
+                kind: crate::history::cells::SystemKind::Info,
             },
         ]);
         search.query = "build".into();
@@ -355,7 +356,7 @@ mod tests {
         let top_text = match &search.messages[search.results[0].message_idx] {
             ChatMessage::User { text }
             | ChatMessage::Assistant { text }
-            | ChatMessage::System { text } => text.clone(),
+            | ChatMessage::System { text, .. } => text.clone(),
             _ => panic!("unexpected top message variant"),
         };
         assert!(
@@ -392,6 +393,7 @@ mod tests {
             },
             ChatMessage::System {
                 text: "gamma".into(),
+                kind: crate::history::cells::SystemKind::Info,
             },
         ]);
         search.query.clear();

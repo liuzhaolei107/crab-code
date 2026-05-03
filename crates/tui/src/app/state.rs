@@ -193,8 +193,13 @@ pub enum ChatMessage {
         /// delta. The renderer uses this for the `{elapsed:.1}s` field.
         elapsed_secs: f64,
     },
-    /// System/informational message — rendered in dim gray.
-    System { text: String },
+    /// System/informational message. `kind` selects the severity tier
+    /// (Info → dim gray, Warning → yellow, Error → red); the renderer
+    /// picks glyph + colour from it.
+    System {
+        text: String,
+        kind: crate::history::cells::SystemKind,
+    },
     /// Compact boundary — visual separator after context compaction.
     CompactBoundary {
         strategy: String,

@@ -247,7 +247,10 @@ impl App {
             let chat_msg = match msg.role {
                 crab_core::message::Role::User => ChatMessage::User { text },
                 crab_core::message::Role::Assistant => ChatMessage::Assistant { text },
-                crab_core::message::Role::System => ChatMessage::System { text },
+                crab_core::message::Role::System => ChatMessage::System {
+                    text,
+                    kind: crate::history::cells::SystemKind::Info,
+                },
             };
             self.messages.push(chat_msg);
         }
@@ -594,7 +597,7 @@ mod tests {
         messages.iter().any(|m| match m {
             ChatMessage::User { text }
             | ChatMessage::Assistant { text }
-            | ChatMessage::System { text } => text.contains(needle),
+            | ChatMessage::System { text, .. } => text.contains(needle),
             ChatMessage::ToolUse { name, .. } => name.contains(needle),
             ChatMessage::ToolResult {
                 tool_name, output, ..
@@ -1033,7 +1036,14 @@ mod tests {
 
         assert_eq!(app.state, AppState::Idle);
         assert!(!app.spinner.is_active());
-        assert!(messages_contain(&app.messages, "rate limit"));
+        // The classifier rewrites "rate limit" to a user-friendly message
+        // and tags it as a Warning kind.
+        assert!(messages_contain(&app.messages, "Rate limit reached"));
+        let last_kind = app.messages.iter().rev().find_map(|m| match m {
+            ChatMessage::System { kind, .. } => Some(*kind),
+            _ => None,
+        });
+        assert_eq!(last_kind, Some(crate::history::cells::SystemKind::Warning));
     }
 
     #[test]

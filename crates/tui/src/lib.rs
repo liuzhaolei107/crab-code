@@ -6,6 +6,7 @@ pub mod changelog;
 pub mod clipboard;
 pub mod command_queue;
 pub mod components;
+pub mod error_messages;
 pub mod event;
 pub mod event_broker;
 pub mod frame_requester;

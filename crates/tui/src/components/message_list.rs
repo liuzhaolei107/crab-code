@@ -130,6 +130,7 @@ mod tests {
             },
             ChatMessage::System {
                 text: "note".into(),
+                kind: crate::history::cells::SystemKind::Info,
             },
         ];
         let area = Rect::new(0, 0, 80, 40);

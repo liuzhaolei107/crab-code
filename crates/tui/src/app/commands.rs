@@ -3,13 +3,16 @@
 use super::App;
 use super::state::{AppState, ChatMessage};
 use crate::components::autocomplete::CommandInfo;
+use crate::history::cells::SystemKind;
 
 impl App {
     /// Push a system-level message cell (used for slash command output,
     /// lifecycle announcements, and similar non-conversational text).
     pub fn push_system_message(&mut self, text: impl Into<String>) {
-        self.messages
-            .push(ChatMessage::System { text: text.into() });
+        self.messages.push(ChatMessage::System {
+            text: text.into(),
+            kind: SystemKind::Info,
+        });
     }
 
     /// Register slash commands for Tab completion.
