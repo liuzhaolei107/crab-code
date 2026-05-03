@@ -172,6 +172,12 @@ impl VirtualMessageList {
         let end = total.saturating_sub(state.scroll_offset);
         let start = end.saturating_sub(visible);
 
+        // Bottom-anchor: when total content is shorter than the viewport,
+        // pad the top with blank rows so the conversation hugs the input
+        // box instead of stacking under the header.
+        let to_paint = end.saturating_sub(start);
+        let top_pad = visible.saturating_sub(to_paint);
+
         // Walk the flattened list skipping the first `start` rows.
         let mut painted = 0usize;
         let mut skipped = 0usize;
@@ -185,7 +191,7 @@ impl VirtualMessageList {
                 if painted >= visible {
                     break 'outer;
                 }
-                let y = area.y + painted as u16;
+                let y = area.y + (top_pad + painted) as u16;
                 Widget::render(
                     line.clone(),
                     Rect {
