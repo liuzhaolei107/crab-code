@@ -54,13 +54,18 @@ impl AppLayout {
         show_sidebar: bool,
         sidebar_width: u16,
     ) -> Self {
-        // Fixed overhead: header(4) + status(1) + sep_top(1) + sep_bottom(1) + bottom_bar(1) = 8
-        let input_h = input_height.max(1).min(area.height.saturating_sub(8));
+        // Fixed overhead: status(1) + sep_top(1) + sep_bottom(1) + bottom_bar(1) = 4.
+        // The persistent header was removed: model + cwd info now lives in the
+        // (scrollable) WelcomeCell at session start and in the bottom_bar
+        // afterwards, matching CCB's layout where chrome does not shrink the
+        // conversation viewport.
+        let input_h = input_height.max(1).min(area.height.saturating_sub(4));
 
         let vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(4),       // header (3 art/info + 1 separator)
+                Constraint::Length(0), // header (removed; kept as a 0-height
+                // sentinel so downstream offsets stay correct)
                 Constraint::Min(1),          // content
                 Constraint::Length(1),       // status
                 Constraint::Length(1),       // separator above input

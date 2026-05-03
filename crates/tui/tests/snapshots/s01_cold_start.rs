@@ -10,7 +10,13 @@ use super::helpers::{assert_snapshot, render_lines_to_text};
 
 #[test]
 fn s01_cold_start_welcome_only() {
-    let cell = WelcomeCell::new("0.1.0".into(), String::new(), false);
+    let cell = WelcomeCell::new(
+        "0.1.0".into(),
+        String::new(),
+        false,
+        String::new(),
+        String::new(),
+    );
     let lines = cell.display_lines(80);
     let text = render_lines_to_text(&lines, 80, 24);
     assert_snapshot("s01_cold_start_welcome_only", &text);
@@ -22,6 +28,8 @@ fn s01_cold_start_with_whats_new() {
         "0.1.0".into(),
         "streaming ratchet now tracks message id".into(),
         true,
+        String::new(),
+        String::new(),
     );
     let lines = cell.display_lines(80);
     let text = render_lines_to_text(&lines, 80, 24);

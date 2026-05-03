@@ -91,10 +91,14 @@ pub fn cell_from_chat_message(msg: &crate::app::ChatMessage) -> Box<dyn HistoryC
             version,
             whats_new,
             show_project_hint,
+            model,
+            working_dir,
         } => Box::new(cells::WelcomeCell::new(
             version.clone(),
             whats_new.clone(),
             *show_project_hint,
+            model.clone(),
+            working_dir.clone(),
         )),
     }
 }

@@ -467,6 +467,8 @@ fn push_welcome_if_needed(app: &mut App) {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         whats_new,
         show_project_hint,
+        model: app.model_name.clone(),
+        working_dir: app.working_dir.clone(),
     };
     app.messages.insert(0, msg);
 

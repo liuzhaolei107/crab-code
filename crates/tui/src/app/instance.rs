@@ -1888,6 +1888,8 @@ mod tests {
             version: "0.1.0".into(),
             whats_new: String::new(),
             show_project_hint: false,
+            model: String::new(),
+            working_dir: String::new(),
         });
         app.messages.push(ChatMessage::User { text: "hi".into() });
         app.messages.push(ChatMessage::Assistant {

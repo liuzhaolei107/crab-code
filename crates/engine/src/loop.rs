@@ -57,9 +57,18 @@ pub async fn query_loop(
     let mut compact_state = AutoCompactState::default();
     // Live model — may be swapped to a larger-context variant before compaction.
     let mut active_model: ModelId = config.model.clone();
+    // Tokens summed across every LLM iteration of this run. We send a single
+    // `Event::MessageEnd` with this total when the run truly completes, so the
+    // TUI does not flicker into Idle between tool-use turns.
+    let mut accumulated_usage = crab_core::model::TokenUsage::default();
 
     loop {
         if cancel.is_cancelled() {
+            let _ = event_tx
+                .send(Event::MessageEnd {
+                    usage: accumulated_usage.clone(),
+                })
+                .await;
             return Ok(());
         }
 
@@ -198,9 +207,25 @@ pub async fn query_loop(
         // if context was upgraded to a larger-context variant).
         cost_tracker.add_usage(active_model.as_str(), &total_usage);
         conversation.record_usage(total_usage.clone());
-        let _ = event_tx
-            .send(Event::MessageEnd { usage: total_usage })
-            .await;
+        // Accumulate this iteration's tokens into the task total. We deliberately
+        // do NOT emit `Event::MessageEnd` here on every iteration — the TUI
+        // treats `MessageEnd` as the signal that the whole agent task is done
+        // (state -> Idle, spinner stops, streaming ratchet resets). Emitting
+        // mid-cycle (e.g. between tool_use turns or during max-tokens
+        // continuation) leaves the TUI Idle while content is still arriving,
+        // making subsequent turns appear frozen mid-response.
+        accumulated_usage.input_tokens = accumulated_usage
+            .input_tokens
+            .saturating_add(total_usage.input_tokens);
+        accumulated_usage.output_tokens = accumulated_usage
+            .output_tokens
+            .saturating_add(total_usage.output_tokens);
+        accumulated_usage.cache_read_tokens = accumulated_usage
+            .cache_read_tokens
+            .saturating_add(total_usage.cache_read_tokens);
+        accumulated_usage.cache_creation_tokens = accumulated_usage
+            .cache_creation_tokens
+            .saturating_add(total_usage.cache_creation_tokens);
 
         // Handle max_tokens truncation with escalation + continuation
         if is_max_tokens_stop(stop_reason.as_deref())
@@ -292,6 +317,11 @@ pub async fn query_loop(
                 }
             }
             metrics.record(iter_span.finish(true));
+            let _ = event_tx
+                .send(Event::MessageEnd {
+                    usage: accumulated_usage.clone(),
+                })
+                .await;
             return Ok(());
         }
 

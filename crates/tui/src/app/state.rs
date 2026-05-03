@@ -240,6 +240,8 @@ pub enum ChatMessage {
         version: String,
         whats_new: String,
         show_project_hint: bool,
+        model: String,
+        working_dir: String,
     },
 }
 
