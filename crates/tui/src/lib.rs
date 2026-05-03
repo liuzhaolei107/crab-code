@@ -18,6 +18,7 @@ pub mod layout;
 pub mod markdown;
 pub mod overlay;
 pub mod runner;
+pub mod terminal_detection;
 pub mod terminal_notify;
 pub mod theme;
 pub mod traits;
