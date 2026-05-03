@@ -11,8 +11,8 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Rect;
 use tokio::sync::mpsc;
 
 use crab_agents::LlmBackend;
@@ -22,8 +22,10 @@ use crab_core::event::Event;
 
 use crate::app::{App, AppAction};
 use crate::app_event::AppEvent;
+use crate::custom_terminal::Terminal;
 use crate::event_broker::EventBroker;
 use crate::frame_requester::FrameRequester;
+use crate::terminal_detection::InsertHistoryMode;
 
 use super::slash::{SubmitOutcome, builtin_slash_commands, handle_submit};
 
@@ -31,6 +33,7 @@ use super::slash::{SubmitOutcome, builtin_slash_commands, handle_submit};
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) async fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    insert_mode: InsertHistoryMode,
     app: &mut App,
     tui_rx: &mut mpsc::UnboundedReceiver<crate::event::TuiEvent>,
     init_rx: tokio::sync::oneshot::Receiver<(AgentRuntime, RuntimeInitMeta)>,
@@ -43,6 +46,8 @@ pub(super) async fn run_loop(
     event_broker: Arc<EventBroker>,
     frame_requester: FrameRequester,
 ) -> anyhow::Result<()> {
+    // Suppress until Phase C wires it through to insert_history flush.
+    let _ = insert_mode;
     // `state` starts as None (Initializing) and is populated by InitComplete.
     let mut state: Option<AgentRuntime> = None;
     let slash_registry = CommandRegistry::new();
@@ -64,6 +69,8 @@ pub(super) async fn run_loop(
     let mut sigcont_stream = SigcontStream::new()?;
 
     loop {
+        let viewport = compute_inline_viewport(terminal, app)?;
+        terminal.set_viewport_area(viewport);
         terminal.draw(|frame| {
             app.render(frame.area(), frame.buffer_mut());
         })?;
@@ -262,7 +269,7 @@ pub(super) async fn run_loop(
             }
             () = sigcont_stream.recv() => {
                 let _ = enable_raw_mode();
-                let _ = execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste);
+                let _ = execute!(io::stdout(), EnableBracketedPaste);
                 terminal.clear()?;
                 continue;
             }
@@ -424,6 +431,55 @@ pub(super) async fn run_loop(
     }
 
     Ok(())
+}
+
+/// Compute the inline-viewport rect anchored to the bottom of the screen.
+///
+/// The TUI lives in the bottom `desired_height` rows of the terminal and
+/// leaves the rest of the screen for native scrollback content. When the
+/// inline area would overflow the bottom edge, we slide it up using the
+/// terminal's scroll region so existing content above is preserved.
+fn compute_inline_viewport<B>(terminal: &mut Terminal<B>, app: &App) -> io::Result<Rect>
+where
+    B: ratatui::backend::Backend<Error = io::Error> + std::io::Write,
+{
+    let size = terminal.size()?;
+    let width = size.width.max(1);
+    let height = size.height.max(1);
+
+    // Compute the desired inline-viewport height. This is the minimum
+    // contiguous space the TUI needs to render its active widgets without
+    // truncation. We do not include scrolled-off history; that lives in
+    // terminal scrollback after Phase C wires up the flush.
+    let desired = compute_desired_height(app, width).clamp(1, height);
+
+    // Anchor to the bottom. If we overflow the screen, slide up using the
+    // terminal's scroll region so existing content above the viewport gets
+    // pushed into native scrollback rather than being clobbered.
+    let mut rect = Rect::new(0, height.saturating_sub(desired), width, desired);
+    let prev_top = terminal.viewport_area.top();
+    if prev_top != 0 && rect.top() < prev_top {
+        let scroll_by = prev_top - rect.top();
+        terminal
+            .backend_mut()
+            .scroll_region_up(0..prev_top, scroll_by)?;
+    }
+    if rect.bottom() > height {
+        let overflow = rect.bottom() - height;
+        rect.y = rect.y.saturating_sub(overflow);
+    }
+    Ok(rect)
+}
+
+/// Sum of fixed chrome rows (status + 2 separators + bottom bar) plus the
+/// dynamic input area. Active history cells live in terminal scrollback once
+/// finalized (Phase C), so they are not included here.
+fn compute_desired_height(app: &App, _width: u16) -> u16 {
+    const CHROME_ROWS: u16 = 4; // status(1) + sep_top(1) + sep_bottom(1) + bar(1)
+    let input_h: u16 = app.input.line_count().try_into().unwrap_or(u16::MAX).max(1);
+    // Reserve one extra row for the topmost active cell — once Phase C lands,
+    // streaming assistant output will live in this slot before being drained.
+    CHROME_ROWS.saturating_add(input_h).saturating_add(1)
 }
 
 /// Decide whether the welcome panel should display on this start.

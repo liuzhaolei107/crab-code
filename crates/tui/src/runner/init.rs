@@ -10,10 +10,7 @@ use std::sync::Arc;
 
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
 use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
-use ratatui::Terminal;
+use crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
@@ -22,9 +19,11 @@ use crab_agents::runtime::{AgentRuntime, RuntimeInitConfig, RuntimeInitMeta};
 use crab_core::event::Event;
 
 use crate::app::App;
+use crate::custom_terminal::Terminal;
 use crate::event::spawn_event_loop;
 use crate::event_broker::EventBroker;
 use crate::frame_requester::FrameRequester;
+use crate::terminal_detection::{self, InsertHistoryMode};
 
 use super::TuiConfig;
 
@@ -35,6 +34,7 @@ use super::TuiConfig;
 /// `PreparedRuntime` does.
 pub(super) struct PreparedRuntime {
     pub(super) terminal: Terminal<CrosstermBackend<io::Stdout>>,
+    pub(super) insert_mode: InsertHistoryMode,
     pub(super) app: App,
     pub(super) tui_rx: mpsc::UnboundedReceiver<crate::event::TuiEvent>,
     pub(super) init_rx: tokio::sync::oneshot::Receiver<(AgentRuntime, RuntimeInitMeta)>,
@@ -80,14 +80,17 @@ pub(super) fn prepare(config: TuiConfig) -> anyhow::Result<PreparedRuntime> {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
+        // LeaveAlternateScreen is defensive — it's only meaningful if a panic
+        // happened while an overlay had pushed us into the alt-screen.
         let _ = execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
         default_hook(info);
     }));
 
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
+    execute!(stdout, EnableBracketedPaste)?;
     let term_backend = CrosstermBackend::new(stdout);
-    let terminal = Terminal::new(term_backend)?;
+    let terminal = Terminal::with_options(term_backend)?;
+    let insert_mode = terminal_detection::detect();
 
     // ── Phase 2: Create App in Initializing state ────────────────────────
 
@@ -185,6 +188,7 @@ pub(super) fn prepare(config: TuiConfig) -> anyhow::Result<PreparedRuntime> {
 
     Ok(PreparedRuntime {
         terminal,
+        insert_mode,
         app,
         tui_rx,
         init_rx,

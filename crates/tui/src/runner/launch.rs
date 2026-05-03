@@ -50,6 +50,7 @@ pub async fn run(config: TuiConfig) -> anyhow::Result<ExitInfo> {
 
     let result = repl::run_loop(
         &mut prepared.terminal,
+        prepared.insert_mode,
         &mut prepared.app,
         &mut prepared.tui_rx,
         prepared.init_rx,
