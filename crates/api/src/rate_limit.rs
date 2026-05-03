@@ -1,55 +1,12 @@
-//! Shared rate limiting, exponential backoff, and retry logic.
+//! Retry/backoff policy for API requests.
+//!
+//! Client-side preventive rate limiting is intentionally absent: providers
+//! enforce limits server-side and return 429 / `retry-after` headers, which
+//! the retry policy below already handles.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::error::ApiError;
-
-/// Tracks rate limit state from API response headers.
-pub struct RateLimiter {
-    pub remaining_requests: u32,
-    pub remaining_tokens: u32,
-    pub reset_at: Instant,
-}
-
-impl RateLimiter {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            remaining_requests: u32::MAX,
-            remaining_tokens: u32::MAX,
-            reset_at: Instant::now(),
-        }
-    }
-
-    /// Update state from API response headers.
-    pub fn update(&mut self, remaining_requests: u32, remaining_tokens: u32, reset_at: Instant) {
-        self.remaining_requests = remaining_requests;
-        self.remaining_tokens = remaining_tokens;
-        self.reset_at = reset_at;
-    }
-
-    /// Whether we should wait before sending the next request.
-    #[must_use]
-    pub fn should_wait(&self) -> bool {
-        self.remaining_requests == 0 || self.remaining_tokens == 0
-    }
-
-    /// Duration to wait before the next request.
-    #[must_use]
-    pub fn wait_duration(&self) -> Duration {
-        if self.should_wait() {
-            self.reset_at.saturating_duration_since(Instant::now())
-        } else {
-            Duration::ZERO
-        }
-    }
-}
-
-impl Default for RateLimiter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// Exponential backoff delay for retries.
 ///
@@ -255,70 +212,6 @@ mod tests {
     fn json_error_is_not_retryable() {
         let err = ApiError::Sse("parse error".into());
         assert!(!is_retryable(&err));
-    }
-
-    #[test]
-    fn rate_limiter_defaults() {
-        let rl = RateLimiter::new();
-        assert!(!rl.should_wait());
-        assert_eq!(rl.wait_duration(), Duration::ZERO);
-    }
-
-    #[test]
-    fn rate_limiter_should_wait_zero_requests() {
-        let mut rl = RateLimiter::new();
-        rl.update(0, 100, Instant::now() + Duration::from_secs(10));
-        assert!(rl.should_wait());
-    }
-
-    #[test]
-    fn rate_limiter_should_wait_zero_tokens() {
-        let mut rl = RateLimiter::new();
-        rl.update(100, 0, Instant::now() + Duration::from_secs(5));
-        assert!(rl.should_wait());
-    }
-
-    #[test]
-    fn rate_limiter_wait_duration_future_reset() {
-        let mut rl = RateLimiter::new();
-        let future = Instant::now() + Duration::from_secs(5);
-        rl.update(0, 0, future);
-        assert!(rl.should_wait());
-        // wait_duration should be positive (close to 5s)
-        let d = rl.wait_duration();
-        assert!(d > Duration::ZERO);
-        assert!(d <= Duration::from_secs(6));
-    }
-
-    #[test]
-    fn rate_limiter_wait_duration_past_reset() {
-        let mut rl = RateLimiter::new();
-        // reset_at in the past
-        let past = Instant::now()
-            .checked_sub(Duration::from_secs(1))
-            .unwrap_or_else(Instant::now);
-        rl.update(0, 0, past);
-        assert!(rl.should_wait());
-        // saturating_duration_since should return ZERO for past instants
-        assert_eq!(rl.wait_duration(), Duration::ZERO);
-    }
-
-    #[test]
-    fn rate_limiter_update_restores_capacity() {
-        let mut rl = RateLimiter::new();
-        rl.update(0, 0, Instant::now() + Duration::from_secs(10));
-        assert!(rl.should_wait());
-        // Simulate header update with restored capacity
-        rl.update(100, 50000, Instant::now());
-        assert!(!rl.should_wait());
-    }
-
-    #[test]
-    fn rate_limiter_default_trait() {
-        let rl = RateLimiter::default();
-        assert!(!rl.should_wait());
-        assert_eq!(rl.remaining_requests, u32::MAX);
-        assert_eq!(rl.remaining_tokens, u32::MAX);
     }
 
     #[test]
