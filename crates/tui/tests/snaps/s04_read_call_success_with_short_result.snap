@@ -1,0 +1,4 @@
+● Read Cargo.toml
+  ⎿  [workspace]
+     resolver = "2"
+     members = ["crates/*"]

@@ -1,0 +1,13 @@
+● Run find . -name '*.rs'
+  ⎿  ./crates/foo/src/file_0.rs
+     ./crates/foo/src/file_1.rs
+     ./crates/foo/src/file_2.rs
+     ./crates/foo/src/file_3.rs
+     ./crates/foo/src/file_4.rs
+     ./crates/foo/src/file_5.rs
+     ./crates/foo/src/file_6.rs
+     ./crates/foo/src/file_7.rs
+     ./crates/foo/src/file_8.rs
+     ./crates/foo/src/file_9.rs
+     ... (20 more lines)
+  Ctrl+O to expand
