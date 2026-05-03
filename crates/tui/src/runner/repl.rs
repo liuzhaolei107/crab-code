@@ -8,9 +8,7 @@ use std::sync::Arc;
 
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
 use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 use tokio::sync::mpsc;
@@ -392,23 +390,18 @@ pub(super) async fn run_loop(
                 }
             }
             AppAction::ExternalEditor(initial_text) => {
+                // Inline-viewport mode: just hand the terminal back to the
+                // editor — no alt-screen toggle needed. Bracketed paste is
+                // disabled so the editor's own paste handling stays clean,
+                // and raw mode goes off so the editor's input behaves
+                // normally.
                 disable_raw_mode().ok();
-                execute!(
-                    terminal.backend_mut(),
-                    DisableBracketedPaste,
-                    LeaveAlternateScreen
-                )
-                .ok();
+                execute!(terminal.backend_mut(), DisableBracketedPaste).ok();
 
                 let editor_result = run_external_editor(&event_broker, &initial_text, None).await;
 
                 enable_raw_mode().ok();
-                execute!(
-                    terminal.backend_mut(),
-                    EnterAlternateScreen,
-                    EnableBracketedPaste
-                )
-                .ok();
+                execute!(terminal.backend_mut(), EnableBracketedPaste).ok();
                 terminal.clear().ok();
 
                 match editor_result {
