@@ -107,14 +107,14 @@ mod tests {
         let area = Rect::new(0, 0, 120, 40);
         let layout = AppLayout::compute(area, 3);
 
-        assert_eq!(layout.header.height, 4);
+        assert_eq!(layout.header.height, 0);
         assert_eq!(layout.status.height, 1);
         assert_eq!(layout.separator_top.height, 1);
         assert_eq!(layout.input.height, 3);
         assert_eq!(layout.separator_bottom.height, 1);
         assert_eq!(layout.bottom_bar.height, 1);
-        // content: 40 - 4 - 1 - 1 - 3 - 1 - 1 = 29
-        assert_eq!(layout.content.height, 29);
+        // content: 40 - 0 - 1 - 1 - 3 - 1 - 1 = 33
+        assert_eq!(layout.content.height, 33);
         assert!(layout.sidebar.is_none());
     }
 
@@ -192,8 +192,8 @@ mod tests {
     fn layout_small_terminal() {
         let area = Rect::new(0, 0, 40, 12);
         let layout = AppLayout::compute(area, 1);
-        // 4 + content + 1 + 1 + 1 + 1 + 1 = 12 => content = 3
-        assert_eq!(layout.content.height, 3);
+        // 0 + content + 1 + 1 + 1 + 1 + 1 = 12 => content = 7
+        assert_eq!(layout.content.height, 7);
         assert_eq!(layout.input.height, 1);
     }
 

@@ -1066,12 +1066,6 @@ mod tests {
         let area = Rect::new(0, 0, 80, 24);
         let mut buf = Buffer::empty(area);
         app.render(area, &mut buf);
-
-        // Header should contain ASCII art crab and "Crab Code"
-        let header_text: String = (0..area.width)
-            .map(|x| buf.cell((x, 0)).unwrap().symbol().to_string())
-            .collect();
-        assert!(header_text.contains("/\\_/\\") || header_text.contains("Crab"));
     }
 
     #[test]
@@ -1276,28 +1270,6 @@ mod tests {
         // Double press should quit
         let action = app.handle_event(ctrl_key('c'));
         assert_eq!(action, AppAction::Quit);
-    }
-
-    #[test]
-    fn render_header_shows_model_and_dir() {
-        let mut app = App::new("gpt-4o");
-        app.set_working_dir("/home/user/project");
-
-        let area = Rect::new(0, 0, 120, 24);
-        let mut buf = Buffer::empty(area);
-        app.render(area, &mut buf);
-
-        // Line 1 should show model name
-        let line1: String = (0..area.width)
-            .map(|x| buf.cell((x, 1)).unwrap().symbol().to_string())
-            .collect();
-        assert!(line1.contains("gpt-4o"));
-
-        // Line 2 should show working dir
-        let line2: String = (0..area.width)
-            .map(|x| buf.cell((x, 2)).unwrap().symbol().to_string())
-            .collect();
-        assert!(line2.contains("project"));
     }
 
     #[test]

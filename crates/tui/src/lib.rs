@@ -14,6 +14,7 @@ pub mod frame_requester;
 pub mod global_state;
 pub mod history;
 pub mod hyperlink;
+pub mod insert_history;
 pub mod keybindings;
 pub mod layout;
 pub mod markdown;
@@ -21,6 +22,8 @@ pub mod overlay;
 pub mod runner;
 pub mod terminal_detection;
 pub mod terminal_notify;
+#[cfg(test)]
+mod test_backend;
 pub mod theme;
 pub mod traits;
 pub mod vim;
