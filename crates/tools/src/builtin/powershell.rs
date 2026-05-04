@@ -137,11 +137,9 @@ impl Tool for PowerShellTool {
     }
 
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // Commands may contain multi-byte UTF-8 (paths, string literals);
-        // truncate_chars counts codepoints to avoid panics on non-ASCII input.
         let cmd = input["command"].as_str()?;
         let display = truncate_chars(cmd, 160, "…");
-        Some(format!("Run ({display})"))
+        Some(format!("PowerShell({display})"))
     }
 }
 

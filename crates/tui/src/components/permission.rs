@@ -221,7 +221,7 @@ impl PermissionCard {
                 } else {
                     command.clone()
                 };
-                ("bash".into(), format!("Run rejected ({short})"))
+                ("bash".into(), format!("Bash rejected ({short})"))
             }
             PermissionKind::FileEdit { path, .. } => {
                 let f = path.rsplit(['/', '\\']).next().unwrap_or(path);

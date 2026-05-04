@@ -116,10 +116,13 @@ impl HistoryCell for ToolCallCell {
         }
 
         if let Some(detail) = detail {
+            let dim_paren = Style::default().fg(Color::DarkGray);
+            spans.push(Span::styled("(", dim_paren));
             spans.push(Span::styled(
-                format!(" {detail}"),
+                detail.to_string(),
                 Style::default().fg(Color::Cyan),
             ));
+            spans.push(Span::styled(")", dim_paren));
         }
 
         vec![Line::from(spans)]
@@ -231,10 +234,12 @@ mod tests {
         );
         let lines = cell.display_lines(80);
         assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].spans.len(), 3);
+        assert_eq!(lines[0].spans.len(), 5);
         assert_eq!(lines[0].spans[0].style.fg, Some(Color::Green));
         assert_eq!(lines[0].spans[1].style.fg, Some(Color::White));
-        assert_eq!(lines[0].spans[2].style.fg, Some(Color::Cyan));
+        assert_eq!(lines[0].spans[2].content.as_ref(), "(");
+        assert_eq!(lines[0].spans[3].style.fg, Some(Color::Cyan));
+        assert_eq!(lines[0].spans[4].content.as_ref(), ")");
     }
 
     #[test]

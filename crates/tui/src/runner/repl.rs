@@ -469,15 +469,26 @@ where
     Ok(rect)
 }
 
-/// Sum of fixed chrome rows (status + 2 separators + bottom bar) plus the
-/// dynamic input area. Active history cells live in terminal scrollback once
-/// finalized (Phase C), so they are not included here.
-fn compute_desired_height(app: &App, _width: u16) -> u16 {
+/// Sum of fixed chrome rows (status + 2 separators + bottom bar), the
+/// dynamic input area, and the rendered height of every cell still in
+/// `app.messages` (which after `drain_finalized_into_pending` should be
+/// only the streaming/in-progress tail). Finalized cells live in the
+/// terminal's native scrollback and do not consume viewport rows.
+fn compute_desired_height(app: &App, width: u16) -> u16 {
     const CHROME_ROWS: u16 = 4; // status(1) + sep_top(1) + sep_bottom(1) + bar(1)
     let input_h: u16 = app.input.line_count().try_into().unwrap_or(u16::MAX).max(1);
-    // Reserve one extra row for the topmost active cell — once Phase C lands,
-    // streaming assistant output will live in this slot before being drained.
-    CHROME_ROWS.saturating_add(input_h).saturating_add(1)
+    let active_h: u32 = app
+        .messages
+        .iter()
+        .map(|msg| {
+            let cell = crate::history::cell_from_chat_message(msg);
+            u32::from(cell.desired_height(width))
+        })
+        .sum();
+    // Always reserve at least one row for the content area so the layout
+    // splitter has something to anchor against when no active cell exists.
+    let active_h = u16::try_from(active_h).unwrap_or(u16::MAX).max(1);
+    CHROME_ROWS.saturating_add(input_h).saturating_add(active_h)
 }
 
 /// Decide whether the welcome panel should display on this start.

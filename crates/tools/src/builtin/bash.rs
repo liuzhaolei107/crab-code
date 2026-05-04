@@ -207,12 +207,9 @@ impl Tool for BashTool {
     }
 
     fn format_use_summary(&self, input: &Value) -> Option<String> {
-        // userFacingName="Run", message = truncated command (max 160 chars).
-        // Commands can contain multi-byte UTF-8 (paths, grep patterns, echo args);
-        // truncate_chars counts codepoints to avoid panics on non-ASCII input.
         let cmd = input["command"].as_str()?;
         let display = truncate_chars(cmd, 160, "…");
-        Some(format!("Run ({display})"))
+        Some(format!("Bash({display})"))
     }
 
     fn format_result(&self, output: &ToolOutput) -> Option<ToolDisplayResult> {
@@ -255,7 +252,7 @@ impl Tool for BashTool {
     fn format_rejected_summary(&self, input: &Value) -> Option<String> {
         input["command"]
             .as_str()
-            .map(|cmd| format!("Run rejected ({cmd})"))
+            .map(|cmd| format!("Bash rejected ({cmd})"))
     }
 
     fn format_rejected(&self, input: &Value) -> Option<ToolDisplayResult> {

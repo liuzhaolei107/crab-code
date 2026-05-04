@@ -1,4 +1,4 @@
-● Run find . -name '*.rs'
+● Run(find . -name '*.rs')
   ⎿  ./crates/foo/src/file_0.rs
      ./crates/foo/src/file_1.rs
      ./crates/foo/src/file_2.rs
