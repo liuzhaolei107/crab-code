@@ -201,6 +201,34 @@ impl App {
         }
     }
 
+    /// Commit any newly-completed lines from the streaming assistant tail
+    /// into `pending_history` so they flow into terminal scrollback line by
+    /// line instead of being repainted in the viewport on every frame.
+    pub fn flush_streaming_assistant_lines(&mut self, width: u16) {
+        if width == 0 {
+            return;
+        }
+        let Some(ChatMessage::Assistant {
+            text,
+            committed_lines,
+        }) = self.messages.last_mut()
+        else {
+            return;
+        };
+        if !text.contains('\n') {
+            return;
+        }
+        let cell = crate::history::cells::AssistantCell::new(text.clone());
+        let new_lines = cell.render_committed_lines(width, *committed_lines);
+        if new_lines.is_empty() {
+            return;
+        }
+        let count = new_lines.len();
+        self.pending_history.extend(new_lines);
+        *committed_lines = committed_lines.saturating_add(count);
+        self.virtual_list.invalidate();
+    }
+
     /// Drain finalized prefix messages into `pending_history` so the next
     /// render pass can flush them above the inline viewport. Stops at the
     /// first non-finalized cell to keep streaming output anchored to the
@@ -286,7 +314,10 @@ impl App {
             let text = msg.text();
             let chat_msg = match msg.role {
                 crab_core::message::Role::User => ChatMessage::User { text },
-                crab_core::message::Role::Assistant => ChatMessage::Assistant { text },
+                crab_core::message::Role::Assistant => ChatMessage::Assistant {
+                    text,
+                    committed_lines: 0,
+                },
                 crab_core::message::Role::System => ChatMessage::System {
                     text,
                     kind: crate::history::cells::SystemKind::Info,
@@ -629,7 +660,7 @@ mod tests {
     fn messages_contain(messages: &[ChatMessage], needle: &str) -> bool {
         messages.iter().any(|m| match m {
             ChatMessage::User { text }
-            | ChatMessage::Assistant { text }
+            | ChatMessage::Assistant { text, .. }
             | ChatMessage::System { text, .. } => text.contains(needle),
             ChatMessage::ToolUse { name, .. } => name.contains(needle),
             ChatMessage::ToolResult {
@@ -1801,7 +1832,7 @@ mod tests {
         assert_eq!(app.content_buffer, "Hello");
         assert_eq!(app.messages.len(), 1);
         match app.messages.last().unwrap() {
-            ChatMessage::Assistant { text } => assert_eq!(text, "Hello"),
+            ChatMessage::Assistant { text, .. } => assert_eq!(text, "Hello"),
             other => panic!("expected Assistant, got {other:?}"),
         }
 
@@ -1811,7 +1842,7 @@ mod tests {
         assert_eq!(app.content_buffer, "Hello, world!\n");
         assert_eq!(app.messages.len(), 1);
         match app.messages.last().unwrap() {
-            ChatMessage::Assistant { text } => assert_eq!(text, "Hello, world!\n"),
+            ChatMessage::Assistant { text, .. } => assert_eq!(text, "Hello, world!\n"),
             other => panic!("expected Assistant, got {other:?}"),
         }
 
@@ -1898,6 +1929,7 @@ mod tests {
         });
         app.messages.push(ChatMessage::User { text: "hi".into() });
         app.messages.push(ChatMessage::Assistant {
+            committed_lines: 0,
             text: "hello".into(),
         });
         app.reset_for_new_session();

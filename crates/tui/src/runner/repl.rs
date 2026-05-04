@@ -65,7 +65,9 @@ pub(super) async fn run_loop(
     let mut sigcont_stream = SigcontStream::new()?;
 
     loop {
-        app.drain_finalized_into_pending(terminal.size()?.width.max(1));
+        let width = terminal.size()?.width.max(1);
+        app.drain_finalized_into_pending(width);
+        app.flush_streaming_assistant_lines(width);
         if !app.pending_history.is_empty() {
             let lines = app.pending_history.take();
             crate::insert_history::insert_history_lines_with_mode(terminal, &lines, insert_mode)?;

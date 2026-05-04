@@ -12,7 +12,10 @@ pub fn cell_from_chat_message(msg: &crate::app::ChatMessage) -> Box<dyn HistoryC
 
     match msg {
         ChatMessage::User { text } => Box::new(UserCell::new(text.clone())),
-        ChatMessage::Assistant { text } => Box::new(AssistantCell::new(text.clone())),
+        ChatMessage::Assistant {
+            text,
+            committed_lines,
+        } => Box::new(AssistantCell::with_skip(text.clone(), *committed_lines)),
         ChatMessage::ToolUse {
             name,
             summary,
@@ -112,7 +115,10 @@ mod tests {
     fn adapter_covers_all_variants() {
         let cases = [
             ChatMessage::User { text: "u".into() },
-            ChatMessage::Assistant { text: "a".into() },
+            ChatMessage::Assistant {
+                text: "a".into(),
+                committed_lines: 0,
+            },
             ChatMessage::ToolUse {
                 name: "read".into(),
                 summary: None,

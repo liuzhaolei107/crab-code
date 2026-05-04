@@ -252,7 +252,7 @@ pub(super) async fn apply_command_effect(
 
         CommandEffect::CopyLast => {
             let last = app.messages.iter().rev().find_map(|m| match m {
-                crate::app::ChatMessage::Assistant { text } => Some(text.clone()),
+                crate::app::ChatMessage::Assistant { text, .. } => Some(text.clone()),
                 _ => None,
             });
             match last {

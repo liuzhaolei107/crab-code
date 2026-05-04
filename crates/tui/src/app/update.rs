@@ -41,7 +41,7 @@ impl App {
     pub(super) fn message_text(msg: &ChatMessage) -> Option<String> {
         match msg {
             ChatMessage::User { text }
-            | ChatMessage::Assistant { text }
+            | ChatMessage::Assistant { text, .. }
             | ChatMessage::System { text, .. }
             | ChatMessage::Thinking { text, .. } => Some(text.clone()),
             ChatMessage::ToolResult { output, .. } => Some(output.clone()),
@@ -966,11 +966,12 @@ impl App {
                         }
                     }
                 }
-                if let Some(ChatMessage::Assistant { text }) = self.messages.last_mut() {
+                if let Some(ChatMessage::Assistant { text, .. }) = self.messages.last_mut() {
                     text.push_str(&delta);
                 } else {
                     self.messages.push(ChatMessage::Assistant {
                         text: delta.clone(),
+                        committed_lines: 0,
                     });
                 }
                 // Mirror the delta into `content_buffer` so the legacy
@@ -1324,17 +1325,25 @@ impl App {
                 AppAction::None
             }
             AppEvent::ThinkingAppend(delta) => {
+                // Match Claude Code / codex: thinking deltas update the
+                // transient spinner/status indicator only and never enter
+                // the persistent transcript. Set CRAB_SHOW_THINKING=1 to
+                // opt back into the inline ThinkingCell view.
                 if !matches!(self.thinking, ThinkingState::Thinking { .. }) {
                     self.set_thinking(true);
                 }
-                if let Some(ChatMessage::Thinking { text, .. }) = self.messages.last_mut() {
-                    text.push_str(&delta);
-                } else {
-                    self.messages.push(ChatMessage::Thinking {
-                        text: delta,
-                        collapsed: true,
-                        duration: None,
-                    });
+                if std::env::var("CRAB_SHOW_THINKING")
+                    .is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false" | "no" | "off"))
+                {
+                    if let Some(ChatMessage::Thinking { text, .. }) = self.messages.last_mut() {
+                        text.push_str(&delta);
+                    } else {
+                        self.messages.push(ChatMessage::Thinking {
+                            text: delta,
+                            collapsed: true,
+                            duration: None,
+                        });
+                    }
                 }
                 AppAction::None
             }

@@ -56,7 +56,7 @@ impl GlobalSearchOverlay {
     fn message_text(msg: &ChatMessage) -> String {
         match msg {
             ChatMessage::User { text }
-            | ChatMessage::Assistant { text }
+            | ChatMessage::Assistant { text, .. }
             | ChatMessage::System { text, .. }
             | ChatMessage::Thinking { text, .. } => text.clone(),
             ChatMessage::ToolUse { name, .. } => name.clone(),
@@ -299,6 +299,7 @@ mod tests {
                 text: "hello world".into(),
             },
             ChatMessage::Assistant {
+                committed_lines: 0,
                 text: "goodbye world".into(),
             },
         ]);
@@ -334,6 +335,7 @@ mod tests {
                 text: "the build failed in crab-tui".into(),
             },
             ChatMessage::Assistant {
+                committed_lines: 0,
                 text: "checking cargo build artifacts".into(),
             },
             ChatMessage::System {
@@ -355,7 +357,7 @@ mod tests {
         // message is not the top result.
         let top_text = match &search.messages[search.results[0].message_idx] {
             ChatMessage::User { text }
-            | ChatMessage::Assistant { text }
+            | ChatMessage::Assistant { text, .. }
             | ChatMessage::System { text, .. } => text.clone(),
             _ => panic!("unexpected top message variant"),
         };
@@ -389,6 +391,7 @@ mod tests {
                 text: "alpha".into(),
             },
             ChatMessage::Assistant {
+                committed_lines: 0,
                 text: "beta".into(),
             },
             ChatMessage::System {
@@ -411,6 +414,7 @@ mod tests {
                 text: "hello world".into(),
             },
             ChatMessage::Assistant {
+                committed_lines: 0,
                 text: "goodbye world".into(),
             },
         ]);

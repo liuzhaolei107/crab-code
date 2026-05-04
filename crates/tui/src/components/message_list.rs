@@ -110,6 +110,7 @@ mod tests {
         let msgs = vec![
             ChatMessage::User { text: "hi".into() },
             ChatMessage::Assistant {
+                committed_lines: 0,
                 text: "**bold**".into(),
             },
             ChatMessage::ToolUse {

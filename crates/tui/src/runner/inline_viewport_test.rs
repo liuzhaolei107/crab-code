@@ -69,6 +69,7 @@ fn streaming_tail_stays_in_viewport() {
     // the tail anchored to the viewport.
     app.state = AppState::Processing;
     app.messages.push(ChatMessage::Assistant {
+        committed_lines: 0,
         text: "thinking...".into(),
     });
 

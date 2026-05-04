@@ -26,12 +26,24 @@ thread_local! {
 #[derive(Debug, Clone)]
 pub struct AssistantCell {
     text: String,
+    pub(crate) skip_prefix: usize,
 }
 
 impl AssistantCell {
     #[must_use]
     pub fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into() }
+        Self {
+            text: text.into(),
+            skip_prefix: 0,
+        }
+    }
+
+    #[must_use]
+    pub fn with_skip(text: impl Into<String>, skip_prefix: usize) -> Self {
+        Self {
+            text: text.into(),
+            skip_prefix,
+        }
     }
 
     #[must_use]
@@ -39,48 +51,71 @@ impl AssistantCell {
         &self.text
     }
 
-    /// Append a streaming token. Clears trailing partial lines so that
-    /// incremental renders stay coherent.
     pub fn push_delta(&mut self, delta: &str) {
         self.text.push_str(delta);
     }
+
+    /// Render the markdown body up to the last newline and return any lines
+    /// beyond `committed`. The cell still owns the full text so subsequent
+    /// frames can re-render the streaming tail.
+    pub fn render_committed_lines(&self, width: u16, committed: usize) -> Vec<Line<'static>> {
+        let body = match self.text.rfind('\n') {
+            Some(idx) => &self.text[..=idx],
+            None => return Vec::new(),
+        };
+        let rendered = render_with_bullet(body, width);
+        if rendered.len() <= committed {
+            return Vec::new();
+        }
+        rendered[committed..].to_vec()
+    }
+
+    /// Render the entire current text (including any unfinished tail) and
+    /// return its line count — used by callers that need to know how many
+    /// lines the cell occupies right now.
+    pub fn rendered_line_count(&self, width: u16) -> usize {
+        render_with_bullet(&self.text, width).len()
+    }
+}
+
+fn render_with_bullet(text: &str, width: u16) -> Vec<Line<'static>> {
+    let clean = strip_trailing_tool_json(text);
+    if clean.is_empty() {
+        return Vec::new();
+    }
+    let theme = theme::current();
+    let highlighter = SyntaxHighlighter::new();
+    let prefix_width = BULLET_PREFIX.chars().count() as u16;
+    let inner_width = width.saturating_sub(prefix_width).max(1);
+    let md_lines: Vec<Line<'static>> = SHARED_MD_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        (*cache.render(&clean, &theme, &highlighter, inner_width)).clone()
+    });
+    let bullet_style = Style::default().fg(Color::DarkGray);
+    let cont_style = Style::default().fg(Color::DarkGray);
+    let mut out: Vec<Line<'static>> = Vec::with_capacity(md_lines.len() + 1);
+    for (idx, line) in md_lines.into_iter().enumerate() {
+        let mut spans: Vec<Span<'static>> = Vec::with_capacity(line.spans.len() + 1);
+        if idx == 0 {
+            spans.push(Span::styled(BULLET_PREFIX, bullet_style));
+        } else {
+            spans.push(Span::styled(CONT_LINE_PREFIX, cont_style));
+        }
+        spans.extend(line.spans);
+        out.push(Line::from(spans));
+    }
+    out.push(Line::default());
+    out
 }
 
 impl HistoryCell for AssistantCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        if self.text.is_empty() {
+        let mut rendered = render_with_bullet(&self.text, width);
+        if self.skip_prefix >= rendered.len() {
             return Vec::new();
         }
-        let clean = strip_trailing_tool_json(&self.text);
-        if clean.is_empty() {
-            return Vec::new();
-        }
-
-        let theme = theme::current();
-        let highlighter = SyntaxHighlighter::new();
-        let prefix_width = BULLET_PREFIX.chars().count() as u16;
-        let inner_width = width.saturating_sub(prefix_width).max(1);
-
-        let md_lines: Vec<Line<'static>> = SHARED_MD_CACHE.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            (*cache.render(&clean, &theme, &highlighter, inner_width)).clone()
-        });
-
-        let bullet_style = Style::default().fg(Color::DarkGray);
-        let cont_style = Style::default().fg(Color::DarkGray);
-        let mut out: Vec<Line<'static>> = Vec::with_capacity(md_lines.len() + 1);
-        for (idx, line) in md_lines.into_iter().enumerate() {
-            let mut spans: Vec<Span<'static>> = Vec::with_capacity(line.spans.len() + 1);
-            if idx == 0 {
-                spans.push(Span::styled(BULLET_PREFIX, bullet_style));
-            } else {
-                spans.push(Span::styled(CONT_LINE_PREFIX, cont_style));
-            }
-            spans.extend(line.spans);
-            out.push(Line::from(spans));
-        }
-        out.push(Line::default());
-        out
+        rendered.drain(..self.skip_prefix);
+        rendered
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

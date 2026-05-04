@@ -143,8 +143,14 @@ pub enum ChatMessage {
     /// User input — rendered as `❯ {text}`.
     User { text: String },
     /// Assistant text response — rendered with `●` prefix + markdown.
-    /// `text` is appended incrementally during streaming.
-    Assistant { text: String },
+    /// `text` is appended incrementally during streaming. `committed_lines`
+    /// counts how many leading display lines have already been flushed into
+    /// terminal scrollback so streaming output can flow line-by-line instead
+    /// of repainting the entire turn each frame.
+    Assistant {
+        text: String,
+        committed_lines: usize,
+    },
     /// Tool invocation start — rendered as `● {summary}` or `● {name}`.
     ToolUse {
         name: String,
