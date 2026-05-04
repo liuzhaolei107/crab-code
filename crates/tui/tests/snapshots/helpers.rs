@@ -65,6 +65,8 @@ pub fn assert_snapshot(name: &str, actual: &str) {
         return;
     }
     let expected = fs::read_to_string(&path).expect("read existing snapshot");
+    // Normalize CRLF -> LF so Windows checkouts with autocrlf=true still match.
+    let expected = expected.replace("\r\n", "\n");
     let expected = expected.trim_end().to_string();
     let actual_trim = actual.trim_end().to_string();
     if expected != actual_trim {
