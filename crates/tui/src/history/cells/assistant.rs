@@ -63,7 +63,13 @@ impl AssistantCell {
             Some(idx) => &self.text[..=idx],
             None => return Vec::new(),
         };
-        let rendered = render_with_bullet(body, width);
+        let mut rendered = render_with_bullet_no_trailing_blank(body, width);
+        // Strip the synthetic blank that the renderer appends so a freshly
+        // committed line does not occupy an extra row only to be reclaimed
+        // when the next chunk arrives.
+        while rendered.last().is_some_and(line_is_blank) {
+            rendered.pop();
+        }
         if rendered.len() <= committed {
             return Vec::new();
         }
@@ -76,6 +82,20 @@ impl AssistantCell {
     pub fn rendered_line_count(&self, width: u16) -> usize {
         render_with_bullet(&self.text, width).len()
     }
+}
+
+fn line_is_blank(line: &Line<'static>) -> bool {
+    line.spans
+        .iter()
+        .all(|s| s.content.chars().all(|c| c == ' '))
+}
+
+fn render_with_bullet_no_trailing_blank(text: &str, width: u16) -> Vec<Line<'static>> {
+    let mut out = render_with_bullet(text, width);
+    if out.last().is_some_and(line_is_blank) {
+        out.pop();
+    }
+    out
 }
 
 fn render_with_bullet(text: &str, width: u16) -> Vec<Line<'static>> {

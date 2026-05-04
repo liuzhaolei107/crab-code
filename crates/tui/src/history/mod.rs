@@ -15,10 +15,12 @@ mod adapter;
 mod cell;
 pub mod cells;
 pub mod grouping;
+mod paint;
 pub mod pending;
 
 pub use adapter::cell_from_chat_message;
 pub use cell::HistoryCell;
 pub use cells::{AssistantCell, SystemCell, ToolCallCell, ToolResultCell, UserCell};
 pub use grouping::group_messages;
+pub use paint::{messages_total_lines, paint_messages_bottom_up};
 pub use pending::PendingHistory;

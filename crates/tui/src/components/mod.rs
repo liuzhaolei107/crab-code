@@ -53,4 +53,3 @@ pub mod tool_output;
 pub mod transcript_overlay;
 pub mod trust_dialog;
 pub mod update_banner;
-pub mod virtual_list;

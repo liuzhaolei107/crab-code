@@ -30,7 +30,7 @@ use crate::components::search::{self, SearchState};
 use crate::components::session_sidebar::SessionSidebar;
 use crate::components::spinner::Spinner;
 use crate::components::tool_output::ToolOutputList;
-use crate::components::virtual_list::{ViewportState, VirtualMessage, VirtualMessageList};
+
 use crate::keybindings::Keybindings;
 use crate::layout::AppLayout;
 use crate::traits::Renderable;
@@ -133,11 +133,8 @@ pub struct App {
     pub notifications: NotificationManager,
     /// When agent processing started (for terminal notification after timeout).
     pub(super) processing_start: Option<Instant>,
-    /// Virtualized message list — caches laid-out lines per `(id, width)`.
-    pub(super) virtual_list: VirtualMessageList,
-    /// Monotonic counter for assigning stable IDs to `VirtualMessage`s.
-    pub(super) next_msg_id: u64,
-    /// Last render width — used to invalidate the virtual list cache on resize.
+    /// Last render width — used by callers that need to know the width of
+    /// the most recently painted content area.
     pub(super) last_render_width: u16,
     /// Lines drained from finalized cells, waiting to be flushed into the
     /// terminal's native scrollback by the next render pass.
@@ -194,8 +191,6 @@ impl App {
             vim: VimHandler::new(),
             notifications: NotificationManager::new(),
             processing_start: None,
-            virtual_list: VirtualMessageList::new(),
-            next_msg_id: 0,
             last_render_width: 0,
             pending_history: crate::history::PendingHistory::new(),
         }
@@ -226,7 +221,6 @@ impl App {
         let count = new_lines.len();
         self.pending_history.extend(new_lines);
         *committed_lines = committed_lines.saturating_add(count);
-        self.virtual_list.invalidate();
     }
 
     /// Drain finalized prefix messages into `pending_history` so the next
@@ -263,7 +257,6 @@ impl App {
         }
         // Re-render of remaining messages must invalidate any cached layout
         // bound to the prior message indices.
-        self.virtual_list.invalidate();
     }
 
     /// Set the working directory (displayed in header).
@@ -301,9 +294,6 @@ impl App {
         self.scroll_anchor = None;
         self.unseen_message_count = 0;
         self.command_queue.clear();
-        self.virtual_list.set_streaming(false);
-        self.virtual_list.invalidate();
-        self.next_msg_id = 0;
     }
 
     /// Rebuild the message list from a loaded conversation.
@@ -349,30 +339,8 @@ impl App {
             Widget::render(&self.session_sidebar, sidebar_area, buf);
         }
 
-        // Content area — virtualized message list with LRU cache
-        if layout.content.width != self.last_render_width {
-            self.virtual_list.invalidate();
-            self.last_render_width = layout.content.width;
-        }
-        let is_streaming = matches!(self.state, AppState::Processing | AppState::Confirming);
-        let vm: Vec<VirtualMessage> = self
-            .messages
-            .iter()
-            .enumerate()
-            .map(|(i, msg)| {
-                let cell = crate::history::cell_from_chat_message(msg);
-                let lines = cell.display_lines(layout.content.width);
-                let mut vm = VirtualMessage::new(i as u64, lines);
-                if is_streaming && i + 1 == self.messages.len() {
-                    vm = vm.streaming();
-                }
-                vm
-            })
-            .collect();
-        let vp = ViewportState {
-            scroll_offset: self.content_scroll,
-        };
-        self.virtual_list.render(&vm, vp, layout.content, buf);
+        self.last_render_width = layout.content.width;
+        crate::history::paint_messages_bottom_up(&self.messages, layout.content, buf);
 
         if self.spinner.is_active() {
             Widget::render(&self.spinner, layout.status, buf);

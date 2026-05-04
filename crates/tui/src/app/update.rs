@@ -75,7 +75,6 @@ impl App {
         let text = self.command_queue.pop()?;
         self.messages.push(ChatMessage::User { text: text.clone() });
         self.state = AppState::Processing;
-        self.virtual_list.set_streaming(true);
         self.spinner.start_with_random_verb();
         Some(text)
     }
@@ -85,7 +84,6 @@ impl App {
         for msg in self.messages.iter_mut().rev() {
             if let ChatMessage::ToolResult { collapsed, .. } = msg {
                 *collapsed = !*collapsed;
-                self.virtual_list.invalidate();
                 return;
             }
         }
@@ -222,7 +220,6 @@ impl App {
                         let rejected_ids = self.approval_queue.reject_all();
                         self.spinner.stop();
                         self.state = AppState::Idle;
-                        self.virtual_list.set_streaming(false);
                         let _ = writeln!(self.content_buffer, "\n[interrupted]");
                         self.messages.push(ChatMessage::System {
                             text: "Interrupted \u{00b7} What should Claude do instead?".into(),
@@ -233,7 +230,6 @@ impl App {
                     if self.state == AppState::Processing {
                         self.spinner.stop();
                         self.state = AppState::Idle;
-                        self.virtual_list.set_streaming(false);
                         let _ = writeln!(self.content_buffer, "\n[interrupted]");
                         self.messages.push(ChatMessage::System {
                             text: "Interrupted \u{00b7} What should Claude do instead?".into(),
@@ -253,7 +249,8 @@ impl App {
                 }
                 Action::ScrollUp if self.state != AppState::Confirming => {
                     self.content_scroll = self.content_scroll.saturating_add(10);
-                    let total = self.virtual_list.last_total_lines();
+                    let width = self.last_render_width.max(1);
+                    let total = crate::history::messages_total_lines(&self.messages, width);
                     self.scroll_anchor = Some(total.saturating_sub(self.content_scroll));
                     return AppAction::None;
                 }
@@ -355,7 +352,6 @@ impl App {
                     if self.state == AppState::Processing {
                         self.spinner.stop();
                         self.state = AppState::Idle;
-                        self.virtual_list.set_streaming(false);
                         self.messages.push(ChatMessage::System {
                             text: "[agents killed]".into(),
                             kind: SystemKind::Info,
@@ -610,7 +606,6 @@ impl App {
                         self.input_history_list.push(text.clone());
                         self.messages.push(ChatMessage::User { text: text.clone() });
                         self.state = AppState::Processing;
-                        self.virtual_list.set_streaming(true);
                         self.spinner.start_with_random_verb();
                         return AppAction::Submit(text);
                     }
@@ -626,7 +621,6 @@ impl App {
                                 self.input_history_list.push(text.clone());
                                 self.messages.push(ChatMessage::User { text: text.clone() });
                                 self.state = AppState::Processing;
-                                self.virtual_list.set_streaming(true);
                                 self.spinner.start_with_random_verb();
                                 return AppAction::Submit(text);
                             }
@@ -775,7 +769,6 @@ impl App {
             }
             if self.approval_queue.is_empty() {
                 self.state = AppState::Processing;
-                self.virtual_list.set_streaming(true);
             }
             return AppAction::PermissionResponse {
                 request_id,
@@ -1049,7 +1042,6 @@ impl App {
                     *tail_output = trim_to_last_lines(tail_output, 20);
                     *total_lines = total_lines.saturating_add(added_lines);
                     *elapsed_secs = started_at.map_or(*elapsed_secs, |t| t.elapsed().as_secs_f64());
-                    self.virtual_list.invalidate();
                     return AppAction::None;
                 }
 
@@ -1105,7 +1097,6 @@ impl App {
                     if let Some(last) = self.messages.last_mut() {
                         *last = result_msg;
                     }
-                    self.virtual_list.invalidate();
                 } else {
                     self.messages.push(result_msg);
                 }
@@ -1149,7 +1140,6 @@ impl App {
                 self.spinner.stop();
                 self.active_tools.clear();
                 self.state = AppState::Idle;
-                self.virtual_list.set_streaming(false);
                 self.total_input_tokens += input_tokens;
                 self.total_output_tokens += output_tokens;
                 if let Some(start) = self.processing_start.take()
@@ -1163,7 +1153,6 @@ impl App {
                 self.spinner.stop();
                 self.active_tools.clear();
                 self.state = AppState::Idle;
-                self.virtual_list.set_streaming(false);
                 self.processing_start = None;
                 let (text, kind) = crate::error_messages::classify_error(&message);
                 self.messages.push(ChatMessage::System { text, kind });
@@ -1203,7 +1192,8 @@ impl App {
             }
             AppEvent::ScrollUp(n) => {
                 self.content_scroll = self.content_scroll.saturating_add(n as usize);
-                let total = self.virtual_list.last_total_lines();
+                let width = self.last_render_width.max(1);
+                let total = crate::history::messages_total_lines(&self.messages, width);
                 self.scroll_anchor = Some(total.saturating_sub(self.content_scroll));
                 AppAction::None
             }
