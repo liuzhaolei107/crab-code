@@ -150,6 +150,11 @@ pub enum ChatMessage {
     Assistant {
         text: String,
         committed_lines: usize,
+        /// `true` while the assistant turn is still receiving content
+        /// deltas. Cleared on stream end. Drain skips streaming cells so
+        /// their in-progress text is not committed to scrollback before
+        /// the per-line streaming flush has finished with it.
+        streaming: bool,
     },
     /// Tool invocation start — rendered as `● {summary}` or `● {name}`.
     ToolUse {

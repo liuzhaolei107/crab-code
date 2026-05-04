@@ -27,6 +27,7 @@ thread_local! {
 pub struct AssistantCell {
     text: String,
     pub(crate) skip_prefix: usize,
+    pub(crate) streaming: bool,
 }
 
 impl AssistantCell {
@@ -35,6 +36,7 @@ impl AssistantCell {
         Self {
             text: text.into(),
             skip_prefix: 0,
+            streaming: false,
         }
     }
 
@@ -43,7 +45,14 @@ impl AssistantCell {
         Self {
             text: text.into(),
             skip_prefix,
+            streaming: false,
         }
+    }
+
+    #[must_use]
+    pub fn streaming(mut self, streaming: bool) -> Self {
+        self.streaming = streaming;
+        self
     }
 
     #[must_use]
@@ -147,6 +156,10 @@ impl HistoryCell for AssistantCell {
         }
         rendered.drain(..self.skip_prefix);
         rendered
+    }
+
+    fn is_finalized(&self) -> bool {
+        !self.streaming
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

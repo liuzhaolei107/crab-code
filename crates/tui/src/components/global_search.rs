@@ -299,6 +299,7 @@ mod tests {
                 text: "hello world".into(),
             },
             ChatMessage::Assistant {
+                streaming: false,
                 committed_lines: 0,
                 text: "goodbye world".into(),
             },
@@ -335,6 +336,7 @@ mod tests {
                 text: "the build failed in crab-tui".into(),
             },
             ChatMessage::Assistant {
+                streaming: false,
                 committed_lines: 0,
                 text: "checking cargo build artifacts".into(),
             },
@@ -391,6 +393,7 @@ mod tests {
                 text: "alpha".into(),
             },
             ChatMessage::Assistant {
+                streaming: false,
                 committed_lines: 0,
                 text: "beta".into(),
             },
@@ -414,6 +417,7 @@ mod tests {
                 text: "hello world".into(),
             },
             ChatMessage::Assistant {
+                streaming: false,
                 committed_lines: 0,
                 text: "goodbye world".into(),
             },

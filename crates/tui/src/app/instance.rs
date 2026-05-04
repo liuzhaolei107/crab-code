@@ -196,17 +196,41 @@ impl App {
         }
     }
 
-    /// Commit any newly-completed lines from the streaming assistant tail
-    /// into `pending_history` so they flow into terminal scrollback line by
-    /// line instead of being repainted in the viewport on every frame.
+    /// Mark every assistant cell as no-longer-streaming. Called at stream
+    /// end so subsequent drains can flush them whole into scrollback.
+    pub fn clear_streaming_assistant_flag(&mut self) {
+        for msg in self.messages.iter_mut().rev() {
+            if let ChatMessage::Assistant { streaming, .. } = msg {
+                *streaming = false;
+                break;
+            }
+        }
+    }
+
+    /// Commit any newly-completed lines from the most recent streaming
+    /// assistant cell into `pending_history` so streaming output flows into
+    /// terminal scrollback line by line instead of being repainted in the
+    /// viewport on every frame.
     pub fn flush_streaming_assistant_lines(&mut self, width: u16) {
         if width == 0 {
             return;
         }
-        let Some(ChatMessage::Assistant {
+        let Some(idx) = self.messages.iter().rposition(|m| {
+            matches!(
+                m,
+                ChatMessage::Assistant {
+                    streaming: true,
+                    ..
+                }
+            )
+        }) else {
+            return;
+        };
+        let ChatMessage::Assistant {
             text,
             committed_lines,
-        }) = self.messages.last_mut()
+            ..
+        } = &mut self.messages[idx]
         else {
             return;
         };
@@ -305,6 +329,7 @@ impl App {
             let chat_msg = match msg.role {
                 crab_core::message::Role::User => ChatMessage::User { text },
                 crab_core::message::Role::Assistant => ChatMessage::Assistant {
+                    streaming: false,
                     text,
                     committed_lines: 0,
                 },
@@ -1897,6 +1922,7 @@ mod tests {
         });
         app.messages.push(ChatMessage::User { text: "hi".into() });
         app.messages.push(ChatMessage::Assistant {
+            streaming: false,
             committed_lines: 0,
             text: "hello".into(),
         });

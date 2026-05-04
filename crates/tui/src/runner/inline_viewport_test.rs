@@ -69,6 +69,7 @@ fn streaming_tail_stays_in_viewport() {
     // the tail anchored to the viewport.
     app.state = AppState::Processing;
     app.messages.push(ChatMessage::Assistant {
+        streaming: false,
         committed_lines: 0,
         text: "thinking...".into(),
     });
@@ -126,6 +127,7 @@ fn streaming_assistant_commits_complete_lines_only() {
     let mut app = App::new("test-model");
     app.state = AppState::Processing;
     app.messages.push(ChatMessage::Assistant {
+        streaming: true,
         text: "first paragraph done.\n".into(),
         committed_lines: 0,
     });
@@ -163,6 +165,7 @@ fn streaming_holds_committed_lines_while_code_fence_open() {
     let mut app = App::new("test-model");
     app.state = AppState::Processing;
     app.messages.push(ChatMessage::Assistant {
+        streaming: true,
         text: "intro line\n```rust\nfn main() {\n".into(),
         committed_lines: 0,
     });
@@ -180,6 +183,40 @@ fn streaming_holds_committed_lines_while_code_fence_open() {
     assert!(
         !app.pending_history.is_empty(),
         "once the fence closes, the whole block becomes committable"
+    );
+}
+
+#[test]
+fn streaming_assistant_not_drained_when_tool_calls_follow() {
+    let width: u16 = 60;
+    let mut app = App::new("test-model");
+    app.state = AppState::Processing;
+    app.messages.push(ChatMessage::User {
+        text: "do something".into(),
+    });
+    app.messages.push(ChatMessage::Assistant {
+        text: "I'll start by checking the status…\n".into(),
+        committed_lines: 0,
+        streaming: true,
+    });
+    app.messages.push(ChatMessage::ToolUse {
+        name: "bash".into(),
+        summary: Some("Bash(ls)".into()),
+        color: None,
+        is_read_only: true,
+        status: crate::app::ToolCallStatus::Running,
+        collapsed_label: None,
+    });
+
+    app.drain_finalized_into_pending(width);
+    let count = app
+        .messages
+        .iter()
+        .filter(|m| matches!(m, ChatMessage::Assistant { .. }))
+        .count();
+    assert_eq!(
+        count, 1,
+        "streaming assistant must survive drain even when tool cells follow it"
     );
 }
 

@@ -959,12 +959,17 @@ impl App {
                         }
                     }
                 }
-                if let Some(ChatMessage::Assistant { text, .. }) = self.messages.last_mut() {
+                if let Some(ChatMessage::Assistant {
+                    text, streaming, ..
+                }) = self.messages.last_mut()
+                {
                     text.push_str(&delta);
+                    *streaming = true;
                 } else {
                     self.messages.push(ChatMessage::Assistant {
                         text: delta.clone(),
                         committed_lines: 0,
+                        streaming: true,
                     });
                 }
                 // Mirror the delta into `content_buffer` so the legacy
@@ -1140,6 +1145,7 @@ impl App {
                 self.spinner.stop();
                 self.active_tools.clear();
                 self.state = AppState::Idle;
+                self.clear_streaming_assistant_flag();
                 self.total_input_tokens += input_tokens;
                 self.total_output_tokens += output_tokens;
                 if let Some(start) = self.processing_start.take()
@@ -1153,6 +1159,7 @@ impl App {
                 self.spinner.stop();
                 self.active_tools.clear();
                 self.state = AppState::Idle;
+                self.clear_streaming_assistant_flag();
                 self.processing_start = None;
                 let (text, kind) = crate::error_messages::classify_error(&message);
                 self.messages.push(ChatMessage::System { text, kind });

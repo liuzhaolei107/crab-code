@@ -15,7 +15,10 @@ pub fn cell_from_chat_message(msg: &crate::app::ChatMessage) -> Box<dyn HistoryC
         ChatMessage::Assistant {
             text,
             committed_lines,
-        } => Box::new(AssistantCell::with_skip(text.clone(), *committed_lines)),
+            streaming,
+        } => {
+            Box::new(AssistantCell::with_skip(text.clone(), *committed_lines).streaming(*streaming))
+        }
         ChatMessage::ToolUse {
             name,
             summary,
@@ -116,6 +119,7 @@ mod tests {
         let cases = [
             ChatMessage::User { text: "u".into() },
             ChatMessage::Assistant {
+                streaming: false,
                 text: "a".into(),
                 committed_lines: 0,
             },
