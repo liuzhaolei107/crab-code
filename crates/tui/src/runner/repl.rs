@@ -65,15 +65,12 @@ pub(super) async fn run_loop(
     let mut sigcont_stream = SigcontStream::new()?;
 
     loop {
-        let viewport = compute_inline_viewport(terminal, app)?;
-        terminal.set_viewport_area(viewport);
-        // Drain any newly-finalized cells into the pending-history queue
-        // and flush them above the viewport before drawing this frame.
-        app.drain_finalized_into_pending(viewport.width);
+        app.drain_finalized_into_pending(terminal.size()?.width.max(1));
         if !app.pending_history.is_empty() {
             let lines = app.pending_history.take();
             crate::insert_history::insert_history_lines_with_mode(terminal, &lines, insert_mode)?;
         }
+        let _viewport = compute_inline_viewport(terminal, app)?;
         terminal.draw(|frame| {
             app.render(frame.area(), frame.buffer_mut());
         })?;
@@ -431,12 +428,12 @@ pub(super) async fn run_loop(
     Ok(())
 }
 
-/// Compute the inline-viewport rect anchored to the bottom of the screen.
+/// Resize the inline viewport in place. Keeps viewport.y stable from frame
+/// to frame; only when the desired height would push the bottom past the
+/// screen edge do we scroll the rows above the viewport upward (so they
+/// land in native scrollback) and shift y up by the same amount.
 ///
-/// The TUI lives in the bottom `desired_height` rows of the terminal and
-/// leaves the rest of the screen for native scrollback content. When the
-/// inline area would overflow the bottom edge, we slide it up using the
-/// terminal's scroll region so existing content above is preserved.
+/// Returns the new viewport rect. Caller writes pending history above it.
 fn compute_inline_viewport<B>(terminal: &mut Terminal<B>, app: &App) -> io::Result<Rect>
 where
     B: ratatui::backend::Backend<Error = io::Error> + std::io::Write,
@@ -444,29 +441,32 @@ where
     let size = terminal.size()?;
     let width = size.width.max(1);
     let height = size.height.max(1);
-
-    // Compute the desired inline-viewport height. This is the minimum
-    // contiguous space the TUI needs to render its active widgets without
-    // truncation. We do not include scrolled-off history; that lives in
-    // terminal scrollback after Phase C wires up the flush.
     let desired = compute_desired_height(app, width).clamp(1, height);
 
-    // Anchor to the bottom. If we overflow the screen, slide up using the
-    // terminal's scroll region so existing content above the viewport gets
-    // pushed into native scrollback rather than being clobbered.
-    let mut rect = Rect::new(0, height.saturating_sub(desired), width, desired);
-    let prev_top = terminal.viewport_area.top();
-    if prev_top != 0 && rect.top() < prev_top {
-        let scroll_by = prev_top - rect.top();
-        terminal
-            .backend_mut()
-            .scroll_region_up(0..prev_top, scroll_by)?;
+    let mut area = terminal.viewport_area;
+    area.width = width;
+    area.height = desired;
+    if area.width == 0 || area.height == 0 || area.y >= height {
+        area.y = height.saturating_sub(desired);
     }
-    if rect.bottom() > height {
-        let overflow = rect.bottom() - height;
-        rect.y = rect.y.saturating_sub(overflow);
+    if area.bottom() > height {
+        let overflow = area.bottom() - height;
+        if area.top() > 0 {
+            let scroll_by = overflow.min(area.top());
+            terminal
+                .backend_mut()
+                .scroll_region_up(0..area.top(), scroll_by)?;
+            area.y -= scroll_by;
+        }
+        if area.bottom() > height {
+            area.y = height.saturating_sub(area.height);
+        }
     }
-    Ok(rect)
+    if area != terminal.viewport_area {
+        terminal.clear()?;
+        terminal.set_viewport_area(area);
+    }
+    Ok(area)
 }
 
 /// Sum of fixed chrome rows (status + 2 separators + bottom bar), the
