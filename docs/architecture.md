@@ -2694,7 +2694,9 @@ Crab uses ratatui + crossterm for the terminal UI. Control flow between tui and 
 
 The TUI is organized into 9 top-level module directories plus core files. Modules are grouped by concern:
 
-- **Core loop**: `app/` (state machine + update + commands, split into `mod.rs` / `state.rs` / `update.rs` / `commands.rs`), `runner/` (terminal init + REPL + slash dispatch, split into `mod.rs` / `init.rs` / `repl.rs` / `slash.rs`), `event.rs` / `app_event.rs` / `event_broker.rs` (event pipeline), `layout.rs` (responsive panel allocation), `frame_requester.rs` (redraw coalescing)
+- **Core loop**: `app/` (state machine + update + commands, split into `mod.rs` / `state.rs` / `update.rs` / `commands.rs`), `runner/` (terminal init + REPL + slash dispatch, split into `mod.rs` / `init.rs` / `repl.rs` / `slash.rs` / `alt_scope.rs`), `event.rs` / `app_event.rs` / `event_broker.rs` (event pipeline), `layout.rs` (responsive panel allocation), `frame_requester.rs` (redraw coalescing)
+- **Inline-viewport rendering**: `custom_terminal` decouples `viewport_area` from screen size; `insert_history` writes finalized history into the terminal's native scrollback via DECSTBM scroll regions (Standard) or a newline fallback (legacy conhost / Zellij), with `terminal_detection::probe()` choosing the mode at startup. `wrapping` handles URL-aware adaptive line wrapping for the scrollback insert path. `runner/alt_scope` reserves the alt-screen path for future overlays that need full-screen takeover (diff viewer, full-screen pickers).
+- **Streaming pipeline**: `App::flush_streaming_assistant_lines` commits complete markdown lines from the streaming assistant tail into `pending_history` line by line; the next render flushes them via `insert_history_lines_with_mode`. Lines inside an unclosed ` ``` ` fence are held until the closing fence arrives so the terminal scrollback never sees mid-block markup.
 - **Action dispatch**: `action.rs` (single `Action` enum with `serde::Serialize` + `schemars::JsonSchema` derives, used by keybinding resolver and potential multi-frontend JSON-RPC)
 - **Keybinding system** (`keybindings/`): chord-aware resolver with `KeySequenceParser`, 18 `KeyContext` variants, TOML user overrides at `~/.crab/keybindings.toml`
 - **Overlay system** (`overlay/`): `OverlayKind` enum dispatching `handle_key` / `render` / `contexts` / `name`
@@ -2702,7 +2704,17 @@ The TUI is organized into 9 top-level module directories plus core files. Module
 - **Animation** (`animation/`): `FrameScheduler`, braille/dots/line `Spinner`, `ShimmerState` (per-column color lookup)
 - **Markdown** (`markdown/`): LRU cache keyed by (content, theme, width), background `syntect` highlighting thread, GFM table renderer
 - **Vim** (`vim/`): 5-file key-handling state machine (mode / motion / operator / handler / mod), supports Normal/Insert/Visual/Command modes with operator-motion composition
-- **Components** (`components/`): ~55 higher-level views including input_area, message_list, header, bottom_bar, virtual_list, call_card, permission (risk badges + feedback-on-deny), autocomplete, command_palette, toast_queue, notification_banner, token_warning, message_pill, sticky_header, update_banner, context_visualization, prompt_chips, message_actions, at_mention, and more
+- **Components** (`components/`): ~50 higher-level views including input_area, message_list, header (separator only — the persistent header bar was retired with inline viewport), bottom_bar, call_card, permission (risk badges + feedback-on-deny), autocomplete, command_palette, toast_queue, notification_banner, token_warning, message_pill, sticky_header, update_banner, context_visualization, prompt_chips, message_actions, at_mention, and more
+
+**Inline viewport rendering model**: The TUI does NOT enter the terminal's alternate screen at startup. It claims only the bottom rows (`compute_desired_height`: chrome rows + input height + height of any active streaming/in-progress cells), keeping the rest of the screen as native scrollback. Each frame:
+
+1. `App::drain_finalized_into_pending(width)` walks `messages` from the front, drains finalized cells into `pending_history`, and stops at the first non-finalized cell (or at the streaming-tail anchor while `state == Processing`).
+2. `App::flush_streaming_assistant_lines(width)` commits any new fully-rendered markdown lines from the streaming assistant tail to `pending_history`, advancing its `committed_lines` counter so the cell never repaints lines that already landed in scrollback.
+3. `insert_history_lines_with_mode` flushes `pending_history` above the inline viewport using DECSTBM + Reverse Index (Standard) or newlines emitted at the screen bottom (Fallback).
+4. `compute_inline_viewport` keeps `viewport.y` stable across frames, only sliding it up via `scroll_region_up` when the desired height would push past the screen bottom; a sticky high-water mark prevents per-tick height bouncing.
+5. `terminal.draw(...)` repaints the inline viewport with active cells, status line, separators, input area (with `❯` prompt) and bottom bar.
+
+Result: users see streaming output flow into native terminal scrollback line by line; mouse wheel / Shift+PgUp / terminal search work without any in-app scrolling logic.
 
 **Directory Structure**
 
@@ -2727,9 +2739,14 @@ src/
 ├── layout.rs                  // Layout calculation (panel allocation, responsive)
 ├── runner/                    // TUI runner
 │   ├── mod.rs                 //   run() skeleton + ExitInfo + TuiConfig
-│   ├── init.rs                //   Terminal setup + App initialization
-│   ├── repl.rs                //   REPL — read-eval-print loop
+│   ├── init.rs                //   Terminal setup (custom_terminal) + App init, no alt-screen
+│   ├── repl.rs                //   REPL loop — drain → flush streaming → insert_history → draw
+│   ├── alt_scope.rs           //   `with_alt_screen` helper for full-screen overlays
 │   └── slash.rs               //   Slash command infrastructure
+├── custom_terminal.rs         // ratatui Terminal fork with set_viewport_area + history rows
+├── insert_history.rs          // DECSTBM / fallback scrollback writers
+├── terminal_detection.rs      // env-driven Standard/Fallback probe
+├── wrapping.rs                // URL-aware adaptive line wrap for scrollback inserts
 ├── terminal_notify.rs         // Desktop notification bridge
 ├── traits.rs                  // Renderable trait
 ├── watcher.rs                 // File watcher (config reload)
@@ -2823,11 +2840,15 @@ src/
 │   ├── transcript_overlay.rs  // Transcript overlay host
 │   ├── trust_dialog.rs        // Trust / security dialog
 │   ├── update_banner.rs       // Auto-update status display
-│   └── virtual_list.rs        // Viewport-sliced, width-keyed LRU list
+│   └── (header.rs reduced to separator helper after inline-viewport migration)
 │
 ├── history/                   // Session history display
 │   ├── mod.rs
+│   ├── adapter.rs             // ChatMessage → boxed HistoryCell
+│   ├── cell.rs                // HistoryCell trait + is_finalized
 │   ├── grouping.rs            // History grouping logic
+│   ├── paint.rs               // Bottom-anchored painter for the content area
+│   ├── pending.rs             // PendingHistory queue (drained → scrollback flush)
 │   └── cells/                 // Per-message-type cell renderers
 │       ├── mod.rs
 │       ├── assistant.rs       // Assistant message cell
