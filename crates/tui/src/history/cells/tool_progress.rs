@@ -1,20 +1,17 @@
-//! Live tool-progress cell — renders an in-progress tool's last few output
-//! lines while it's still running, then gets replaced by `ToolResultCell`
-//! once the tool finishes.
+//! Live tool-progress cell — single dim status line indented under the
+//! preceding `ToolCallCell`. Replaced by `ToolResultCell` once the tool
+//! finishes.
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::history::HistoryCell;
 
-/// Header glyph for the in-progress line. Uses the CCB spinner frame `✶`.
-const HEADER_GLYPH: &str = "\u{2736}";
-
-/// How many tail-output lines to render under the header.
-const TAIL_LINES: usize = 5;
+const CONT_GLYPH: &str = "  \u{23bf}  "; // matches CCB's "  ⎿  " indent
 
 #[derive(Debug, Clone)]
 pub struct ToolProgressCell {
+    #[allow(dead_code)]
     tool_name: String,
     tail_output: String,
     total_lines: usize,
@@ -37,64 +34,37 @@ impl ToolProgressCell {
         }
     }
 
-    fn header_line(&self) -> Line<'static> {
-        let label = format!(
-            "{HEADER_GLYPH} {name}  {elapsed:.1}s  {lines} lines",
-            name = self.tool_name,
-            elapsed = self.elapsed_secs,
-            lines = self.total_lines,
-        );
-        Line::from(Span::styled(
-            label,
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::DIM),
-        ))
+    fn last_tail_line(&self) -> Option<&str> {
+        self.tail_output.lines().next_back()
+    }
+
+    fn status_text(&self) -> String {
+        let body = self.last_tail_line().unwrap_or("Running…");
+        let mut suffix_parts = Vec::new();
+        if self.elapsed_secs >= 0.05 {
+            suffix_parts.push(format!("{:.1}s", self.elapsed_secs));
+        }
+        if self.total_lines > 0 {
+            suffix_parts.push(format!("{} lines", self.total_lines));
+        }
+        if suffix_parts.is_empty() {
+            body.to_string()
+        } else {
+            format!("{body} ({})", suffix_parts.join(", "))
+        }
     }
 }
 
 impl HistoryCell for ToolProgressCell {
-    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let mut lines = Vec::with_capacity(TAIL_LINES + 2);
-        lines.push(self.header_line());
-
-        if self.tail_output.is_empty() {
-            return lines;
-        }
-
-        let inner_width = width.saturating_sub(5) as usize;
-        let raw_lines: Vec<&str> = self.tail_output.lines().collect();
-        let start = raw_lines.len().saturating_sub(TAIL_LINES);
+    fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
+        let glyph_style = Style::default().fg(Color::DarkGray);
         let dim = Style::default()
             .fg(Color::DarkGray)
             .add_modifier(Modifier::DIM);
-        let glyph_style = Style::default().fg(Color::DarkGray);
-
-        for (i, raw) in raw_lines[start..].iter().enumerate() {
-            if inner_width == 0 || raw.len() <= inner_width {
-                if i == 0 {
-                    lines.push(Line::from(vec![
-                        Span::styled("  \u{23bf}  ", glyph_style),
-                        Span::styled(raw.to_string(), dim),
-                    ]));
-                } else {
-                    lines.push(Line::from(Span::styled(format!("     {raw}"), dim)));
-                }
-            } else {
-                for (ci, chunk) in raw.as_bytes().chunks(inner_width).enumerate() {
-                    let s = String::from_utf8_lossy(chunk).into_owned();
-                    if i == 0 && ci == 0 {
-                        lines.push(Line::from(vec![
-                            Span::styled("  \u{23bf}  ", glyph_style),
-                            Span::styled(s, dim),
-                        ]));
-                    } else {
-                        lines.push(Line::from(Span::styled(format!("     {s}"), dim)));
-                    }
-                }
-            }
-        }
-        lines
+        vec![Line::from(vec![
+            Span::styled(CONT_GLYPH, glyph_style),
+            Span::styled(self.status_text(), dim),
+        ])]
     }
 
     fn search_text(&self) -> String {
@@ -114,49 +84,41 @@ impl HistoryCell for ToolProgressCell {
 mod tests {
     use super::*;
 
+    fn flatten(line: &Line<'_>) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
     #[test]
-    fn header_includes_name_elapsed_and_lines() {
-        let cell = ToolProgressCell::new("bash".into(), String::new(), 42, 1.25);
+    fn renders_single_status_line_with_running_label_when_no_output() {
+        let cell = ToolProgressCell::new("bash".into(), String::new(), 0, 0.0);
         let lines = cell.display_lines(80);
         assert_eq!(lines.len(), 1);
-        let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(text.contains("bash"), "expected tool name: {text}");
-        assert!(text.contains("1.2"), "expected elapsed seconds: {text}");
-        assert!(text.contains("42 lines"), "expected line count: {text}");
+        let text = flatten(&lines[0]);
+        assert!(text.contains("Running"));
+        assert!(text.contains('\u{23bf}'));
     }
 
     #[test]
-    fn renders_at_most_five_tail_lines() {
-        let tail = (1..=20)
-            .map(|n| format!("line {n}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let cell = ToolProgressCell::new("bash".into(), tail, 20, 0.5);
+    fn shows_last_tail_line_with_elapsed_and_count() {
+        let tail = "Compiling foo\nLinking foo".to_string();
+        let cell = ToolProgressCell::new("bash".into(), tail, 2, 1.25);
         let lines = cell.display_lines(80);
-        // 1 header + 5 tail lines max
-        assert_eq!(lines.len(), 1 + TAIL_LINES);
-        let last: String = lines
-            .last()
-            .unwrap()
-            .spans
-            .iter()
-            .map(|s| s.content.as_ref())
-            .collect();
-        assert!(
-            last.contains("line 20"),
-            "expected most recent line: {last}"
-        );
-    }
-
-    #[test]
-    fn empty_tail_renders_only_header() {
-        let cell = ToolProgressCell::new("bash".into(), String::new(), 0, 0.0);
-        assert_eq!(cell.display_lines(80).len(), 1);
+        assert_eq!(lines.len(), 1);
+        let text = flatten(&lines[0]);
+        assert!(text.contains("Linking foo"));
+        assert!(text.contains("1.2s"));
+        assert!(text.contains("2 lines"));
     }
 
     #[test]
     fn search_text_returns_tail() {
         let cell = ToolProgressCell::new("bash".into(), "needle\nhaystack".into(), 2, 0.1);
         assert!(cell.search_text().contains("needle"));
+    }
+
+    #[test]
+    fn never_finalized() {
+        let cell = ToolProgressCell::new("bash".into(), String::new(), 0, 0.0);
+        assert!(!cell.is_finalized());
     }
 }
