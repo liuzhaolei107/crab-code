@@ -1,0 +1,139 @@
+name: 🐛 Bug Report
+description: Report a crash, wrong behaviour, or rendering glitch.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report. Please include **reproduction steps** and **environment info** so we can pinpoint the issue.
+
+        > Tip: inside the TUI, `/feedback <one-line title>` opens an issue here pre-filled with model / session / working-dir info.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: In one or two sentences, what happened vs what you expected.
+      placeholder: e.g. Sending a Chinese prompt in Git Bash panics the TUI.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimal steps that reproduce the problem. Paste any panic output or screenshots here.
+      placeholder: |
+        1. `cargo run --bin crab`
+        2. type "你好"
+        3. observe panic / rendering glitch / ...
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      placeholder: The Chinese reply should stream line by line.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Backtrace
+      description: Paste panic stack, stderr output, or terminal recording. Set `RUST_BACKTRACE=1` for the full stack.
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - TUI rendering
+        - Streaming
+        - Tool calls
+        - Permission
+        - Settings
+        - Session persistence
+        - MCP / Skill / Hook
+        - CLI flags
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: crab_version
+    attributes:
+      label: crab version
+      description: Output of `crab --version` or commit SHA.
+      placeholder: 0.1.0 or commit ca91bc5
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - WSL2
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: terminal
+    attributes:
+      label: Terminal
+      description: Which terminal are you running crab in?
+      multiple: false
+      options:
+        - Windows Terminal
+        - cmd.exe (legacy conhost)
+        - Git Bash / MinTTY
+        - PowerShell
+        - macOS Terminal.app
+        - iTerm2
+        - WezTerm
+        - Alacritty
+        - tmux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      placeholder: claude-sonnet-4-6 / deepseek-v4-pro / ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: settings
+    attributes:
+      label: Relevant settings
+      description: Snippet from `~/.crab/settings.json` (**redact any API keys before sharing**).
+      render: json
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues for duplicates.
+          required: true
+        - label: I redacted any API keys before sharing.
+          required: true

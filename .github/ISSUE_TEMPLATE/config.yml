@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussion
+    url: https://github.com/crabforge/crab-code/discussions
+    about: Open a Discussion for usage questions, ideas, or anything you're not sure is a bug.
+  - name: 📚 Documentation
+    url: https://github.com/crabforge/crab-code/blob/main/docs/architecture.md
+    about: Architecture overview and developer notes.

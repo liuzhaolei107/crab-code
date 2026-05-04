@@ -1,0 +1,72 @@
+name: ✨ Feature Request
+description: Propose a new capability, an improvement, or alignment with Claude Code / Codex.
+title: "[feat] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please describe the **problem** you're trying to solve, not just the solution you have in mind. That keeps the door open for alternative implementations.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: The pain point or missing capability you're hitting today.
+      placeholder: e.g. I'd like Shift+Click to select text in long sessions, but the TUI captures the mouse.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you want crab to do. Mockups, flow diagrams, and ASCII sketches welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed and why they fall short.
+    validations:
+      required: false
+
+  - type: textarea
+    id: prior_art
+    attributes:
+      label: Prior art
+      description: Does Claude Code, Codex CLI, OpenCode, or another tool already do this? Links or screenshots help.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      multiple: true
+      options:
+        - TUI / rendering
+        - LLM provider
+        - Tools
+        - Permission
+        - Settings
+        - Session
+        - MCP / Skill / Hook
+        - CLI
+        - SDK / integration
+        - Docs
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Are you willing to contribute?
+      options:
+        - label: I'm willing to submit a PR.
+          required: false
+        - label: I can help test.
+          required: false
