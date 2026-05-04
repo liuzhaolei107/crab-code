@@ -373,7 +373,7 @@ where
         match line {
             Cow::Borrowed(slice) => {
                 let start = skip_leading_whitespace(text, cursor);
-                let end = (start + slice.len()).min(text.len());
+                let end = snap_to_char_boundary(text, start.saturating_add(slice.len()));
                 lines.push(start..end);
                 cursor = end;
             }
@@ -387,7 +387,16 @@ where
     lines
 }
 
+fn snap_to_char_boundary(text: &str, idx: usize) -> usize {
+    let mut idx = idx.min(text.len());
+    while idx < text.len() && !text.is_char_boundary(idx) {
+        idx += 1;
+    }
+    idx
+}
+
 fn skip_leading_whitespace(text: &str, from: usize) -> usize {
+    let from = snap_to_char_boundary(text, from);
     text[from..]
         .char_indices()
         .find(|(_, c)| !c.is_whitespace())
@@ -549,5 +558,25 @@ mod tests {
     fn mixed_detection_finds_real_prose() {
         let line = Line::from("see https://example.com for details");
         assert!(line_has_mixed_url_and_non_url_tokens(&line));
+    }
+
+    #[test]
+    fn cjk_text_does_not_panic_on_char_boundary() {
+        // Regression: previous wrap_ranges_trim could land cursor inside a
+        // multi-byte CJK codepoint, panicking on the next slice.
+        let line = Line::from(
+            "我看到你正在 crab-code 项目中工作（当前在 main 分支，工作区是干净的）。\
+             有什么我可以帮你的吗？无论是代码审查、功能开发、调试，还是其他软件工程任务，\
+             随时告诉我！",
+        );
+        let out = adaptive_wrap_line(&line, RtOptions::new(40));
+        assert!(!out.is_empty());
+    }
+
+    #[test]
+    fn cjk_mixed_with_ascii_wraps_safely() {
+        let line = Line::from("中文 English 混合 text 行 with `code` markup");
+        let out = adaptive_wrap_line(&line, RtOptions::new(20));
+        assert!(out.len() >= 2);
     }
 }
