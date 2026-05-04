@@ -187,6 +187,38 @@ fn streaming_holds_committed_lines_while_code_fence_open() {
 }
 
 #[test]
+fn single_newlines_in_prose_commit_line_by_line() {
+    // Regression: SoftBreak used to collapse to a space, which made single-
+    // newline-separated prose render as one giant paragraph and never reach
+    // the per-line commit threshold (typewriter effect). Now that SoftBreak
+    // breaks the line, each newline-terminated prose segment commits.
+    let width: u16 = 60;
+    let mut app = App::new("test-model");
+    app.state = AppState::Processing;
+    app.messages.push(ChatMessage::Assistant {
+        text: "first line of prose.\n".into(),
+        committed_lines: 0,
+        streaming: true,
+    });
+    app.flush_streaming_assistant_lines(width);
+    let after_first = app.pending_history.take();
+    assert!(
+        !after_first.is_empty(),
+        "first sentence commits on its newline"
+    );
+
+    if let Some(ChatMessage::Assistant { text, .. }) = app.messages.last_mut() {
+        text.push_str("second line continues right after.\n");
+    }
+    app.flush_streaming_assistant_lines(width);
+    let after_second = app.pending_history.take();
+    assert!(
+        !after_second.is_empty(),
+        "second sentence committed even without a blank line in between"
+    );
+}
+
+#[test]
 fn streaming_assistant_not_drained_when_tool_calls_follow() {
     let width: u16 = 60;
     let mut app = App::new("test-model");

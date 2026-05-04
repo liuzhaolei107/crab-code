@@ -246,11 +246,13 @@ impl<'t> MarkdownRenderer<'t> {
                     current_spans.push(Span::styled(format!("`{code}`"), style));
                 }
 
-                Event::SoftBreak => {
-                    current_spans.push(Span::raw(" ".to_string()));
-                }
-
-                Event::HardBreak => {
+                Event::SoftBreak | Event::HardBreak => {
+                    // Preserve single newlines as visual line breaks rather
+                    // than collapsing them to spaces. Without this, a Chinese
+                    // prose paragraph that uses single `\n` between sentences
+                    // renders as one giant line, blocking the per-line
+                    // streaming commit (the line never closes until the next
+                    // blank line arrives).
                     flush_line(&mut current_spans, &mut lines);
                 }
 

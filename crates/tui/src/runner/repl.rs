@@ -373,9 +373,11 @@ pub(super) async fn run_loop(
                     let _ = perm_resp_tx.send((id, false, None));
                 }
                 cancel.cancel();
+                app.clear_streaming_assistant_flag();
             }
             AppAction::InterruptProcessing => {
                 cancel.cancel();
+                app.clear_streaming_assistant_flag();
             }
             AppAction::NewSession => {
                 if let Some(ref mut rt) = state {
