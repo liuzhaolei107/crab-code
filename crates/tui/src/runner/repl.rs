@@ -63,6 +63,11 @@ pub(super) async fn run_loop(
     let mut frame_rx = frame_requester.subscribe();
 
     let mut sigcont_stream = SigcontStream::new()?;
+    // Sticky high-water mark for the inline viewport height. Streaming
+    // chunks add and remove rows in bursts; without smoothing the viewport
+    // would bounce y up and down each frame. Reset on Idle so the next
+    // turn can shrink back to its natural size.
+    let mut sticky_height: u16 = 0;
 
     loop {
         let width = terminal.size()?.width.max(1);
@@ -72,7 +77,10 @@ pub(super) async fn run_loop(
             let lines = app.pending_history.take();
             crate::insert_history::insert_history_lines_with_mode(terminal, &lines, insert_mode)?;
         }
-        let _viewport = compute_inline_viewport(terminal, app)?;
+        if matches!(app.state, crate::app::AppState::Idle) {
+            sticky_height = 0;
+        }
+        let _viewport = compute_inline_viewport(terminal, app, &mut sticky_height)?;
         terminal.draw(|frame| {
             app.render(frame.area(), frame.buffer_mut());
         })?;
@@ -436,14 +444,20 @@ pub(super) async fn run_loop(
 /// land in native scrollback) and shift y up by the same amount.
 ///
 /// Returns the new viewport rect. Caller writes pending history above it.
-fn compute_inline_viewport<B>(terminal: &mut Terminal<B>, app: &App) -> io::Result<Rect>
+fn compute_inline_viewport<B>(
+    terminal: &mut Terminal<B>,
+    app: &App,
+    sticky_height: &mut u16,
+) -> io::Result<Rect>
 where
     B: ratatui::backend::Backend<Error = io::Error> + std::io::Write,
 {
     let size = terminal.size()?;
     let width = size.width.max(1);
     let height = size.height.max(1);
-    let desired = compute_desired_height(app, width).clamp(1, height);
+    let raw = compute_desired_height(app, width).clamp(1, height);
+    *sticky_height = (*sticky_height).max(raw);
+    let desired = (*sticky_height).min(height);
 
     let mut area = terminal.viewport_area;
     area.width = width;

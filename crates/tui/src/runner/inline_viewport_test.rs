@@ -119,3 +119,78 @@ fn fallback_mode_emits_history_above_viewport() {
         "fallback path also writes drained lines into scrollback area"
     );
 }
+
+#[test]
+fn streaming_assistant_commits_complete_lines_only() {
+    let width: u16 = 60;
+    let mut app = App::new("test-model");
+    app.state = AppState::Processing;
+    app.messages.push(ChatMessage::Assistant {
+        text: "first paragraph done.\n".into(),
+        committed_lines: 0,
+    });
+
+    app.flush_streaming_assistant_lines(width);
+    let after_first = app.pending_history.take();
+    assert!(
+        !after_first.is_empty(),
+        "first complete line should be committed"
+    );
+
+    if let Some(ChatMessage::Assistant { text, .. }) = app.messages.last_mut() {
+        text.push_str("\nsecond paragraph still typing");
+    }
+    app.flush_streaming_assistant_lines(width);
+    assert!(
+        app.pending_history.is_empty(),
+        "incomplete tail must not be committed before its newline arrives"
+    );
+
+    if let Some(ChatMessage::Assistant { text, .. }) = app.messages.last_mut() {
+        text.push('\n');
+    }
+    app.flush_streaming_assistant_lines(width);
+    let after_second = app.pending_history.take();
+    assert!(
+        !after_second.is_empty(),
+        "closing newline on a new paragraph triggers a commit"
+    );
+}
+
+#[test]
+fn streaming_holds_committed_lines_while_code_fence_open() {
+    let width: u16 = 60;
+    let mut app = App::new("test-model");
+    app.state = AppState::Processing;
+    app.messages.push(ChatMessage::Assistant {
+        text: "intro line\n```rust\nfn main() {\n".into(),
+        committed_lines: 0,
+    });
+
+    app.flush_streaming_assistant_lines(width);
+    assert!(
+        app.pending_history.is_empty(),
+        "must wait for the closing fence before committing fenced lines"
+    );
+
+    if let Some(ChatMessage::Assistant { text, .. }) = app.messages.last_mut() {
+        text.push_str("    println!(\"hi\");\n}\n```\n");
+    }
+    app.flush_streaming_assistant_lines(width);
+    assert!(
+        !app.pending_history.is_empty(),
+        "once the fence closes, the whole block becomes committable"
+    );
+}
+
+#[test]
+fn thinking_delta_does_not_pollute_messages_by_default() {
+    use crate::app_event::AppEvent;
+    let mut app = App::new("test-model");
+    app.apply_event(AppEvent::ThinkingAppend("step 1\n".into()));
+    app.apply_event(AppEvent::ThinkingAppend("step 2\n".into()));
+    assert!(
+        app.messages.is_empty(),
+        "thinking deltas must stay in the spinner status, not enter the transcript"
+    );
+}

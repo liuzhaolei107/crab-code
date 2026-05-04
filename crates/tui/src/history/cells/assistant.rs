@@ -57,16 +57,17 @@ impl AssistantCell {
 
     /// Render the markdown body up to the last newline and return any lines
     /// beyond `committed`. The cell still owns the full text so subsequent
-    /// frames can re-render the streaming tail.
+    /// frames can re-render the streaming tail. Holds back commits while an
+    /// opened fenced code block is still missing its closing fence.
     pub fn render_committed_lines(&self, width: u16, committed: usize) -> Vec<Line<'static>> {
         let body = match self.text.rfind('\n') {
             Some(idx) => &self.text[..=idx],
             None => return Vec::new(),
         };
+        if has_unclosed_code_fence(body) {
+            return Vec::new();
+        }
         let mut rendered = render_with_bullet_no_trailing_blank(body, width);
-        // Strip the synthetic blank that the renderer appends so a freshly
-        // committed line does not occupy an extra row only to be reclaimed
-        // when the next chunk arrives.
         while rendered.last().is_some_and(line_is_blank) {
             rendered.pop();
         }
@@ -82,6 +83,16 @@ impl AssistantCell {
     pub fn rendered_line_count(&self, width: u16) -> usize {
         render_with_bullet(&self.text, width).len()
     }
+}
+
+fn has_unclosed_code_fence(text: &str) -> bool {
+    let mut open = false;
+    for line in text.lines() {
+        if line.trim_start().starts_with("```") {
+            open = !open;
+        }
+    }
+    open
 }
 
 fn line_is_blank(line: &Line<'static>) -> bool {
