@@ -73,7 +73,7 @@ syntect = { version = "5", default-features = false, features = ["default-syntax
 pulldown-cmark = "0.13"
 
 # ─── 系统 ───
-sysinfo = "0.38"
+sysinfo = "0.39"
 directories = "6"
 libc = "0.2"
 
